@@ -22,3 +22,6 @@ pnpm-debug.log*
 .env.test.local
 .env.production.local
 
+# Compiled binaries
+*.exe
+
