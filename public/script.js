@@ -346,6 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     const dynamicIsland = document.getElementById('dynamic-island');
     const islandExpanded = document.querySelector('.island-expanded');
+    let isIslandPinned = false;
 
     if (dynamicIsland) {
         if (islandExpanded) {
@@ -362,7 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         dynamicIsland.addEventListener('mouseleave', () => {
-            if (window.innerWidth > 480 && !dynamicIsland.classList.contains('locked')) {
+            if (window.innerWidth > 480 && !isIslandPinned && !dynamicIsland.classList.contains('locked')) {
                 dynamicIsland.classList.remove('expanded');
             }
         });
@@ -370,6 +371,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Toggle expand on click
         dynamicIsland.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (isIslandPinned) return; // Keep it expanded when pinned
+            
             if (!dynamicIsland.classList.contains('expanded')) {
                 dynamicIsland.classList.add('expanded');
                 dynamicIsland.classList.add('locked');
@@ -381,11 +384,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Collapse when clicking elsewhere
         document.addEventListener('click', () => {
+            if (isIslandPinned) return; // Keep it expanded when pinned
+            
             if (dynamicIsland.classList.contains('expanded')) {
                 dynamicIsland.classList.remove('expanded');
                 dynamicIsland.classList.remove('locked');
             }
         });
+
+        // Bind Lock Button Click
+        const islandLockBtn = document.getElementById('island-lock-btn');
+        if (islandLockBtn) {
+            islandLockBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                isIslandPinned = !isIslandPinned;
+                islandLockBtn.classList.toggle('pinned', isIslandPinned);
+                
+                const icon = islandLockBtn.querySelector('i');
+                if (icon) {
+                    if (isIslandPinned) {
+                        icon.className = 'fa-solid fa-lock';
+                        dynamicIsland.classList.add('expanded');
+                    } else {
+                        icon.className = 'fa-solid fa-lock-open';
+                    }
+                }
+            });
+        }
     }
 
     // Cover Spinning State
@@ -2060,7 +2085,7 @@ document.addEventListener('DOMContentLoaded', () => {
             selectArtist(artist.artistKey);
 
             // Collapse expanded dynamic island if open
-            if (dynamicIsland) {
+            if (dynamicIsland && !isIslandPinned) {
                 dynamicIsland.classList.remove('expanded');
                 dynamicIsland.classList.remove('locked');
             }

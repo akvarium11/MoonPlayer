@@ -1905,4 +1905,14 @@ body {
     color: #f87171 !important;
 }
 
+/* Lock Button Styles */
+.lock-toggle-btn {
+    right: 44px !important;
+}
+.lock-toggle-btn.pinned {
+    color: var(--accent) !important;
+    background: rgba(255, 255, 255, 0.15) !important;
+    border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
 
