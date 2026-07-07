@@ -1369,6 +1369,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     selectArtist(item.artistKey);
                 });
             } else if (searchType === 'song') {
+                div.setAttribute('data-global-index', item.globalIndex);
                 if (currentlyPlayingIndex === item.globalIndex) {
                     div.classList.add('active');
                 }
@@ -1806,7 +1807,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Highlight in left side panel if search results contain it
         const resultItems = document.querySelectorAll('.result-item');
         if (searchType === 'song') {
-            renderLibraryPanel();
+            resultItems.forEach(itemEl => {
+                const gIdx = parseInt(itemEl.getAttribute('data-global-index'), 10);
+                if (gIdx === currentlyPlayingIndex) {
+                    itemEl.classList.add('active');
+                } else {
+                    itemEl.classList.remove('active');
+                }
+            });
         }
 
         // Highlight in right playlist
