@@ -4,3 +4,21 @@ music_folders.json
 .gemini/
 .idea/
 .vscode/
+
+# OS files
+Thumbs.db
+desktop.ini
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
