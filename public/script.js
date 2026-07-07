@@ -86,6 +86,13 @@ document.addEventListener('DOMContentLoaded', () => {
         playerCard.style.transform = 'perspective(1200px) rotateY(0deg) rotateX(0deg)';
     });
 
+    window.addEventListener('resize', () => {
+        if (window.innerWidth <= 900 && playerCard) {
+            playerCard.style.transition = 'transform 0.8s cubic-bezier(0.16, 1, 0.3, 1)';
+            playerCard.style.transform = 'perspective(1200px) rotateY(0deg) rotateX(0deg)';
+        }
+    });
+
     // Helper: Update CSS variable for accent color in real-time
     function updateAccentColor(color) {
         document.documentElement.style.setProperty('--accent', color);
