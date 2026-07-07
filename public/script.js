@@ -383,10 +383,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const folderInput = document.getElementById('folder-input');
     const searchResults = document.getElementById('search-results');
 
-    folderPickBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        folderInput.click();
-    });
+    if (folderPickBtn) {
+        folderPickBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            folderInput.click();
+        });
+    }
 
     folderInput.addEventListener('change', async (e) => {
         const files = Array.from(e.target.files);
@@ -747,7 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="empty-state">
                     <i class="fa-solid fa-music"></i>
                     <p>No folder loaded yet</p>
-                    <span>Click "ADD FOLDER" to scan directories for songs (.mp3, .flac, .ogg, etc.)</span>
+                    <span>Go to SETTINGS to configure music folders on the server.</span>
                 </div>
             `;
             return;
@@ -2144,7 +2146,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="empty-state">
                         <i class="fa-solid fa-music"></i>
                         <p>No music found</p>
-                        <span>Add server music folders in settings, or click ADD FOLDER above.</span>
+                        <span>Add server music folders in settings to load your library.</span>
                     </div>
                 `;
                 const songList = document.getElementById('song-list');
