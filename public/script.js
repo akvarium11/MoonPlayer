@@ -1297,9 +1297,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const nextBatch = activeResults.slice(renderedResultsCount, renderedResultsCount + RESULTS_BATCH_SIZE);
         
-        nextBatch.forEach(item => {
+        nextBatch.forEach((item, idx) => {
             const div = document.createElement('div');
             div.className = 'result-item';
+            div.style.animation = 'fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both';
+            div.style.animationDelay = `${idx * 25}ms`;
 
             if (searchType === 'album') {
                 div.innerHTML = `
@@ -1545,6 +1547,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const isTrackPlaying = (currentlyPlayingIndex === song.globalIndex);
             const songDiv = document.createElement('div');
             songDiv.className = `song-item ${isTrackPlaying ? 'playing' : ''}`;
+            songDiv.style.animation = 'fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both';
+            songDiv.style.animationDelay = `${batchIdx * 25}ms`;
             
             const isPlaylistView = (currentSelectedPlaylistName !== null);
             const actionButtonHTML = isPlaylistView
