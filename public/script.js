@@ -558,7 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Helper: Relative path parsing (returns artist/album based on subfolders)
     function parseRelativePath(relPath) {
         if (!relPath) return { artist: "", album: "" };
-        const parts = relPath.split('/');
+        const parts = relPath.replace(/\\/g, '/').split('/');
         // Length 3+: ["Music", "Beatles", "Abbey Road", "song.mp3"] -> Beatles (Artist), Abbey Road (Album)
         if (parts.length >= 4) {
             return {
@@ -595,6 +595,25 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     // 8. DATA LIBRARY BUILDERS & GROUPERS
     // ==========================================
+    function getSongAlbumKey(song) {
+        if (song.path) {
+            // Server song: get directory from path
+            const lastSlash = Math.max(song.path.lastIndexOf('/'), song.path.lastIndexOf('\\'));
+            if (lastSlash !== -1) {
+                return song.path.substring(0, lastSlash).toLowerCase();
+            }
+            return song.album.toLowerCase();
+        } else if (song.file && song.file.webkitRelativePath) {
+            // Client file: get directory from webkitRelativePath
+            const lastSlash = song.file.webkitRelativePath.lastIndexOf('/');
+            if (lastSlash !== -1) {
+                return song.file.webkitRelativePath.substring(0, lastSlash).toLowerCase();
+            }
+            return song.album.toLowerCase();
+        }
+        return song.album.toLowerCase();
+    }
+
     function buildLibraries() {
         const albumsMap = {};
         const artistsMap = {};
@@ -603,13 +622,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // Store reference index in allSongs for global queue control
             song.globalIndex = idx;
 
-            // Group by Album
-            const albumKey = `${song.album.toLowerCase()}_${song.artist.toLowerCase()}`;
+            // Group by Album (using directory path or fallback title)
+            const albumKey = getSongAlbumKey(song);
+            song.albumKey = albumKey;
+            
             if (!albumsMap[albumKey]) {
                 albumsMap[albumKey] = {
                     albumKey: albumKey,
-                    title: song.album,
-                    artist: song.artist,
+                    title: song.album || "Unknown Album",
+                    artist: song.artist || "Unknown Artist",
                     year: song.year || "",
                     cover: song.cover !== DEFAULT_COVER ? song.cover : "",
                     tracks: []
@@ -618,11 +639,11 @@ document.addEventListener('DOMContentLoaded', () => {
             albumsMap[albumKey].tracks.push(song);
 
             // Group by Artist
-            const artistKey = song.artist.toLowerCase();
+            const artistKey = song.artist ? song.artist.toLowerCase() : "unknown artist";
             if (!artistsMap[artistKey]) {
                 artistsMap[artistKey] = {
                     artistKey: artistKey,
-                    name: song.artist,
+                    name: song.artist || "Unknown Artist",
                     tracks: []
                 };
             }
@@ -631,6 +652,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Convert Maps to sorted arrays
         albums = Object.values(albumsMap).map(album => {
+            // If it's a split/compilation album, set artist to "Various Artists"
+            if (album.tracks.length > 0) {
+                const firstArtist = album.tracks[0].artist;
+                const allSameArtist = album.tracks.every(t => t.artist === firstArtist);
+                if (!allSameArtist) {
+                    album.artist = "Various Artists";
+                }
+            }
+
             // If album has no custom cover, find the first track that does
             if (!album.cover) {
                 const coverTrack = album.tracks.find(t => t.cover !== DEFAULT_COVER);
@@ -814,7 +844,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 div.addEventListener('click', () => {
                     document.querySelectorAll('.result-item').forEach(el => el.classList.remove('active'));
                     div.classList.add('active');
-                    const albumKey = `${item.album.toLowerCase()}_${item.artist.toLowerCase()}`;
+                    const albumKey = item.albumKey;
                     selectAlbum(albumKey);
 
                     if (isShuffle) {
@@ -888,7 +918,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const artistAlbums = [];
         const seenAlbums = new Set();
         artist.tracks.forEach(track => {
-            const albumKey = `${track.album.toLowerCase()}_${track.artist.toLowerCase()}`;
+            const albumKey = track.albumKey;
             if (!seenAlbums.has(albumKey)) {
                 seenAlbums.add(albumKey);
                 const alb = albums.find(a => a.albumKey === albumKey);
@@ -1020,7 +1050,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (titleEl) {
                 titleEl.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    selectAlbumByNameAndArtist(song.album, song.artist);
+                    selectAlbumByNameAndArtist(song.album, song.artist, song.albumKey);
                 });
             }
 
@@ -1029,7 +1059,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (albumEl) {
                 albumEl.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    selectAlbumByNameAndArtist(song.album, song.artist);
+                    selectAlbumByNameAndArtist(song.album, song.artist, song.albumKey);
                 });
             }
 
@@ -1409,10 +1439,14 @@ document.addEventListener('DOMContentLoaded', () => {
     renderLibraryPanel();
 
     // Helper: Select album by name & artist
-    function selectAlbumByNameAndArtist(albumName, artistName) {
+    function selectAlbumByNameAndArtist(albumName, artistName, albumKey) {
+        if (albumKey) {
+            selectAlbum(albumKey);
+            return;
+        }
         if (!albumName || albumName === 'Unknown Album' || albumName === 'Artist Profile') return;
-        const albumKey = `${albumName.toLowerCase()}_${artistName.toLowerCase()}`;
-        selectAlbum(albumKey);
+        const key = `${albumName.toLowerCase()}_${artistName.toLowerCase()}`;
+        selectAlbum(key);
     }
 
     // Helper: Select artist and navigate to their profile (album grid)
@@ -1519,7 +1553,7 @@ document.addEventListener('DOMContentLoaded', () => {
             e.stopPropagation();
             const currentTrack = allSongs[currentlyPlayingIndex];
             if (currentTrack) {
-                const albumKey = `${currentTrack.album.toLowerCase()}_${currentTrack.artist.toLowerCase()}`;
+                const albumKey = currentTrack.albumKey;
                 selectAlbum(albumKey);
             }
         });
@@ -1667,8 +1701,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // 13. INDEXEDDB FOR BG IMAGE STORAGE & SLIDERS
     // ==========================================
     const DB_NAME = 'MoonPlayerDB';
-    const DB_VERSION = 1;
+    const DB_VERSION = 2;
     const STORE_NAME = 'settings';
+    const METADATA_STORE = 'songs_metadata';
 
     function getDB() {
         return new Promise((resolve, reject) => {
@@ -1678,10 +1713,59 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!db.objectStoreNames.contains(STORE_NAME)) {
                     db.createObjectStore(STORE_NAME);
                 }
+                if (!db.objectStoreNames.contains(METADATA_STORE)) {
+                    db.createObjectStore(METADATA_STORE);
+                }
             };
             request.onsuccess = (e) => resolve(e.target.result);
             request.onerror = (e) => reject(e.target.error);
         });
+    }
+
+    async function getCachedMetadata(path) {
+        try {
+            const db = await getDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(METADATA_STORE, 'readonly');
+                const store = tx.objectStore(METADATA_STORE);
+                const request = store.get(path);
+                request.onsuccess = (e) => resolve(e.target.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        } catch (err) {
+            console.error("Failed to query IndexedDB metadata cache:", err);
+            return null;
+        }
+    }
+
+    async function cacheMetadata(path, metadata) {
+        try {
+            const db = await getDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(METADATA_STORE, 'readwrite');
+                const store = tx.objectStore(METADATA_STORE);
+                const request = store.put(metadata, path);
+                request.onsuccess = () => resolve();
+                request.onerror = (e) => reject(e.target.error);
+            });
+        } catch (err) {
+            console.error("Failed to write to IndexedDB metadata cache:", err);
+        }
+    }
+
+    async function clearMetadataCache() {
+        try {
+            const db = await getDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(METADATA_STORE, 'readwrite');
+                const store = tx.objectStore(METADATA_STORE);
+                const request = store.clear();
+                request.onsuccess = () => resolve();
+                request.onerror = (e) => reject(e.target.error);
+            });
+        } catch (err) {
+            console.error("Failed to clear IndexedDB metadata cache:", err);
+        }
     }
 
     async function saveBgImage(fileBlob) {
@@ -1849,4 +1933,370 @@ document.addEventListener('DOMContentLoaded', () => {
             bgBlurSlider.style.setProperty('--value', `${(val / 40) * 100}%`);
         });
     }
+
+    // ==========================================
+    // 14. SERVER MUSIC FOLDERS & AUTO-RESTORE
+    // ==========================================
+    const serverFolderPathInput = document.getElementById('server-folder-path');
+    const addServerFolderBtn = document.getElementById('add-server-folder-btn');
+    const serverFoldersList = document.getElementById('server-folders-list');
+    const clearAllMusicBtn = document.getElementById('clear-all-music-btn');
+
+    async function fetchServerFolders() {
+        try {
+            const res = await fetch('/api/folders');
+            const folders = await res.json();
+            renderServerFoldersList(folders);
+            return folders;
+        } catch (e) {
+            console.error("Failed to fetch server folders:", e);
+            return [];
+        }
+    }
+
+    function renderServerFoldersList(folders) {
+        if (!serverFoldersList) return;
+        serverFoldersList.innerHTML = '';
+        if (folders.length === 0) {
+            serverFoldersList.innerHTML = '<span style="color: var(--text-secondary); font-size: 0.75rem; font-style: italic;">No server folders configured.</span>';
+            return;
+        }
+        folders.forEach(folder => {
+            const item = document.createElement('div');
+            item.className = 'server-folder-item';
+            item.style.display = 'flex';
+            item.style.justifyContent = 'space-between';
+            item.style.alignItems = 'center';
+            item.style.background = 'rgba(255, 255, 255, 0.02)';
+            item.style.border = '1px solid var(--card-border)';
+            item.style.borderRadius = '8px';
+            item.style.padding = '8px 12px';
+            item.style.fontSize = '0.75rem';
+            item.style.wordBreak = 'break-all';
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = folder;
+            nameSpan.style.color = 'var(--text-primary)';
+            nameSpan.style.marginRight = '8px';
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'settings-action-btn delete-action';
+            deleteBtn.style.padding = '4px 8px';
+            deleteBtn.style.fontSize = '0.65rem';
+            deleteBtn.style.minWidth = 'auto';
+            deleteBtn.style.flex = '0';
+            deleteBtn.style.marginTop = '0';
+            deleteBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+            deleteBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (confirm(`Remove folder "${folder}"?`)) {
+                    await removeServerFolder(folder);
+                }
+            });
+
+            item.appendChild(nameSpan);
+            item.appendChild(deleteBtn);
+            serverFoldersList.appendChild(item);
+        });
+    }
+
+    async function addServerFolder(path) {
+        try {
+            const res = await fetch('/api/folders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folderPath: path })
+            });
+            const data = await res.json();
+            if (data.error) {
+                alert("Error: " + data.error);
+            } else {
+                if (serverFolderPathInput) serverFolderPathInput.value = '';
+                renderServerFoldersList(data.folders);
+                await reloadLibraryFromServer();
+            }
+        } catch (e) {
+            console.error("Failed to add server folder:", e);
+            alert("Failed to add folder: " + e.message);
+        }
+    }
+
+    async function removeServerFolder(path) {
+        try {
+            const res = await fetch(`/api/folders?folderPath=${encodeURIComponent(path)}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (data.error) {
+                alert("Error: " + data.error);
+            } else {
+                renderServerFoldersList(data.folders);
+                await reloadLibraryFromServer();
+            }
+        } catch (e) {
+            console.error("Failed to remove server folder:", e);
+        }
+    }
+
+    function parseServerSongMetadata(song) {
+        return new Promise((resolve) => {
+            const timeoutId = setTimeout(() => {
+                resolve(generateServerFallbackMetadata(song));
+            }, 5000);
+
+            const absoluteUrl = window.location.origin + song.url;
+            window.jsmediatags.read(absoluteUrl, {
+                onSuccess: function (tag) {
+                    clearTimeout(timeoutId);
+                    
+                    const tags = tag.tags || {};
+                    let title = tags.title ? tags.title.trim() : "";
+                    let artist = tags.artist ? tags.artist.trim() : "";
+                    let album = tags.album ? tags.album.trim() : "";
+                    let year = tags.year ? String(tags.year).trim() : "";
+                    let cover = DEFAULT_COVER;
+
+                    if (!title) {
+                        const filenameInfo = parseFilename(song.name);
+                        title = filenameInfo.title;
+                        if (!artist) artist = filenameInfo.artist;
+                    }
+
+                    if (!artist) {
+                        const pathInfo = parseRelativePath(song.path);
+                        artist = pathInfo.artist || "Unknown Artist";
+                    }
+
+                    if (!album) {
+                        const pathInfo = parseRelativePath(song.path);
+                        album = pathInfo.album || "Unknown Album";
+                    }
+
+                    if (tags.picture) {
+                        try {
+                            const pic = tags.picture;
+                            const bytes = new Uint8Array(pic.data);
+                            let binary = "";
+                            const len = bytes.byteLength;
+                            const chunk = 8192;
+                            for (let i = 0; i < len; i += chunk) {
+                                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+                            }
+                            cover = `data:${pic.format};base64,${window.btoa(binary)}`;
+                        } catch (imgErr) {
+                            console.error("Error reading cover art:", imgErr);
+                        }
+                    }
+
+                    resolve({
+                        path: song.path,
+                        src: song.url,
+                        title: title || song.name,
+                        artist: artist,
+                        album: album,
+                        year: year,
+                        cover: cover
+                    });
+                },
+                onError: function (err) {
+                    clearTimeout(timeoutId);
+                    console.warn("jsmediatags failed on:", song.url, err);
+                    resolve(generateServerFallbackMetadata(song));
+                }
+            });
+        });
+    }
+
+    function generateServerFallbackMetadata(song) {
+        const pathInfo = parseRelativePath(song.path);
+        const fileInfo = parseFilename(song.name);
+
+        return {
+            path: song.path,
+            src: song.url,
+            title: fileInfo.title || song.name,
+            artist: fileInfo.artist || pathInfo.artist || "Unknown Artist",
+            album: pathInfo.album || "Unknown Album",
+            year: "",
+            cover: DEFAULT_COVER
+        };
+    }
+
+    async function reloadLibraryFromServer() {
+        try {
+            searchResults.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <p>Scanning Server Folders...</p>
+                    <span id="scan-progress">Fetching track list...</span>
+                </div>
+            `;
+
+            const res = await fetch('/api/songs');
+            const songs = await res.json();
+
+            if (songs.length === 0) {
+                allSongs = [];
+                buildLibraries();
+                setupFuseSearch();
+                renderLibraryPanel();
+                searchResults.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fa-solid fa-music"></i>
+                        <p>No music found</p>
+                        <span>Add server music folders in settings, or click ADD FOLDER above.</span>
+                    </div>
+                `;
+                const songList = document.getElementById('song-list');
+                if (songList) {
+                    songList.innerHTML = `
+                        <div class="empty-playlist">
+                            <p>Load directories to display tracks here</p>
+                        </div>
+                    `;
+                }
+                const detailTitle = document.getElementById('detail-title');
+                const detailArtist = document.getElementById('detail-artist');
+                const detailMeta = document.getElementById('detail-meta');
+                if (detailTitle) detailTitle.textContent = "Welcome to MoonPlayer";
+                if (detailArtist) detailArtist.textContent = "Load your offline music files";
+                if (detailMeta) detailMeta.textContent = "Select a folder to start indexing tracks";
+                return;
+            }
+
+            searchResults.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <p>Processing Library...</p>
+                    <span id="scan-progress">Processed: 0 / ${songs.length} files</span>
+                </div>
+            `;
+
+            allSongs = [];
+            let processedCount = 0;
+            const progressSpan = document.getElementById('scan-progress');
+            const concurrency = 6;
+
+            const processServerSong = async (song) => {
+                try {
+                    let cached = await getCachedMetadata(song.path);
+                    if (cached) {
+                        allSongs.push(cached);
+                    } else {
+                        const metadata = await parseServerSongMetadata(song);
+                        allSongs.push(metadata);
+                        await cacheMetadata(song.path, metadata);
+                    }
+                } catch (err) {
+                    console.error("Failed processing server metadata, using fallback:", song.name, err);
+                    const fallback = generateServerFallbackMetadata(song);
+                    allSongs.push(fallback);
+                } finally {
+                    processedCount++;
+                    if (progressSpan) {
+                        progressSpan.textContent = `Processed: ${processedCount} / ${songs.length} files`;
+                    }
+                }
+            };
+
+            for (let i = 0; i < songs.length; i += concurrency) {
+                const batch = songs.slice(i, i + concurrency);
+                await Promise.all(batch.map(song => processServerSong(song)));
+            }
+
+            buildLibraries();
+            setupFuseSearch();
+            renderLibraryPanel();
+
+            if (albums.length > 0) {
+                selectAlbum(albums[0].albumKey);
+            } else if (allSongs.length > 0) {
+                currentPlaylist = [...allSongs];
+                renderPlaylistView("All Tracks", "Indexed Server Audio", "Various", null);
+            }
+        } catch (e) {
+            console.error("Failed to load library from server:", e);
+            searchResults.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <p>Failed to scan server folders</p>
+                    <span>Check your connection or settings.</span>
+                </div>
+            `;
+        }
+    }
+
+    // Set up add server folder event handlers
+    if (addServerFolderBtn && serverFolderPathInput) {
+        addServerFolderBtn.addEventListener('click', async () => {
+            const folderPath = serverFolderPathInput.value.trim();
+            if (!folderPath) {
+                alert("Please enter a folder path.");
+                return;
+            }
+            await addServerFolder(folderPath);
+        });
+
+        serverFolderPathInput.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter') {
+                const folderPath = serverFolderPathInput.value.trim();
+                if (!folderPath) return;
+                await addServerFolder(folderPath);
+            }
+        });
+    }
+
+    // Set up clear all music button handler
+    if (clearAllMusicBtn) {
+        clearAllMusicBtn.addEventListener('click', async () => {
+            if (confirm("Are you sure you want to clear all music? This will remove all server folders and reset the library cache.")) {
+                try {
+                    await fetch('/api/folders/clear', { method: 'POST' });
+                    await clearMetadataCache();
+                    allSongs = [];
+                    albums = [];
+                    artists = [];
+                    currentPlaylist = [];
+                    currentlyPlayingIndex = -1;
+                    
+                    if (serverFoldersList) {
+                        serverFoldersList.innerHTML = '<span style="color: var(--text-secondary); font-size: 0.75rem; font-style: italic;">No server folders configured.</span>';
+                    }
+                    
+                    buildLibraries();
+                    setupFuseSearch();
+                    renderLibraryPanel();
+
+                    const songList = document.getElementById('song-list');
+                    if (songList) {
+                        songList.innerHTML = `
+                            <div class="empty-playlist">
+                                <p>Load directories to display tracks here</p>
+                            </div>
+                        `;
+                    }
+                    const detailTitle = document.getElementById('detail-title');
+                    const detailArtist = document.getElementById('detail-artist');
+                    const detailMeta = document.getElementById('detail-meta');
+                    if (detailTitle) detailTitle.textContent = "Welcome to MoonPlayer";
+                    if (detailArtist) detailArtist.textContent = "Load your offline music files";
+                    if (detailMeta) detailMeta.textContent = "Select a folder to start indexing tracks";
+                    
+                    alert("All music cleared successfully.");
+                } catch (e) {
+                    console.error("Failed to clear music:", e);
+                    alert("Error clearing music: " + e.message);
+                }
+            }
+        });
+    }
+
+    // Startup initialization
+    async function initServerLibrary() {
+        const folders = await fetchServerFolders();
+        if (folders && folders.length > 0) {
+            await reloadLibraryFromServer();
+        }
+    }
+    initServerLibrary();
 });

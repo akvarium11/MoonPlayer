@@ -1,0 +1,6 @@
+node_modules/
+music_folders.json
+.DS_Store
+.gemini/
+.idea/
+.vscode/
