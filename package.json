@@ -1,0 +1,16 @@
+{
+  "name": "moonplayer",
+  "version": "1.0.0",
+  "description": "Local browser-based music player with dynamic island and smart search",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

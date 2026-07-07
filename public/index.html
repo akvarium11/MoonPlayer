@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MoonPlayer</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;700&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="/assets/icon.png">
+</head>
+<body>
+    <!-- Snowflake background -->
+    <div id="snow-container"></div>
+    <!-- Custom Background Image -->
+    <div id="custom-bg"></div>
+
+    <!-- Loading overlay -->
+    <div id="preloader-overlay" class="overlay">
+        <div id="preloader-container" class="preloader-container">
+            <div id="progress-bar" class="progress-bar"></div>
+        </div>
+    </div>
+
+    <!-- Floating Dynamic Island -->
+    <div class="dynamic-island-container">
+        <div class="dynamic-island" id="dynamic-island">
+            <!-- Compact State -->
+            <div class="island-compact">
+                <div class="compact-left">
+                    <img src="/assets/icon.png" alt="Mini Cover" class="mini-cover" id="mini-cover">
+                </div>
+                <div class="compact-center">
+                    <span class="mini-track-title" id="mini-track-title">MoonPlayer - Empty Playlist</span>
+                </div>
+                <div class="compact-right">
+                    <div class="mini-waveform" id="mini-waveform">
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Expanded State -->
+            <div class="island-expanded">
+                <button id="island-queue-btn" class="queue-toggle-btn" title="Show Queue"><i class="fa-solid fa-list-ul"></i></button>
+                <div class="audio-player">
+                    <div class="covers-container">
+                        <div class="cover-wrapper" id="current-cover-wrapper">
+                            <img src="/assets/icon.png" alt="Track Cover" class="track-cover" id="track-cover">
+                        </div>
+                    </div>
+                    <div class="player-controls">
+                        <div class="track-info">
+                            <span id="track-title">Select a folder with music</span>
+                            <span id="track-artist" style="font-size: 0.65rem; color: var(--text-secondary); margin-top: 2px;">No track loaded</span>
+                        </div>
+                        <div class="progress-section">
+                            <span id="current-time">00:00</span>
+                            <input type="range" id="progress-slider" min="0" max="100" value="0" step="0.1" class="custom-slider" style="flex: 1; margin: 0 10px;">
+                            <span id="total-time">00:00</span>
+                        </div>
+                        <div class="controls-section">
+                            <div class="playback-controls">
+                                <button id="shuffle-btn" class="control-btn" title="Shuffle"><i class="fa-solid fa-shuffle"></i></button>
+                                <button id="prev-btn" class="control-btn" title="Previous"><i class="fa-solid fa-backward-step"></i></button>
+                                <button id="play-btn" class="play-btn" title="Play/Pause">
+                                    <i class="fa-solid fa-play"></i>
+                                </button>
+                                <button id="next-btn" class="control-btn" title="Next"><i class="fa-solid fa-forward-step"></i></button>
+                                <button id="loop-btn" class="control-btn" title="Loop"><i class="fa-solid fa-repeat"></i></button>
+                            </div>
+                            <div class="volume-container">
+                                <button id="mute-btn" class="control-btn" title="Mute"><i class="fa-solid fa-volume-high fa-fw"></i></button>
+                                <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5" class="custom-slider" style="width: 60px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Queue section inside dynamic island -->
+                <div class="island-queue-section" id="island-queue-section">
+                    <div class="island-queue-title">Upcoming Queue</div>
+                    <div class="island-queue-list custom-scrollbar" id="island-queue-list">
+                        <!-- Queue items will be generated dynamically -->
+                    </div>
+                </div>
+                <div class="visualizer-wrapper">
+                    <canvas id="visualizer" class="visualizer"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden audio element -->
+    <audio id="bg-audio"></audio>
+
+    <!-- Main Container matching layout -->
+    <div class="main-container">
+        <div class="player-card bio-card">
+            <!-- 3D Card Shine Effect -->
+            <div class="card-shine" id="card-shine"></div>
+
+            <!-- Top Header Area -->
+            <div class="card-header">
+                <img src="/assets/logo.png" alt="MoonPlayer Logo" class="logo">
+                <div class="header-right">
+                    <button class="add-folder-btn" id="folder-pick-btn">
+                        <i class="fa-solid fa-folder-open"></i> ADD FOLDER
+                    </button>
+                    <button class="settings-btn" id="settings-btn" title="Settings">
+                        <i class="fa-solid fa-gear"></i>
+                    </button>
+                    <!-- Hidden Directory Input -->
+                    <input type="file" id="folder-input" webkitdirectory directory multiple style="display: none;">
+                </div>
+            </div>
+
+            <!-- Dashboard Split Layout -->
+            <div class="dashboard-layout">
+                <!-- Left Panel: Search & Results -->
+                <div class="panel-left">
+                    <div class="search-section">
+                        <div class="search-filter-wrapper">
+                            <div class="dropdown-select" id="search-type-dropdown">
+                                <span id="selected-type-text">▼ Album</span>
+                                <div class="dropdown-options" id="dropdown-options-list">
+                                    <div class="dropdown-option" data-value="album">Album</div>
+                                    <div class="dropdown-option" data-value="artist">Artist</div>
+                                    <div class="dropdown-option" data-value="song">Song name</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="search-input-wrapper">
+                            <input type="text" id="search-input" placeholder="Type to search..." autocomplete="off">
+                            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        </div>
+                    </div>
+
+                    <!-- Left side search/list results -->
+                    <div class="results-list custom-scrollbar" id="search-results">
+                        <div class="empty-state">
+                            <i class="fa-solid fa-music"></i>
+                            <p>No folder loaded yet</p>
+                            <span>Click "ADD FOLDER" to scan directories for songs (.mp3, .flac, .ogg, etc.)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Panel: Currently Selected Album/Artist Details & Playlist -->
+                <div class="panel-right">
+                    <!-- Album / Artist Info Header -->
+                    <div class="selected-details" id="selected-details-view">
+                        <div class="detail-cover-wrapper">
+                            <img src="/assets/icon.png" alt="Album Cover" class="detail-cover" id="detail-cover">
+                        </div>
+                        <div class="detail-info">
+                            <h2 class="detail-title" id="detail-title">Welcome to MoonPlayer</h2>
+                            <p class="detail-subtitle" id="detail-artist">Load your offline music files</p>
+                            <p class="detail-meta" id="detail-meta">Select a folder to start indexing tracks</p>
+                        </div>
+                    </div>
+
+                    <!-- Song list inside the selected view -->
+                    <div class="playlist-section" style="position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                        <div class="song-list-container custom-scrollbar" id="song-list">
+                            <!-- Songs will be generated dynamically -->
+                            <div class="empty-playlist">
+                                <p>Load directories to display tracks here</p>
+                            </div>
+                        </div>
+                        <!-- Album grid inside the selected view -->
+                        <div class="albums-grid-container custom-scrollbar hidden" id="albums-grid">
+                            <!-- Album cards will be generated dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay">
+        <div class="settings-content">
+            <div class="modal-header">
+                <h3>SETTINGS</h3>
+                <button id="close-settings-btn" class="close-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-item">
+                    <label for="toggle-tilt">3D Card Tilt Effect</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-tilt" checked>
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label for="toggle-glow">Cursor Glow Effect</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-glow" checked>
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label for="toggle-snow">Fall Particles (Snow)</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-snow" checked>
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item flex-column">
+                    <label>Accent Color</label>
+                    <div class="color-options">
+                        <div class="color-option active" style="background-color: #ffffff;" data-color="#ffffff" title="White"></div>
+                        <div class="color-option" style="background-color: #ff3366;" data-color="#ff3366" title="Pink"></div>
+                        <div class="color-option" style="background-color: #33ccff;" data-color="#33ccff" title="Blue"></div>
+                        <div class="color-option" style="background-color: #33ff99;" data-color="#33ff99" title="Neon Green"></div>
+                        <div class="color-option" style="background-color: #ff9933;" data-color="#ff9933" title="Orange"></div>
+                        <div class="color-option" style="background-color: #b366ff;" data-color="#b366ff" title="Purple"></div>
+                        <div class="color-picker-wrapper" title="Custom Color">
+                            <input type="color" id="custom-color-picker" value="#ffffff">
+                            <i class="fa-solid fa-palette"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="setting-item flex-column" style="margin-top: 10px; border-top: 1px solid var(--card-border); padding-top: 20px; width: 100%;">
+                    <label>Custom Background</label>
+                    <div class="bg-settings-wrapper" style="width: 100%;">
+                        <div class="bg-buttons-row">
+                            <button id="bg-upload-btn" class="settings-action-btn">
+                                <i class="fa-solid fa-image"></i> UPLOAD BG
+                            </button>
+                            <button id="bg-remove-btn" class="settings-action-btn delete-action hidden">
+                                <i class="fa-solid fa-trash-can"></i> REMOVE
+                            </button>
+                            <input type="file" id="bg-file-input" accept="image/*" style="display: none;">
+                        </div>
+                        <div class="bg-slider-group hidden" id="bg-sliders-container">
+                            <div class="slider-item">
+                                <div class="slider-label-row">
+                                    <span>Opacity</span>
+                                    <span id="bg-opacity-val">40%</span>
+                                </div>
+                                <input type="range" id="bg-opacity-slider" min="0" max="1" step="0.05" value="0.4" class="custom-slider" style="width: 100%;">
+                            </div>
+                            <div class="slider-item" style="margin-top: 12px;">
+                                <div class="slider-label-row">
+                                    <span>Blur</span>
+                                    <span id="bg-blur-val">10px</span>
+                                </div>
+                                <input type="range" id="bg-blur-slider" min="0" max="40" step="1" value="10" class="custom-slider" style="width: 100%;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- External CDN Scripts -->
+    <!-- jsmediatags for parsing client-side metadata -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <!-- fuse.js for typo-tolerant smart search -->
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
+    <!-- App Logic -->
+    <script src="script.js"></script>
+</body>
+</html>
