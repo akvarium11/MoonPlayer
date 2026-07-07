@@ -77,6 +77,9 @@
                                 <button id="next-btn" class="control-btn" title="Next"><i class="fa-solid fa-forward-step"></i></button>
                                 <button id="loop-btn" class="control-btn" title="Loop"><i class="fa-solid fa-repeat"></i></button>
                             </div>
+                            <button id="like-btn" class="control-btn like-btn" title="Like Track">
+                                <i class="fa-regular fa-heart"></i>
+                            </button>
                             <div class="volume-container">
                                 <button id="mute-btn" class="control-btn" title="Mute"><i class="fa-solid fa-volume-high fa-fw"></i></button>
                                 <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5" class="custom-slider" style="width: 60px;">
@@ -131,6 +134,7 @@
                                     <div class="dropdown-option" data-value="album">Album</div>
                                     <div class="dropdown-option" data-value="artist">Artist</div>
                                     <div class="dropdown-option" data-value="song">Song name</div>
+                                    <div class="dropdown-option" data-value="playlist">Playlist</div>
                                 </div>
                             </div>
                         </div>
@@ -276,6 +280,43 @@
                         <i class="fa-solid fa-trash-can"></i> CLEAR ALL MUSIC
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Playlist Prompt Modal -->
+    <div id="playlist-prompt-modal" class="modal-overlay">
+        <div class="settings-content" style="width: 380px;">
+            <div class="modal-header">
+                <h3 id="playlist-prompt-title">NEW PLAYLIST</h3>
+                <button id="close-playlist-prompt-btn" class="close-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 15px;">
+                <div class="setting-item flex-column" style="align-items: flex-start; gap: 8px;">
+                    <label for="playlist-prompt-input" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Playlist Name</label>
+                    <input type="text" id="playlist-prompt-input" placeholder="My Playlist" autocomplete="off" style="width: 100%; background-color: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); padding: 10px 12px; border-radius: 8px; color: white; font-family: var(--font-body); outline: none;">
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px; border-top: 1px solid var(--card-border); padding-top: 15px;">
+                <button id="playlist-prompt-cancel" class="settings-btn" style="background: none; border: 1px solid var(--card-border); color: white; padding: 10px 20px; border-radius: 10px; cursor: pointer; font-family: var(--font-body); font-size: 0.85rem;">Cancel</button>
+                <button id="playlist-prompt-submit" class="settings-btn" style="background: var(--accent); color: #000000; font-weight: 700; border: none; padding: 10px 20px; border-radius: 10px; cursor: pointer; font-family: var(--font-body); font-size: 0.85rem;">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirm Modal -->
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="settings-content" style="width: 380px;">
+            <div class="modal-header">
+                <h3 id="confirm-modal-title">CONFIRM ACTION</h3>
+                <button id="close-confirm-modal-btn" class="close-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 15px;">
+                <p id="confirm-modal-message" style="font-size: 0.9rem; line-height: 1.5; color: var(--text-primary);"></p>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px; border-top: 1px solid var(--card-border); padding-top: 15px;">
+                <button id="confirm-modal-cancel" class="settings-btn" style="background: none; border: 1px solid var(--card-border); color: white; padding: 10px 20px; border-radius: 10px; cursor: pointer; font-family: var(--font-body); font-size: 0.85rem;">Cancel</button>
+                <button id="confirm-modal-submit" class="settings-btn" style="background: #ef4444; color: #ffffff; font-weight: 700; border: none; padding: 10px 20px; border-radius: 10px; cursor: pointer; font-family: var(--font-body); font-size: 0.85rem;">Confirm</button>
             </div>
         </div>
     </div>

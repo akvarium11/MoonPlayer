@@ -861,8 +861,9 @@ body {
     transition: opacity 0.2s ease, visibility 0.2s ease;
     z-index: 1;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
 }
 
 .dynamic-island.expanded .island-expanded {
@@ -877,7 +878,8 @@ body {
     border: none;
     padding: 0;
     width: 100%;
-    height: 100%;
+    height: 116px;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 18px;
@@ -1669,16 +1671,7 @@ body {
 /* ==========================================
    DYNAMIC ISLAND QUEUE STYLES
    ========================================== */
-.dynamic-island.expanded.queue-expanded .island-expanded {
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: flex-start;
-}
 
-.dynamic-island.expanded.queue-expanded .audio-player {
-    height: 116px !important;
-    flex-shrink: 0;
-}
 
 .island-queue-section {
     display: none !important;
@@ -1790,4 +1783,126 @@ body {
     text-overflow: ellipsis;
     max-width: 100px;
 }
+
+/* Playlist Management Styles */
+.playlist-create-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 15px;
+    margin-bottom: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+}
+.playlist-create-row input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: #ffffff;
+    font-size: 0.88rem;
+}
+.playlist-create-row button {
+    background: var(--accent);
+    border: none;
+    color: #000000;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: filter 0.2s;
+}
+.playlist-create-row button:hover {
+    filter: brightness(1.1);
+}
+
+.playlist-delete-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    margin-left: auto;
+}
+.playlist-delete-btn:hover {
+    color: #ef4444;
+    background-color: rgba(239, 68, 68, 0.1);
+}
+
+.song-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 15px;
+}
+.song-action-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 6px;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+}
+.song-action-btn:hover {
+    background-color: var(--hover-bg);
+    color: #ffffff;
+}
+.song-action-btn.remove-btn:hover {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+.playlist-context-menu {
+    position: fixed;
+    background-color: #16161a;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    padding: 6px 0;
+    z-index: 10000;
+    min-width: 180px;
+    font-size: 0.85rem;
+    animation: fadeIn 0.15s ease;
+}
+.playlist-context-menu-item {
+    padding: 8px 12px;
+    color: #e2e8f0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.2s;
+}
+.playlist-context-menu-item:hover {
+    background-color: var(--hover-bg);
+    color: #ffffff;
+}
+.playlist-context-menu-divider {
+    height: 1px;
+    background-color: rgba(255, 255, 255, 0.1);
+    margin: 6px 0;
+}
+
+/* Like Button Styles */
+.like-btn {
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+.like-btn.liked {
+    color: #ef4444 !important;
+}
+.like-btn.liked:hover {
+    color: #f87171 !important;
+}
+
 
