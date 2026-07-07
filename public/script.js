@@ -124,11 +124,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Simulate entry animation
     let loadingPct = 0;
+    
+    // Preloader Hints Rotation
+    const preloaderHints = [
+        "Hint: you can change background effects in settings",
+        "Hint: you can pin the dynamic island using the lock icon",
+        "Hint: import M3U / M3U8 files to quickly load playlists",
+        "Hint: use MoonPlayer.exe to run the player silently in the background",
+        "Hint: click the '+' button on any track to add it to a playlist",
+        "Hint: custom playlists are preserved across site restarts",
+        "Hint: compilation albums are grouped by directory to keep folders tidy",
+        "Hint: use search categories to filter by Album, Artist, Song, or Playlist"
+    ];
+
+    const loadingHintEl = document.getElementById('loading-hint');
+    let preloaderHintInterval = null;
+    
+    if (loadingHintEl) {
+        // Set initial random hint
+        let currentPreloaderHintIdx = Math.floor(Math.random() * preloaderHints.length);
+        loadingHintEl.textContent = preloaderHints[currentPreloaderHintIdx];
+
+        preloaderHintInterval = setInterval(() => {
+            loadingHintEl.classList.add('fade-out');
+            setTimeout(() => {
+                currentPreloaderHintIdx = (currentPreloaderHintIdx + 1) % preloaderHints.length;
+                loadingHintEl.textContent = preloaderHints[currentPreloaderHintIdx];
+                loadingHintEl.classList.remove('fade-out');
+            }, 300);
+        }, 3000);
+    }
+
     const interval = setInterval(() => {
         loadingPct += Math.floor(Math.random() * 15) + 5;
         if (loadingPct >= 100) {
             loadingPct = 100;
             clearInterval(interval);
+            if (preloaderHintInterval) {
+                clearInterval(preloaderHintInterval);
+            }
             setTimeout(() => {
                 // Load directly
                 if (preloaderOverlay) preloaderOverlay.classList.add('hidden');
@@ -2908,6 +2942,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+
 
     // Startup initialization
     async function initServerLibrary() {

@@ -1930,3 +1930,21 @@ body {
 }
 
 
+
+/* Loading Screen Hint Styles */
+.loading-hint {
+    font-family: var(--font-body);
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    opacity: 0.6;
+    text-align: center;
+    max-width: 320px;
+    letter-spacing: 0.02em;
+    font-weight: 500;
+    transition: opacity 0.3s ease;
+}
+.loading-hint.fade-out {
+    opacity: 0;
+}
+
+
