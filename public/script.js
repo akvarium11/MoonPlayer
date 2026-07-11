@@ -2615,6 +2615,43 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function getAllCachedMetadata(paths) {
+        try {
+            const db = await getDB();
+            return new Promise((resolve, reject) => {
+                if (paths.length === 0) {
+                    resolve([]);
+                    return;
+                }
+                const tx = db.transaction(METADATA_STORE, 'readonly');
+                const store = tx.objectStore(METADATA_STORE);
+                const results = [];
+                let completed = 0;
+                
+                paths.forEach((path, idx) => {
+                    const request = store.get(path);
+                    request.onsuccess = (e) => {
+                        results[idx] = e.target.result;
+                        completed++;
+                        if (completed === paths.length) {
+                            resolve(results);
+                        }
+                    };
+                    request.onerror = () => {
+                        results[idx] = null;
+                        completed++;
+                        if (completed === paths.length) {
+                            resolve(results);
+                        }
+                    };
+                });
+            });
+        } catch (err) {
+            console.error("Failed to query IndexedDB metadata cache in bulk:", err);
+            return [];
+        }
+    }
+
     async function cacheMetadata(path, metadata) {
         try {
             const db = await getDB();
@@ -3042,46 +3079,58 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            searchResults.innerHTML = `
-                <div class="empty-state">
-                    <i class="fa-solid fa-spinner fa-spin"></i>
-                    <p>Processing Library...</p>
-                    <span id="scan-progress">Processed: 0 / ${songs.length} files</span>
-                </div>
-            `;
+            // Fetch cached metadata in bulk
+            const cachedResults = await getAllCachedMetadata(songs.map(s => s.path));
+            const uncachedSongs = [];
+            const processedSongs = [];
 
-            allSongs = [];
-            let processedCount = 0;
-            const progressSpan = document.getElementById('scan-progress');
-            const concurrency = 6;
-
-            const processServerSong = async (song) => {
-                try {
-                    let cached = await getCachedMetadata(song.path);
-                    if (cached) {
-                        allSongs.push(cached);
-                    } else {
-                        const metadata = await parseServerSongMetadata(song);
-                        allSongs.push(metadata);
-                        await cacheMetadata(song.path, metadata);
-                    }
-                } catch (err) {
-                    console.error("Failed processing server metadata, using fallback:", song.name, err);
-                    const fallback = generateServerFallbackMetadata(song);
-                    allSongs.push(fallback);
-                } finally {
-                    processedCount++;
-                    if (progressSpan) {
-                        progressSpan.textContent = `Processed: ${processedCount} / ${songs.length} files`;
-                    }
+            songs.forEach((song, idx) => {
+                const cached = cachedResults[idx];
+                if (cached) {
+                    processedSongs.push(cached);
+                } else {
+                    uncachedSongs.push(song);
                 }
-            };
+            });
 
-            for (let i = 0; i < songs.length; i += concurrency) {
-                const batch = songs.slice(i, i + concurrency);
-                await Promise.all(batch.map(song => processServerSong(song)));
+            // If there are uncached songs, process them with a loading screen
+            if (uncachedSongs.length > 0) {
+                searchResults.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fa-solid fa-spinner fa-spin"></i>
+                        <p>Processing Library...</p>
+                        <span id="scan-progress">Parsing tags: 0 / ${uncachedSongs.length} files</span>
+                    </div>
+                `;
+
+                let processedCount = 0;
+                const progressSpan = document.getElementById('scan-progress');
+                const concurrency = 6;
+
+                const processUncachedSong = async (song) => {
+                    try {
+                        const metadata = await parseServerSongMetadata(song);
+                        processedSongs.push(metadata);
+                        await cacheMetadata(song.path, metadata);
+                    } catch (err) {
+                        console.error("Failed processing server metadata, using fallback:", song.name, err);
+                        const fallback = generateServerFallbackMetadata(song);
+                        processedSongs.push(fallback);
+                    } finally {
+                        processedCount++;
+                        if (progressSpan) {
+                            progressSpan.textContent = `Parsing tags: ${processedCount} / ${uncachedSongs.length} files`;
+                        }
+                    }
+                };
+
+                for (let i = 0; i < uncachedSongs.length; i += concurrency) {
+                    const batch = uncachedSongs.slice(i, i + concurrency);
+                    await Promise.all(batch.map(song => processUncachedSong(song)));
+                }
             }
 
+            allSongs = processedSongs;
             buildLibraries();
             setupFuseSearch();
             renderLibraryPanel();
