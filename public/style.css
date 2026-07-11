@@ -716,8 +716,11 @@ body {
                 height 0.45s cubic-bezier(0.16, 1, 0.3, 1),
                 border-radius 0.45s cubic-bezier(0.16, 1, 0.3, 1),
                 border-color 0.3s ease,
-                box-shadow 0.45s ease;
-    will-change: width, height, border-radius;
+                box-shadow 0.45s ease,
+                transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: width, height, border-radius, transform;
+    transform: scale(var(--island-scale, 1));
+    transform-origin: top center;
 }
 
 .dynamic-island:hover {
@@ -1752,6 +1755,18 @@ body {
     background-color: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.01);
     transition: all 0.2s;
+    animation: slideInQueueItem 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes slideInQueueItem {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .queue-item:hover {

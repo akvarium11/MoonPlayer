@@ -58,6 +58,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let sleepTimerId = null;
     let sleepTimerTarget = null;
 
+    // Dynamic Island scale state
+    let islandScale = parseFloat(localStorage.getItem('moonplayer_island_scale')) || 1.0;
+    document.documentElement.style.setProperty('--island-scale', islandScale);
+
     const playerCard = document.querySelector('.player-card');
     const cardShine = document.getElementById('card-shine');
 
@@ -2067,6 +2071,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loopBtn.classList.remove('active');
             loopBtn.innerHTML = '<i class="fa-solid fa-repeat"></i>';
         }
+        updateIslandQueue();
     });
 
     if (likeBtn) {
@@ -2281,24 +2286,47 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!queueListEl) return;
 
         queueListEl.innerHTML = "";
-        const activeQueue = currentPlaylist.length > 0 ? currentPlaylist : allSongs;
-        const currentIdxInQueue = activeQueue.findIndex(s => s.globalIndex === currentlyPlayingIndex);
         
-        const upcoming = activeQueue.slice(currentIdxInQueue + 1, currentIdxInQueue + 7);
+        if (!playQueue || playQueue.length === 0) {
+            queueListEl.innerHTML = `<div style="font-size: 0.65rem; color: var(--text-secondary); text-align: center; margin-top: 25px; font-weight: 500; letter-spacing: 0.05em;">No upcoming tracks</div>`;
+            return;
+        }
+
+        // Get upcoming tracks based on playQueue and playQueueIndex, respecting isLoop === 'all'
+        let upcoming = [];
+        if (isLoop === 'all') {
+            for (let i = 1; i <= 6; i++) {
+                const idx = (playQueueIndex + i) % playQueue.length;
+                if (idx === playQueueIndex && playQueue.length > 1) {
+                    break;
+                }
+                upcoming.push(playQueue[idx]);
+                if (upcoming.length === playQueue.length - 1) {
+                    break;
+                }
+            }
+        } else {
+            upcoming = playQueue.slice(playQueueIndex + 1, playQueueIndex + 7);
+        }
+
         if (upcoming.length === 0) {
             queueListEl.innerHTML = `<div style="font-size: 0.65rem; color: var(--text-secondary); text-align: center; margin-top: 25px; font-weight: 500; letter-spacing: 0.05em;">No upcoming tracks</div>`;
             return;
         }
 
-        upcoming.forEach(song => {
+        upcoming.forEach((song, localIdx) => {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'queue-item';
+            itemDiv.style.animationDelay = `${localIdx * 45}ms`;
             itemDiv.innerHTML = `
                 <span class="queue-item-title">${song.title}</span>
                 <span class="queue-item-artist">${song.artist}</span>
             `;
             itemDiv.addEventListener('click', (e) => {
                 e.stopPropagation();
+                // When clicked, play this song. We calculate its index in playQueue:
+                const queueTargetIdx = (playQueueIndex + 1 + localIdx) % playQueue.length;
+                playQueueIndex = queueTargetIdx;
                 playTrack(song.globalIndex);
             });
             queueListEl.appendChild(itemDiv);
@@ -2357,6 +2385,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const crossfadeDurationVal = document.getElementById('crossfade-duration-val');
     const crossfadeDurationContainer = document.getElementById('crossfade-duration-container');
 
+    const islandSizeSlider = document.getElementById('island-size-slider');
+    const islandSizeVal = document.getElementById('island-size-val');
+
     // Initialize toggle states in UI
     if (toggleTiltCheckbox) toggleTiltCheckbox.checked = isTiltEnabled;
     if (toggleGlowCheckbox) toggleGlowCheckbox.checked = isGlowEnabled;
@@ -2375,6 +2406,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             crossfadeDurationContainer.classList.add('hidden');
         }
+    }
+    if (islandSizeSlider) {
+        islandSizeSlider.value = islandScale;
+    }
+    if (islandSizeVal) {
+        islandSizeVal.textContent = `${Math.round(islandScale * 100)}%`;
     }
 
     // Show/Hide Modal
@@ -2475,6 +2512,18 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('moonplayer_crossfade_duration', crossfadeDuration);
             if (crossfadeDurationVal) {
                 crossfadeDurationVal.textContent = `${crossfadeDuration}s`;
+            }
+        });
+    }
+
+    // Dynamic Island Size Slider
+    if (islandSizeSlider) {
+        islandSizeSlider.addEventListener('input', (e) => {
+            islandScale = parseFloat(e.target.value);
+            localStorage.setItem('moonplayer_island_scale', islandScale);
+            document.documentElement.style.setProperty('--island-scale', islandScale);
+            if (islandSizeVal) {
+                islandSizeVal.textContent = `${Math.round(islandScale * 100)}%`;
             }
         });
     }
