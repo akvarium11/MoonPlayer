@@ -712,11 +712,12 @@ body {
     border-radius: 20px;
     
     /* Morphs smoothly between compact and expanded states */
-    transition: width 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.15),
-                height 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.15),
-                border-radius 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.15),
+    transition: width 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                height 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                border-radius 0.45s cubic-bezier(0.16, 1, 0.3, 1),
                 border-color 0.3s ease,
-                box-shadow 0.5s ease;
+                box-shadow 0.45s ease;
+    will-change: width, height, border-radius;
 }
 
 .dynamic-island:hover {

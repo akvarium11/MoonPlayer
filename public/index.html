@@ -217,6 +217,37 @@
                         <span class="switch-slider"></span>
                     </label>
                 </div>
+                <div class="setting-item">
+                    <label for="toggle-crossfade">Enable Cross-fade</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-crossfade">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item flex-column hidden" id="crossfade-duration-container" style="margin-top: 10px; width: 100%;">
+                    <div class="slider-label-row" style="display: flex; justify-content: space-between; width: 100%; font-size: 0.8rem; margin-bottom: 5px;">
+                        <span>Cross-fade Duration</span>
+                        <span id="crossfade-duration-val">3s</span>
+                    </div>
+                    <input type="range" id="crossfade-duration-slider" min="1" max="10" step="1" value="3" class="custom-slider" style="width: 100%;">
+                </div>
+                <div class="setting-item flex-column" style="align-items: flex-start; width: 100%;">
+                    <label style="margin-bottom: 5px;">Sleep Timer</label>
+                    <div class="dropdown-select" id="sleep-timer-dropdown" style="width: 100%;">
+                        <span id="selected-sleep-timer-text">▼ Disabled</span>
+                        <div class="dropdown-options" id="sleep-timer-options-list">
+                            <div class="dropdown-option" data-value="off">Disabled</div>
+                            <div class="dropdown-option" data-value="15">15 Minutes</div>
+                            <div class="dropdown-option" data-value="30">30 Minutes</div>
+                            <div class="dropdown-option" data-value="45">45 Minutes</div>
+                            <div class="dropdown-option" data-value="60">60 Minutes</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="setting-item hidden" id="sleep-timer-countdown-container" style="justify-content: space-between; font-size: 0.75rem; width: 100%;">
+                    <span>Time Remaining</span>
+                    <span id="sleep-timer-countdown-val" style="color: var(--accent); font-weight: bold;">--:--</span>
+                </div>
                 <div class="setting-item flex-column">
                     <label>Accent Color</label>
                     <div class="color-options">

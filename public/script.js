@@ -48,6 +48,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let isGlowEnabled = localStorage.getItem('moonplayer_glow') !== 'false';
     let accentColor = localStorage.getItem('moonplayer_accent') || '#ffffff';
 
+    // Cross-fade settings state
+    let isCrossfadeEnabled = localStorage.getItem('moonplayer_crossfade') === 'true';
+    let crossfadeDuration = parseInt(localStorage.getItem('moonplayer_crossfade_duration'), 10) || 3;
+    let isCrossfadingTriggered = false;
+    let crossfadeIntervalId = null;
+
+    // Sleep Timer state
+    let sleepTimerId = null;
+    let sleepTimerTarget = null;
+
     const playerCard = document.querySelector('.player-card');
     const cardShine = document.getElementById('card-shine');
 
@@ -298,9 +308,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const ctx = canvas.getContext('2d');
 
     function resizeCanvas() {
-        if (!canvas) return;
-        canvas.width = canvas.parentElement.clientWidth * window.devicePixelRatio;
-        canvas.height = canvas.parentElement.clientHeight * window.devicePixelRatio;
+        if (!canvas || !canvas.parentElement) return;
+        const targetWidth = Math.floor(canvas.parentElement.clientWidth * window.devicePixelRatio);
+        const targetHeight = Math.floor(canvas.parentElement.clientHeight * window.devicePixelRatio);
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+        }
     }
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
@@ -317,6 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function drawVisualizer() {
         visualizerAnimationId = requestAnimationFrame(drawVisualizer);
+        resizeCanvas();
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -1193,7 +1208,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Dropdown Option Select
-    document.querySelectorAll('.dropdown-option').forEach(option => {
+    document.querySelectorAll('#search-type-dropdown .dropdown-option').forEach(option => {
         option.addEventListener('click', (e) => {
             e.stopPropagation();
             const val = option.getAttribute('data-value');
@@ -1762,9 +1777,53 @@ document.addEventListener('DOMContentLoaded', () => {
             audioContext.resume();
         }
 
+        // Cross-fade fade-out of current playing track
+        if (isCrossfadeEnabled && bgAudio.src && !bgAudio.paused && bgAudio.currentTime > 0) {
+            const fadeAudio = new Audio();
+            fadeAudio.src = bgAudio.src;
+            fadeAudio.currentTime = bgAudio.currentTime;
+            fadeAudio.volume = bgAudio.volume;
+            
+            fadeAudio.play().then(() => {
+                const fadeInterval = 50; // ms
+                const fadeSteps = (crossfadeDuration * 1000) / fadeInterval;
+                let currentStep = 0;
+                const initialVolume = fadeAudio.volume;
+                
+                const intervalId = setInterval(() => {
+                    currentStep++;
+                    const volume = initialVolume * (1 - (currentStep / fadeSteps));
+                    if (volume <= 0 || isNaN(volume)) {
+                        clearInterval(intervalId);
+                        fadeAudio.pause();
+                        fadeAudio.remove();
+                    } else {
+                        fadeAudio.volume = volume;
+                    }
+                }, fadeInterval);
+            }).catch(e => {
+                console.log("FadeAudio play failed", e);
+                fadeAudio.remove();
+            });
+        }
+
+        isCrossfadingTriggered = false;
+        if (crossfadeIntervalId) {
+            clearInterval(crossfadeIntervalId);
+            crossfadeIntervalId = null;
+        }
+
         // Set source and play
         bgAudio.src = song.src;
         bgAudio.load();
+
+        // If crossfade, start new audio at 0 volume
+        const targetVol = parseFloat(volumeSlider.value);
+        if (isCrossfadeEnabled) {
+            bgAudio.volume = 0;
+        } else {
+            bgAudio.volume = targetVol;
+        }
 
         // Update Dynamic Island Details
         document.getElementById('mini-track-title').textContent = song.title;
@@ -1773,6 +1832,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('track-title').textContent = song.title;
         document.getElementById('track-artist').textContent = song.artist;
         updateLikeButtonState();
+        
+        // Update Media Session Metadata
+        updateMediaSessionMetadata(song);
 
         // Reset progress slider
         progressSlider.value = 0;
@@ -1787,6 +1849,25 @@ document.addEventListener('DOMContentLoaded', () => {
             isPlaying = true;
             playIcon.className = 'fa-solid fa-pause';
             setCoverAnimationState(true);
+            updateMediaSessionPlaybackState('playing');
+            
+            if (isCrossfadeEnabled) {
+                const fadeInterval = 50; // ms
+                const fadeSteps = (crossfadeDuration * 1000) / fadeInterval;
+                let currentStep = 0;
+                
+                crossfadeIntervalId = setInterval(() => {
+                    currentStep++;
+                    const volume = targetVol * (currentStep / fadeSteps);
+                    if (volume >= targetVol || isNaN(volume)) {
+                        clearInterval(crossfadeIntervalId);
+                        crossfadeIntervalId = null;
+                        bgAudio.volume = targetVol;
+                    } else {
+                        bgAudio.volume = volume;
+                    }
+                }, fadeInterval);
+            }
             
             // Re-render views to highlight currently playing item
             updateHighlighting();
@@ -1799,6 +1880,7 @@ document.addEventListener('DOMContentLoaded', () => {
             isPlaying = false;
             playIcon.className = 'fa-solid fa-play';
             setCoverAnimationState(false);
+            updateMediaSessionPlaybackState('paused');
             updateHighlighting();
         });
     }
@@ -1857,15 +1939,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (isPlaying) {
+            if (crossfadeIntervalId) {
+                clearInterval(crossfadeIntervalId);
+                crossfadeIntervalId = null;
+                bgAudio.volume = parseFloat(volumeSlider.value);
+            }
             bgAudio.pause();
             playIcon.className = 'fa-solid fa-play';
             setCoverAnimationState(false);
             isPlaying = false;
+            updateMediaSessionPlaybackState('paused');
         } else {
+            if (crossfadeIntervalId) {
+                clearInterval(crossfadeIntervalId);
+                crossfadeIntervalId = null;
+            }
             bgAudio.play().then(() => {
                 playIcon.className = 'fa-solid fa-pause';
                 setCoverAnimationState(true);
                 isPlaying = true;
+                updateMediaSessionPlaybackState('playing');
             }).catch(e => console.log(e));
         }
         updateHighlighting();
@@ -1899,11 +1992,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     volumeSlider.addEventListener('input', (e) => {
+        if (crossfadeIntervalId) {
+            clearInterval(crossfadeIntervalId);
+            crossfadeIntervalId = null;
+        }
         setVolume(parseFloat(e.target.value));
     });
 
     muteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (crossfadeIntervalId) {
+            clearInterval(crossfadeIntervalId);
+            crossfadeIntervalId = null;
+        }
         if (bgAudio.volume > 0) {
             lastVolume = bgAudio.volume;
             setVolume(0);
@@ -2021,6 +2122,19 @@ document.addEventListener('DOMContentLoaded', () => {
     function handlePrev() {
         if (playQueue.length === 0) return;
         
+        // If track progress is more than 5 seconds, rewind to the start of the current track
+        if (bgAudio && bgAudio.currentTime > 5) {
+            bgAudio.currentTime = 0;
+            if (progressSlider) {
+                progressSlider.value = 0;
+                progressSlider.style.setProperty('--value', '0%');
+            }
+            if (currentTimeEl) {
+                currentTimeEl.textContent = formatTime(0);
+            }
+            return;
+        }
+
         if (isLoop === 'all') {
             playQueueIndex = (playQueueIndex - 1 + playQueue.length) % playQueue.length;
         } else {
@@ -2072,6 +2186,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const percent = (current / duration) * 100;
             progressSlider.value = percent;
             progressSlider.style.setProperty('--value', `${percent}%`);
+
+            // Crossfade trigger near the end of the track
+            if (isCrossfadeEnabled && duration > crossfadeDuration * 2) {
+                if (current >= duration - crossfadeDuration && !isCrossfadingTriggered) {
+                    isCrossfadingTriggered = true;
+                    if (isLoop === 'one') {
+                        playTrack(currentlyPlayingIndex);
+                    } else {
+                        handleNext();
+                    }
+                }
+            }
         }
     });
 
@@ -2226,9 +2352,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const customColorPicker = document.getElementById('custom-color-picker');
     const colorPickerWrapper = document.querySelector('.color-picker-wrapper');
 
+    const toggleCrossfadeCheckbox = document.getElementById('toggle-crossfade');
+    const crossfadeDurationSlider = document.getElementById('crossfade-duration-slider');
+    const crossfadeDurationVal = document.getElementById('crossfade-duration-val');
+    const crossfadeDurationContainer = document.getElementById('crossfade-duration-container');
+
     // Initialize toggle states in UI
     if (toggleTiltCheckbox) toggleTiltCheckbox.checked = isTiltEnabled;
     if (toggleGlowCheckbox) toggleGlowCheckbox.checked = isGlowEnabled;
+    if (toggleCrossfadeCheckbox) {
+        toggleCrossfadeCheckbox.checked = isCrossfadeEnabled;
+    }
+    if (crossfadeDurationSlider) {
+        crossfadeDurationSlider.value = crossfadeDuration;
+    }
+    if (crossfadeDurationVal) {
+        crossfadeDurationVal.textContent = `${crossfadeDuration}s`;
+    }
+    if (crossfadeDurationContainer) {
+        if (isCrossfadeEnabled) {
+            crossfadeDurationContainer.classList.remove('hidden');
+        } else {
+            crossfadeDurationContainer.classList.add('hidden');
+        }
+    }
 
     // Show/Hide Modal
     if (settingsBtn && settingsModal) {
@@ -2304,6 +2451,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 createSnowflake();
             }
         }
+    }
+
+    // Toggle Crossfade
+    if (toggleCrossfadeCheckbox) {
+        toggleCrossfadeCheckbox.addEventListener('change', (e) => {
+            isCrossfadeEnabled = e.target.checked;
+            localStorage.setItem('moonplayer_crossfade', isCrossfadeEnabled);
+            if (crossfadeDurationContainer) {
+                if (isCrossfadeEnabled) {
+                    crossfadeDurationContainer.classList.remove('hidden');
+                } else {
+                    crossfadeDurationContainer.classList.add('hidden');
+                }
+            }
+        });
+    }
+
+    // Crossfade Duration Slider
+    if (crossfadeDurationSlider) {
+        crossfadeDurationSlider.addEventListener('input', (e) => {
+            crossfadeDuration = parseInt(e.target.value, 10);
+            localStorage.setItem('moonplayer_crossfade_duration', crossfadeDuration);
+            if (crossfadeDurationVal) {
+                crossfadeDurationVal.textContent = `${crossfadeDuration}s`;
+            }
+        });
     }
 
     // Initialize color active state on load
@@ -2952,6 +3125,244 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
+
+    // ==========================================
+    // 13. MEDIA SESSION API INTEGRATION
+    // ==========================================
+    function updateMediaSessionMetadata(song) {
+        if ('mediaSession' in navigator && song) {
+            const artworkUrl = new URL(song.cover || DEFAULT_COVER, window.location.href).href;
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: song.title,
+                artist: song.artist,
+                album: song.album || 'MoonPlayer Library',
+                artwork: [
+                    { src: artworkUrl, sizes: '96x96', type: 'image/png' },
+                    { src: artworkUrl, sizes: '128x128', type: 'image/png' },
+                    { src: artworkUrl, sizes: '192x192', type: 'image/png' },
+                    { src: artworkUrl, sizes: '256x256', type: 'image/png' },
+                    { src: artworkUrl, sizes: '384x384', type: 'image/png' },
+                    { src: artworkUrl, sizes: '512x512', type: 'image/png' }
+                ]
+            });
+        }
+    }
+
+    function updateMediaSessionPlaybackState(state) {
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = state;
+        }
+    }
+
+    function initMediaSessionHandlers() {
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.setActionHandler('play', () => {
+                if (playBtn) playBtn.click();
+            });
+            navigator.mediaSession.setActionHandler('pause', () => {
+                if (playBtn) playBtn.click();
+            });
+            navigator.mediaSession.setActionHandler('previoustrack', () => {
+                handlePrev();
+            });
+            navigator.mediaSession.setActionHandler('nexttrack', () => {
+                handleNext();
+            });
+            navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+                const offset = details.seekOffset || 10;
+                bgAudio.currentTime = Math.max(0, bgAudio.currentTime - offset);
+            });
+            navigator.mediaSession.setActionHandler('seekforward', (details) => {
+                const offset = details.seekOffset || 10;
+                bgAudio.currentTime = Math.min(bgAudio.duration || 0, bgAudio.currentTime + offset);
+            });
+        }
+    }
+    initMediaSessionHandlers();
+
+    // ==========================================
+    // 14. GLOBAL KEYBOARD SHORTCUTS
+    // ==========================================
+    const isTypingInInput = () => {
+        const activeEl = document.activeElement;
+        if (!activeEl) return false;
+        const tag = activeEl.tagName.toLowerCase();
+        return tag === 'input' || tag === 'textarea' || activeEl.isContentEditable;
+    };
+
+    document.addEventListener('keydown', (e) => {
+        if (isTypingInInput()) return;
+
+        switch (e.code) {
+            case 'Space':
+                e.preventDefault();
+                if (playBtn) playBtn.click();
+                break;
+            case 'ArrowLeft':
+                e.preventDefault();
+                if (bgAudio) bgAudio.currentTime = Math.max(0, bgAudio.currentTime - 5);
+                break;
+            case 'ArrowRight':
+                e.preventDefault();
+                if (bgAudio) bgAudio.currentTime = Math.min(bgAudio.duration || 0, bgAudio.currentTime + 5);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                if (volumeSlider) {
+                    const newVol = Math.min(1, parseFloat(volumeSlider.value) + 0.05);
+                    setVolume(newVol);
+                }
+                break;
+            case 'ArrowDown':
+                e.preventDefault();
+                if (volumeSlider) {
+                    const newVol = Math.max(0, parseFloat(volumeSlider.value) - 0.05);
+                    setVolume(newVol);
+                }
+                break;
+            case 'KeyM':
+                e.preventDefault();
+                if (muteBtn) muteBtn.click();
+                break;
+            case 'KeyL':
+                e.preventDefault();
+                if (likeBtn) likeBtn.click();
+                break;
+            case 'KeyS':
+                e.preventDefault();
+                if (shuffleBtn) shuffleBtn.click();
+                break;
+            case 'KeyR':
+                e.preventDefault();
+                if (loopBtn) loopBtn.click();
+                break;
+        }
+    });
+
+    // ==========================================
+    // 15. SLEEP TIMER LOGIC (CUSTOM DROPDOWN)
+    // ==========================================
+    const sleepTimerDropdown = document.getElementById('sleep-timer-dropdown');
+    const selectedSleepTimerText = document.getElementById('selected-sleep-timer-text');
+    const sleepTimerCountdownContainer = document.getElementById('sleep-timer-countdown-container');
+    const sleepTimerCountdownVal = document.getElementById('sleep-timer-countdown-val');
+
+    if (sleepTimerDropdown) {
+        sleepTimerDropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+            sleepTimerDropdown.classList.toggle('open');
+        });
+
+        document.addEventListener('click', () => {
+            sleepTimerDropdown.classList.remove('open');
+        });
+    }
+
+    // Custom Dropdown Option Select for Sleep Timer
+    document.querySelectorAll('#sleep-timer-options-list .dropdown-option').forEach(option => {
+        option.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const val = option.getAttribute('data-value');
+            
+            if (selectedSleepTimerText) {
+                selectedSleepTimerText.textContent = `▼ ${option.textContent}`;
+            }
+            if (sleepTimerDropdown) {
+                sleepTimerDropdown.classList.remove('open');
+            }
+
+            // Clear any active sleep timer
+            if (sleepTimerId) {
+                clearInterval(sleepTimerId);
+                sleepTimerId = null;
+            }
+            sleepTimerTarget = null;
+
+            if (val === 'off') {
+                if (sleepTimerCountdownContainer) {
+                    sleepTimerCountdownContainer.classList.add('hidden');
+                }
+                return;
+            }
+
+            const minutes = parseInt(val, 10);
+            sleepTimerTarget = Date.now() + minutes * 60 * 1000;
+            
+            if (sleepTimerCountdownContainer) {
+                sleepTimerCountdownContainer.classList.remove('hidden');
+            }
+            
+            updateSleepTimerCountdown();
+
+            sleepTimerId = setInterval(() => {
+                updateSleepTimerCountdown();
+            }, 1000);
+        });
+    });
+
+    function updateSleepTimerCountdown() {
+        if (!sleepTimerTarget) return;
+
+        const timeLeft = sleepTimerTarget - Date.now();
+
+        if (timeLeft <= 0) {
+            clearInterval(sleepTimerId);
+            sleepTimerId = null;
+            sleepTimerTarget = null;
+            
+            if (sleepTimerCountdownVal) {
+                sleepTimerCountdownVal.textContent = "00:00";
+            }
+            
+            // Premium Touch: Fade out over 5 seconds before pausing
+            if (isPlaying && bgAudio) {
+                const initialVol = bgAudio.volume;
+                const fadeDuration = 5000; // 5 seconds
+                const fadeInterval = 100;
+                const steps = fadeDuration / fadeInterval;
+                let currentStep = 0;
+
+                const fadeOutTimer = setInterval(() => {
+                    currentStep++;
+                    const vol = initialVol * (1 - (currentStep / steps));
+                    if (vol <= 0 || isNaN(vol)) {
+                        clearInterval(fadeOutTimer);
+                        bgAudio.pause();
+                        bgAudio.volume = initialVol; // restore original volume for next play
+                        isPlaying = false;
+                        if (playIcon) playIcon.className = 'fa-solid fa-play';
+                        setCoverAnimationState(false);
+                        updateMediaSessionPlaybackState('paused');
+                        updateHighlighting();
+                    } else {
+                        bgAudio.volume = vol;
+                    }
+                }, fadeInterval);
+            } else {
+                if (bgAudio) bgAudio.pause();
+                isPlaying = false;
+                if (playIcon) playIcon.className = 'fa-solid fa-play';
+                setCoverAnimationState(false);
+                updateMediaSessionPlaybackState('paused');
+                updateHighlighting();
+            }
+
+            if (selectedSleepTimerText) {
+                selectedSleepTimerText.textContent = "▼ Disabled";
+            }
+            if (sleepTimerCountdownContainer) {
+                sleepTimerCountdownContainer.classList.add('hidden');
+            }
+            return;
+        }
+
+        const mins = Math.floor(timeLeft / 60000);
+        const secs = Math.floor((timeLeft % 60000) / 1000);
+        
+        if (sleepTimerCountdownVal) {
+            sleepTimerCountdownVal.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+    }
 
     // Startup initialization
     async function initServerLibrary() {
