@@ -1970,4 +1970,35 @@ body {
     opacity: 0;
 }
 
+/* Back Button Styles */
+.nav-back-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--card-border);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    margin-right: 8px;
+}
+
+.nav-back-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--accent);
+    transform: translateX(-2px);
+}
+
+.nav-back-btn:active {
+    transform: scale(0.95) translateX(-2px);
+}
+
+.nav-back-btn.hidden {
+    display: none !important;
+}
+
 

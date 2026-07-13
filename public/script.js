@@ -205,6 +205,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let artists = [];    // Grouped by Artist Name
     let playlists = {};  // Custom playlists: { name: [path1, path2, ...] }
     let currentSelectedPlaylistName = null; // Currently selected playlist
+    
+    // Navigation History Stack
+    const historyStack = [];
+    let isInternalNavigation = false;
+
     let currentPlaylist = []; // Songs currently shown in the right panel
     let currentlyPlayingIndex = -1; // Index within allSongs
     let isPlaying = false;
@@ -916,9 +921,58 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
+    // 9a. NAVIGATION HISTORY MANAGEMENT
+    // ==========================================
+    function pushToHistory(viewState) {
+        if (isInternalNavigation) return;
+        
+        // Don't push duplicate states
+        const last = historyStack[historyStack.length - 1];
+        if (last && last.type === viewState.type && last.key === viewState.key) {
+            return;
+        }
+        
+        historyStack.push(viewState);
+        updateBackButtonVisibility();
+    }
+
+    function handleGoBack() {
+        if (historyStack.length <= 1) return;
+        
+        historyStack.pop(); // Remove current state
+        const prevState = historyStack[historyStack.length - 1];
+        
+        isInternalNavigation = true;
+        if (prevState) {
+            if (prevState.type === 'album') {
+                selectAlbum(prevState.key);
+            } else if (prevState.type === 'artist') {
+                selectArtist(prevState.key);
+            } else if (prevState.type === 'playlist') {
+                selectPlaylist(prevState.key);
+            } else if (prevState.type === 'home') {
+                resetRightPanel();
+            }
+        }
+        isInternalNavigation = false;
+        updateBackButtonVisibility();
+    }
+
+    function updateBackButtonVisibility() {
+        const navBackBtn = document.getElementById('nav-back-btn');
+        if (!navBackBtn) return;
+        if (historyStack.length > 1) {
+            navBackBtn.classList.remove('hidden');
+        } else {
+            navBackBtn.classList.add('hidden');
+        }
+    }
+
+    // ==========================================
     // 9b. PLAYLIST MANAGEMENT
     // ==========================================
     function resetRightPanel() {
+        pushToHistory({ type: 'home' });
         if (detailTitle) detailTitle.textContent = "Welcome to MoonPlayer";
         if (detailArtist) detailArtist.textContent = "Load your offline music files";
         if (detailMeta) detailMeta.textContent = "Select a folder to start indexing tracks";
@@ -1076,6 +1130,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function selectPlaylist(playlistName) {
         currentSelectedPlaylistName = playlistName;
+        pushToHistory({ type: 'playlist', key: playlistName });
         
         // Reset cover border radius to default
         if (detailCover) detailCover.style.borderRadius = '';
@@ -1587,6 +1642,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!album) return;
 
         currentSelectedPlaylistName = null;
+        pushToHistory({ type: 'album', key: albumKey });
 
         // Reset cover border radius to default (rounded square)
         if (detailCover) detailCover.style.borderRadius = '';
@@ -1609,6 +1665,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!artist) return;
 
         currentSelectedPlaylistName = null;
+        pushToHistory({ type: 'artist', key: artistKey });
 
         // Group tracks by album to find unique albums
         const artistAlbums = [];
@@ -3582,6 +3639,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Startup initialization
     async function initServerLibrary() {
         updateLikeButtonState();
+        
+        // Bind click event for Back Button
+        const navBackBtn = document.getElementById('nav-back-btn');
+        if (navBackBtn) {
+            navBackBtn.addEventListener('click', handleGoBack);
+        }
+        
+        // Initialize history stack with current/initial home state
+        pushToHistory({ type: 'home' });
+
         const folders = await fetchServerFolders();
         if (folders && folders.length > 0) {
             await reloadLibraryFromServer();
