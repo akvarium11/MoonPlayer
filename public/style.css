@@ -959,6 +959,7 @@ body {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    padding-right: 76px;
 }
 
 .island-expanded #track-title {
