@@ -1589,14 +1589,19 @@ body {
 /* ==========================================
    ARTIST ALBUMS GRID & CLICKABLE ELEMENTS
    ========================================== */
-.clickable-artist {
+.clickable-artist, .artist-link {
     cursor: pointer;
     transition: color 0.2s ease;
 }
 
-.clickable-artist:hover {
+.clickable-artist:hover, .artist-link:hover {
     text-decoration: underline !important;
     color: var(--accent) !important;
+}
+
+#detail-artist.clickable-artist:hover {
+    text-decoration: none !important;
+    color: inherit !important;
 }
 
 .albums-grid-container {

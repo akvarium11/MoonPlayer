@@ -658,6 +658,41 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Helper: Escape HTML strings to prevent XSS
+    function escapeHtml(str) {
+        if (typeof str !== 'string') return '';
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    // Helper: Split artist string by common separators into an array of individual artists
+    function splitArtists(artistStr) {
+        if (!artistStr) return ["Unknown Artist"];
+        const lower = artistStr.toLowerCase().trim();
+        if (lower === "various artists" || lower === "various" || lower === "unknown artist" || lower === "unknown") {
+            return [artistStr.trim()];
+        }
+        
+        // Split by commas, forward/back slashes, semicolons, pipes, or standalone words & / and / feat / ft
+        const separators = /[,/;\\|]|\s+(?:&|and|feat\.?|ft\.?)\s+/i;
+        const list = artistStr.split(separators)
+            .map(a => a.trim())
+            .filter(a => a.length > 0 && a.toLowerCase() !== 'various artists' && a.toLowerCase() !== 'various');
+            
+        return list.length > 0 ? list : [artistStr.trim()];
+    }
+
+    // Helper: Convert artist string to HTML containing clickable links for each artist
+    function formatArtistLinks(artistStr) {
+        if (!artistStr) return "Unknown Artist";
+        const artistsList = splitArtists(artistStr);
+        return artistsList.map(name => `<span class="artist-link" data-name="${escapeHtml(name)}">${escapeHtml(name)}</span>`).join(', ');
+    }
+
     // Helper: Filename parsing ("Artist - Title.mp3")
     function parseFilename(name) {
         const withoutExt = name.substring(0, name.lastIndexOf('.')) || name;
@@ -758,25 +793,39 @@ document.addEventListener('DOMContentLoaded', () => {
             albumsMap[albumKey].tracks.push(song);
 
             // Group by Artist
-            const artistKey = song.artist ? song.artist.toLowerCase() : "unknown artist";
-            if (!artistsMap[artistKey]) {
-                artistsMap[artistKey] = {
-                    artistKey: artistKey,
-                    name: song.artist || "Unknown Artist",
-                    tracks: []
-                };
-            }
-            artistsMap[artistKey].tracks.push(song);
+            const artistNames = splitArtists(song.artist);
+            artistNames.forEach(artistName => {
+                const artistKey = artistName.toLowerCase();
+                if (!artistsMap[artistKey]) {
+                    artistsMap[artistKey] = {
+                        artistKey: artistKey,
+                        name: artistName,
+                        tracks: []
+                    };
+                }
+                artistsMap[artistKey].tracks.push(song);
+            });
         });
 
         // Convert Maps to sorted arrays
         albums = Object.values(albumsMap).map(album => {
-            // If it's a split/compilation album, set artist to "Various Artists"
+            // If it's a split/compilation album, set artist to comma-separated list of unique artists
             if (album.tracks.length > 0) {
-                const firstArtist = album.tracks[0].artist;
-                const allSameArtist = album.tracks.every(t => t.artist === firstArtist);
-                if (!allSameArtist) {
-                    album.artist = "Various Artists";
+                const albumArtistsSet = new Set();
+                album.tracks.forEach(track => {
+                    const trackArtists = splitArtists(track.artist);
+                    trackArtists.forEach(ta => albumArtistsSet.add(ta));
+                });
+                
+                const albumArtists = Array.from(albumArtistsSet);
+                album.artists = albumArtists;
+                
+                if (albumArtists.length > 1) {
+                    album.artist = albumArtists.join(", ");
+                } else if (albumArtists.length === 1) {
+                    album.artist = albumArtists[0];
+                } else {
+                    album.artist = "Unknown Artist";
                 }
             }
 
@@ -1571,7 +1620,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderPlaylistView(title, artist, metaText, coverUrl) {
         detailTitle.textContent = title;
-        detailArtist.textContent = artist;
+        if (detailArtist) {
+            if (detailArtist.classList.contains('clickable-artist') && artist) {
+                detailArtist.innerHTML = formatArtistLinks(artist);
+            } else {
+                detailArtist.textContent = artist || "";
+            }
+        }
         detailMeta.innerHTML = metaText || "";
         detailCover.src = coverUrl || DEFAULT_COVER;
 
@@ -1624,7 +1679,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="song-main-info">
                     <div class="song-title clickable-artist">${song.title}</div>
-                    <div class="song-artist clickable-artist">${song.artist}</div>
+                    <div class="song-artist">${formatArtistLinks(song.artist)}</div>
                 </div>
                 <div class="song-album clickable-artist">${song.album}</div>
                 <div class="song-duration" id="duration-${song.globalIndex}">--:--</div>
@@ -1633,7 +1688,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Play track on click, but NOT if clicking the artist/album/title links or actions!
             songDiv.addEventListener('click', (e) => {
-                if (e.target.classList.contains('clickable-artist') || e.target.closest('.song-actions')) return;
+                if (e.target.classList.contains('clickable-artist') || e.target.classList.contains('artist-link') || e.target.closest('.song-actions')) return;
                 
                 if (isShuffle) {
                     originalQueue = [...currentPlaylist];
@@ -1655,7 +1710,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (artistEl) {
                 artistEl.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    selectArtistByName(song.artist);
+                    const link = e.target.closest('.artist-link');
+                    if (link) {
+                        selectArtistByName(link.dataset.name);
+                    }
                 });
             }
 
@@ -1834,7 +1892,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('mini-cover').src = song.cover || DEFAULT_COVER;
         document.getElementById('track-cover').src = song.cover || DEFAULT_COVER;
         document.getElementById('track-title').textContent = song.title;
-        document.getElementById('track-artist').textContent = song.artist;
+        document.getElementById('track-artist').innerHTML = formatArtistLinks(song.artist);
         updateLikeButtonState();
         
         // Update Media Session Metadata
@@ -2335,9 +2393,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Bind click event on the right header artist name
     if (detailArtist) {
-        detailArtist.addEventListener('click', () => {
+        detailArtist.addEventListener('click', (e) => {
             if (detailArtist.classList.contains('clickable-artist')) {
-                selectArtistByName(detailArtist.textContent);
+                const link = e.target.closest('.artist-link');
+                if (link) {
+                    selectArtistByName(link.dataset.name);
+                } else if (e.target === detailArtist) {
+                    selectArtistByName(detailArtist.textContent);
+                }
             }
         });
     }
@@ -2347,9 +2410,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (trackArtistEl) {
         trackArtistEl.addEventListener('click', (e) => {
             e.stopPropagation();
-            const currentTrack = allSongs[currentlyPlayingIndex];
-            if (currentTrack) {
-                selectArtistByName(currentTrack.artist);
+            const link = e.target.closest('.artist-link');
+            if (link) {
+                selectArtistByName(link.dataset.name);
+            } else {
+                const currentTrack = allSongs[currentlyPlayingIndex];
+                if (currentTrack) {
+                    selectArtistByName(currentTrack.artist);
+                }
             }
         });
     }
