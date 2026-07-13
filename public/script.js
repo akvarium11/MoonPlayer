@@ -1667,6 +1667,14 @@ document.addEventListener('DOMContentLoaded', () => {
         currentSelectedPlaylistName = null;
         pushToHistory({ type: 'artist', key: artistKey });
 
+        // Trigger header animation
+        const selectedDetailsView = document.getElementById('selected-details-view');
+        if (selectedDetailsView) {
+            selectedDetailsView.style.animation = 'none';
+            selectedDetailsView.offsetHeight; // trigger reflow
+            selectedDetailsView.style.animation = 'fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both';
+        }
+
         // Group tracks by album to find unique albums
         const artistAlbums = [];
         const seenAlbums = new Set();
@@ -1697,9 +1705,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Render Albums Grid
         albumsGridContainer.innerHTML = "";
-        artistAlbums.forEach(album => {
+        artistAlbums.forEach((album, idx) => {
             const card = document.createElement('div');
             card.className = 'grid-album-card';
+            card.style.animation = 'fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both';
+            card.style.animationDelay = `${idx * 45}ms`;
             card.innerHTML = `
                 <div class="grid-album-cover-wrapper">
                     <img src="${album.cover || DEFAULT_COVER}" class="grid-album-cover" alt="${album.title}">
@@ -1725,6 +1735,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const albumsGridContainer = document.getElementById('albums-grid');
 
     function renderPlaylistView(title, artist, metaText, coverUrl) {
+        const selectedDetailsView = document.getElementById('selected-details-view');
+        if (selectedDetailsView) {
+            selectedDetailsView.style.animation = 'none';
+            selectedDetailsView.offsetHeight; // trigger reflow
+            selectedDetailsView.style.animation = 'fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both';
+        }
         detailTitle.textContent = title;
         if (detailArtist) {
             if (detailArtist.classList.contains('clickable-artist') && artist) {
