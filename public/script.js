@@ -809,6 +809,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Convert Maps to sorted arrays
         albums = Object.values(albumsMap).map(album => {
+            // Determine best album title
+            let bestTitle = "";
+            const titleCounts = {};
+            album.tracks.forEach(t => {
+                if (t.album && t.album !== "Unknown Album") {
+                    titleCounts[t.album] = (titleCounts[t.album] || 0) + 1;
+                }
+            });
+            
+            // Find the tag with the highest count
+            let maxCount = 0;
+            let mostFrequentTag = "";
+            for (const tag in titleCounts) {
+                if (titleCounts[tag] > maxCount) {
+                    maxCount = titleCounts[tag];
+                    mostFrequentTag = tag;
+                }
+            }
+            
+            // If we have a most frequent tag that is used by multiple tracks, use it!
+            if (maxCount > 1) {
+                bestTitle = mostFrequentTag;
+            } else if (maxCount === 1) {
+                // If there's only 1 count for tags, let's see if one of them is the folder name
+                const firstTrackPath = album.tracks[0].path || (album.tracks[0].file && album.tracks[0].file.webkitRelativePath);
+                const pathInfo = parseRelativePath(firstTrackPath);
+                const folderName = pathInfo.album;
+                if (folderName && titleCounts[folderName]) {
+                    bestTitle = folderName;
+                } else {
+                    bestTitle = mostFrequentTag;
+                }
+            }
+            
+            // Fallback to folder name
+            if (!bestTitle || bestTitle === "Unknown Album") {
+                const firstTrackPath = album.tracks[0].path || (album.tracks[0].file && album.tracks[0].file.webkitRelativePath);
+                const pathInfo = parseRelativePath(firstTrackPath);
+                bestTitle = pathInfo.album || "Unknown Album";
+            }
+            
+            // Update the album title
+            album.title = bestTitle;
+            
+            // Unify all tracks in this album to use this title
+            album.tracks.forEach(t => {
+                t.album = bestTitle;
+            });
+
             // If it's a split/compilation album, set artist to comma-separated list of unique artists
             if (album.tracks.length > 0) {
                 const albumArtistsSet = new Set();
