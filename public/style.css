@@ -133,11 +133,11 @@ body {
 .main-container {
     position: relative;
     z-index: 10;
-    width: 95vw;
-    max-width: 1450px;
-    height: 85vh;
-    min-height: 580px;
-    padding: 20px;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    min-height: 0;
+    padding: 80px 20px 20px 20px;
     opacity: 0;
     transform: scale(0.97) translateY(10px);
     transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1117,35 +1117,67 @@ body {
    ========================================== */
 @media (max-width: 900px) {
     .main-container {
-        height: auto;
-        max-height: 90vh;
+        width: 100vw;
+        height: 100vh;
+        max-height: none;
+        padding: 80px 15px 15px 15px;
     }
 
     .bio-card {
-        height: auto;
+        height: 100%;
         padding: 20px;
     }
 
     .dashboard-layout {
         flex-direction: column;
-        gap: 20px;
-        overflow-y: auto;
+        gap: 15px;
+        overflow: hidden;
     }
 
     .panel-left {
-        flex: none;
+        flex: 5;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
     }
 
     .results-list {
-        max-height: 200px;
+        flex: 1;
+        max-height: none;
+        overflow-y: auto;
     }
 
     .panel-right {
-        flex: 1;
+        flex: 5;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
     }
 
     .song-list-container {
-        max-height: 300px;
+        flex: 1;
+        max-height: none;
+        overflow-y: auto;
+    }
+
+    .albums-grid-container {
+        flex: 1;
+        max-height: none;
+        overflow-y: auto;
+    }
+
+    .detail-cover-wrapper {
+        width: 80px;
+        height: 80px;
+        border-radius: 12px;
+    }
+
+    .detail-title {
+        font-size: 1.1rem;
+    }
+
+    .detail-subtitle {
+        font-size: 0.85rem;
     }
 }
 
@@ -1279,7 +1311,11 @@ body {
     background-color: rgba(12, 12, 15, 0.85);
     border: 1px solid var(--card-border);
     border-radius: 20px;
-    width: 340px;
+    width: 720px;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
     padding: 25px;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
     transform: scale(0.92);
@@ -1289,6 +1325,52 @@ body {
 .modal-overlay.visible .settings-content {
     transform: scale(1);
 }
+
+.modal-body {
+    overflow-y: auto;
+    max-height: calc(90vh - 100px);
+    padding-right: 5px;
+}
+
+.modal-body::-webkit-scrollbar {
+    width: 6px;
+}
+.modal-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+.modal-body::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+}
+.modal-body::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+}
+
+.settings-columns {
+    display: flex;
+    gap: 30px;
+    width: 100%;
+}
+
+.settings-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* On mobile / portrait screens: stack columns vertically */
+@media (max-width: 768px) {
+    .settings-content {
+        width: 380px !important;
+        max-width: 95vw !important;
+    }
+    .settings-columns {
+        flex-direction: column;
+        gap: 10px;
+    }
+}
+
 
 .modal-header {
     display: flex;

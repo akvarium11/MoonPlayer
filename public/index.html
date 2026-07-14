@@ -197,129 +197,136 @@
                 <button id="close-settings-btn" class="close-btn"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
-                <div class="setting-item">
-                    <label for="toggle-tilt">3D Card Tilt Effect</label>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-tilt" checked>
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="setting-item">
-                    <label for="toggle-glow">Cursor Glow Effect</label>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-glow" checked>
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="setting-item">
-                    <label for="toggle-snow">Fall Particles (Snow)</label>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-snow" checked>
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="setting-item">
-                    <label for="toggle-crossfade">Enable Cross-fade</label>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-crossfade">
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-                <div class="setting-item flex-column hidden" id="crossfade-duration-container" style="margin-top: 10px; width: 100%;">
-                    <div class="slider-label-row" style="display: flex; justify-content: space-between; width: 100%; font-size: 0.8rem; margin-bottom: 5px;">
-                        <span>Cross-fade Duration</span>
-                        <span id="crossfade-duration-val">3s</span>
-                    </div>
-                    <input type="range" id="crossfade-duration-slider" min="1" max="10" step="1" value="3" class="custom-slider" style="width: 100%;">
-                </div>
-                <div class="setting-item flex-column" style="align-items: flex-start; width: 100%;">
-                    <label style="margin-bottom: 5px;">Sleep Timer</label>
-                    <div class="dropdown-select" id="sleep-timer-dropdown" style="width: 100%;">
-                        <span id="selected-sleep-timer-text">▼ Disabled</span>
-                        <div class="dropdown-options" id="sleep-timer-options-list">
-                            <div class="dropdown-option" data-value="off">Disabled</div>
-                            <div class="dropdown-option" data-value="15">15 Minutes</div>
-                            <div class="dropdown-option" data-value="30">30 Minutes</div>
-                            <div class="dropdown-option" data-value="45">45 Minutes</div>
-                            <div class="dropdown-option" data-value="60">60 Minutes</div>
+                <div class="settings-columns">
+                    <div class="settings-column">
+                        <div class="setting-item">
+                            <label for="toggle-tilt">3D Card Tilt Effect</label>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-tilt" checked>
+                                <span class="switch-slider"></span>
+                            </label>
                         </div>
-                    </div>
-                </div>
-                <div class="setting-item hidden" id="sleep-timer-countdown-container" style="justify-content: space-between; font-size: 0.75rem; width: 100%;">
-                    <span>Time Remaining</span>
-                    <span id="sleep-timer-countdown-val" style="color: var(--accent); font-weight: bold;">--:--</span>
-                </div>
-                <div class="setting-item flex-column" style="margin-top: 10px; width: 100%;">
-                    <div class="slider-label-row" style="display: flex; justify-content: space-between; width: 100%; font-size: 0.8rem; margin-bottom: 5px;">
-                        <span>Dynamic Island Size</span>
-                        <span id="island-size-val">100%</span>
-                    </div>
-                    <input type="range" id="island-size-slider" min="0.7" max="1.5" step="0.05" value="1.0" class="custom-slider" style="width: 100%;">
-                </div>
-                <div class="setting-item flex-column">
-                    <label>Accent Color</label>
-                    <div class="color-options">
-                        <div class="color-option active" style="background-color: #ffffff;" data-color="#ffffff" title="White"></div>
-                        <div class="color-option" style="background-color: #ff3366;" data-color="#ff3366" title="Pink"></div>
-                        <div class="color-option" style="background-color: #33ccff;" data-color="#33ccff" title="Blue"></div>
-                        <div class="color-option" style="background-color: #33ff99;" data-color="#33ff99" title="Neon Green"></div>
-                        <div class="color-option" style="background-color: #ff9933;" data-color="#ff9933" title="Orange"></div>
-                        <div class="color-option" style="background-color: #b366ff;" data-color="#b366ff" title="Purple"></div>
-                        <div class="color-picker-wrapper" title="Custom Color">
-                            <input type="color" id="custom-color-picker" value="#ffffff">
-                            <i class="fa-solid fa-palette"></i>
+                        <div class="setting-item">
+                            <label for="toggle-glow">Cursor Glow Effect</label>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-glow" checked>
+                                <span class="switch-slider"></span>
+                            </label>
                         </div>
-                    </div>
-                </div>
-                <div class="setting-item flex-column" style="margin-top: 10px; border-top: 1px solid var(--card-border); padding-top: 20px; width: 100%;">
-                    <label>Custom Background</label>
-                    <div class="bg-settings-wrapper" style="width: 100%;">
-                        <div class="bg-buttons-row">
-                            <button id="bg-upload-btn" class="settings-action-btn">
-                                <i class="fa-solid fa-image"></i> UPLOAD BG
-                            </button>
-                            <button id="bg-remove-btn" class="settings-action-btn delete-action hidden">
-                                <i class="fa-solid fa-trash-can"></i> REMOVE
-                            </button>
-                            <input type="file" id="bg-file-input" accept="image/*" style="display: none;">
+                        <div class="setting-item">
+                            <label for="toggle-snow">Fall Particles (Snow)</label>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-snow" checked>
+                                <span class="switch-slider"></span>
+                            </label>
                         </div>
-                        <div class="bg-slider-group hidden" id="bg-sliders-container">
-                            <div class="slider-item">
-                                <div class="slider-label-row">
-                                    <span>Opacity</span>
-                                    <span id="bg-opacity-val">40%</span>
-                                </div>
-                                <input type="range" id="bg-opacity-slider" min="0" max="1" step="0.05" value="0.4" class="custom-slider" style="width: 100%;">
+                        <div class="setting-item">
+                            <label for="toggle-crossfade">Enable Cross-fade</label>
+                            <label class="switch">
+                                <input type="checkbox" id="toggle-crossfade">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-item flex-column hidden" id="crossfade-duration-container" style="margin-top: 10px; width: 100%;">
+                            <div class="slider-label-row" style="display: flex; justify-content: space-between; width: 100%; font-size: 0.8rem; margin-bottom: 5px;">
+                                <span>Cross-fade Duration</span>
+                                <span id="crossfade-duration-val">3s</span>
                             </div>
-                            <div class="slider-item" style="margin-top: 12px;">
-                                <div class="slider-label-row">
-                                    <span>Blur</span>
-                                    <span id="bg-blur-val">10px</span>
+                            <input type="range" id="crossfade-duration-slider" min="1" max="10" step="1" value="3" class="custom-slider" style="width: 100%;">
+                        </div>
+                        <div class="setting-item flex-column" style="align-items: flex-start; width: 100%; margin-top: 10px;">
+                            <label style="margin-bottom: 5px;">Sleep Timer</label>
+                            <div class="dropdown-select" id="sleep-timer-dropdown" style="width: 100%;">
+                                <span id="selected-sleep-timer-text">▼ Disabled</span>
+                                <div class="dropdown-options" id="sleep-timer-options-list">
+                                    <div class="dropdown-option" data-value="off">Disabled</div>
+                                    <div class="dropdown-option" data-value="15">15 Minutes</div>
+                                    <div class="dropdown-option" data-value="30">30 Minutes</div>
+                                    <div class="dropdown-option" data-value="45">45 Minutes</div>
+                                    <div class="dropdown-option" data-value="60">60 Minutes</div>
                                 </div>
-                                <input type="range" id="bg-blur-slider" min="0" max="40" step="1" value="10" class="custom-slider" style="width: 100%;">
                             </div>
                         </div>
-                    </div>
-                </div>
-                <div class="setting-item flex-column" style="margin-top: 10px; border-top: 1px solid var(--card-border); padding-top: 20px; width: 100%;">
-                    <label>Server Music Folders</label>
-                    <div class="server-folders-wrapper" style="width: 100%; display: flex; flex-direction: column; gap: 10px;">
-                        <div class="folder-input-row" style="display: flex; gap: 8px; width: 100%;">
-                            <input type="text" id="server-folder-path" placeholder="Absolute path (e.g. D:\Music or /home/user/music)" style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 14px; color: #ffffff; font-family: inherit; font-size: 0.75rem; letter-spacing: 0.05em; outline: none; transition: border-color 0.25s;">
-                            <button id="add-server-folder-btn" class="settings-action-btn" style="flex: 0; min-width: 80px; margin-top: 0;">
-                                <i class="fa-solid fa-plus"></i> ADD
-                            </button>
+                        <div class="setting-item hidden" id="sleep-timer-countdown-container" style="justify-content: space-between; font-size: 0.75rem; width: 100%; margin-top: 5px;">
+                            <span>Time Remaining</span>
+                            <span id="sleep-timer-countdown-val" style="color: var(--accent); font-weight: bold;">--:--</span>
                         </div>
-                        <div id="server-folders-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto; padding-right: 4px;">
-                            <!-- List of folders will be rendered here dynamically -->
+                        <div class="setting-item flex-column" style="margin-top: 15px; width: 100%;">
+                            <div class="slider-label-row" style="display: flex; justify-content: space-between; width: 100%; font-size: 0.8rem; margin-bottom: 5px;">
+                                <span>Dynamic Island Size</span>
+                                <span id="island-size-val">100%</span>
+                            </div>
+                            <input type="range" id="island-size-slider" min="0.7" max="1.5" step="0.05" value="1.0" class="custom-slider" style="width: 100%;">
                         </div>
                     </div>
-                </div>
 
-                <div class="setting-item" style="margin-top: 15px; border-top: 1px solid var(--card-border); padding-top: 20px; justify-content: center; width: 100%;">
-                    <button id="clear-all-music-btn" class="settings-action-btn delete-action" style="width: 100%; padding: 12px; font-weight: bold; background: rgba(255, 50, 100, 0.15); border-color: rgba(255, 50, 100, 0.3); color: #ff3366; margin-top: 0; flex: 1;">
-                        <i class="fa-solid fa-trash-can"></i> CLEAR ALL MUSIC
-                    </button>
+                    <div class="settings-column">
+                        <div class="setting-item flex-column">
+                            <label>Accent Color</label>
+                            <div class="color-options">
+                                <div class="color-option active" style="background-color: #ffffff;" data-color="#ffffff" title="White"></div>
+                                <div class="color-option" style="background-color: #ff3366;" data-color="#ff3366" title="Pink"></div>
+                                <div class="color-option" style="background-color: #33ccff;" data-color="#33ccff" title="Blue"></div>
+                                <div class="color-option" style="background-color: #33ff99;" data-color="#33ff99" title="Neon Green"></div>
+                                <div class="color-option" style="background-color: #ff9933;" data-color="#ff9933" title="Orange"></div>
+                                <div class="color-option" style="background-color: #b366ff;" data-color="#b366ff" title="Purple"></div>
+                                <div class="color-picker-wrapper" title="Custom Color">
+                                    <input type="color" id="custom-color-picker" value="#ffffff">
+                                    <i class="fa-solid fa-palette"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="setting-item flex-column" style="margin-top: 10px; border-top: 1px solid var(--card-border); padding-top: 15px; width: 100%;">
+                            <label>Custom Background</label>
+                            <div class="bg-settings-wrapper" style="width: 100%;">
+                                <div class="bg-buttons-row">
+                                    <button id="bg-upload-btn" class="settings-action-btn">
+                                        <i class="fa-solid fa-image"></i> UPLOAD BG
+                                    </button>
+                                    <button id="bg-remove-btn" class="settings-action-btn delete-action hidden">
+                                        <i class="fa-solid fa-trash-can"></i> REMOVE
+                                    </button>
+                                    <input type="file" id="bg-file-input" accept="image/*" style="display: none;">
+                                </div>
+                                <div class="bg-slider-group hidden" id="bg-sliders-container">
+                                    <div class="slider-item">
+                                        <div class="slider-label-row">
+                                            <span>Opacity</span>
+                                            <span id="bg-opacity-val">40%</span>
+                                        </div>
+                                        <input type="range" id="bg-opacity-slider" min="0" max="1" step="0.05" value="0.4" class="custom-slider" style="width: 100%;">
+                                    </div>
+                                    <div class="slider-item" style="margin-top: 12px;">
+                                        <div class="slider-label-row">
+                                            <span>Blur</span>
+                                            <span id="bg-blur-val">10px</span>
+                                        </div>
+                                        <input type="range" id="bg-blur-slider" min="0" max="40" step="1" value="10" class="custom-slider" style="width: 100%;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="setting-item flex-column" style="margin-top: 10px; border-top: 1px solid var(--card-border); padding-top: 15px; width: 100%;">
+                            <label>Server Music Folders</label>
+                            <div class="server-folders-wrapper" style="width: 100%; display: flex; flex-direction: column; gap: 10px;">
+                                <div class="folder-input-row" style="display: flex; gap: 8px; width: 100%;">
+                                    <input type="text" id="server-folder-path" placeholder="Absolute path (e.g. D:\Music or /home/user/music)" style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 14px; color: #ffffff; font-family: inherit; font-size: 0.75rem; letter-spacing: 0.05em; outline: none; transition: border-color 0.25s;">
+                                    <button id="add-server-folder-btn" class="settings-action-btn" style="flex: 0; min-width: 80px; margin-top: 0;">
+                                        <i class="fa-solid fa-plus"></i> ADD
+                                    </button>
+                                </div>
+                                <div id="server-folders-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 90px; overflow-y: auto; padding-right: 4px;">
+                                    <!-- List of folders will be rendered here dynamically -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="setting-item" style="margin-top: 15px; border-top: 1px solid var(--card-border); padding-top: 15px; justify-content: center; width: 100%; margin-bottom: 0;">
+                            <button id="clear-all-music-btn" class="settings-action-btn delete-action" style="width: 100%; padding: 10px; font-weight: bold; background: rgba(255, 50, 100, 0.15); border-color: rgba(255, 50, 100, 0.3); color: #ff3366; margin-top: 0; flex: 1;">
+                                <i class="fa-solid fa-trash-can"></i> CLEAR ALL MUSIC
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

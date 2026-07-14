@@ -1,0 +1,3 @@
+windres resources.rc -o resources.o
+g++ -std=c++17 launcher.cpp resources.o -o MoonPlayer.exe -Iwebview2_sdk/build/native/include -lws2_32 -lole32 -lversion -lshlwapi -luuid -luser32 -lgdi32 -ldwmapi -mwindows -municode
+Remove-Item resources.o
