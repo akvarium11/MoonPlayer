@@ -1700,6 +1700,8 @@ document.addEventListener('DOMContentLoaded', () => {
         detailCover.style.borderRadius = '50%'; // circular cover for artist profiles
 
         // Toggle visibility
+        if (songListContainer) songListContainer.style.display = 'none'; // We actually hide it
+        // wait, in other places we used hidden class, let's keep consistency:
         if (songListContainer) songListContainer.classList.add('hidden');
         if (albumsGridContainer) albumsGridContainer.classList.remove('hidden');
 
@@ -3436,6 +3438,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Ensure we keep track of the playback state
     function updateMediaSessionPlaybackState(state) {
         if ('mediaSession' in navigator) {
             navigator.mediaSession.playbackState = state;

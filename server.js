@@ -227,4 +227,3 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`MoonPlayer server is running on port ${PORT}`);
     console.log(`Local URL: http://localhost:${PORT}`);
 });
-

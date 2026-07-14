@@ -1,9 +1,13 @@
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <shellapi.h>
-// Link with ws2_32.lib for Windows
+// Include MinGW support header for WebView2
+#include "webview_mingw_support.h"
+// Include WebView2 header and the webview wrapper
+#include "webview.h"
 #pragma comment(lib, "ws2_32.lib")
 #else
 #include <sys/socket.h>
@@ -14,8 +18,17 @@
 #include <iostream>
 #include <cstdlib>
 #endif
+
 #include <string>
 #include <vector>
+
+#ifdef _WIN32
+// Global process handles for the Windows background Node.js server
+HANDLE g_hServerProcess = NULL;
+HANDLE g_hServerThread = NULL;
+HANDLE g_hJob = NULL;
+bool g_SpawnedServer = false;
+#endif
 
 bool IsServerRunning(int port) {
 #ifdef _WIN32
@@ -106,74 +119,133 @@ bool LaunchServerLinux(const std::string& dir) {
 #endif
 
 #ifdef _WIN32
+// Clean up spawned server process on Windows
+void CleanupServer() {
+    if (g_hJob != NULL) {
+        CloseHandle(g_hJob);
+        g_hJob = NULL;
+    }
+    if (g_SpawnedServer && g_hServerProcess != NULL) {
+        // Soft terminate the process
+        TerminateProcess(g_hServerProcess, 0);
+        CloseHandle(g_hServerProcess);
+        g_hServerProcess = NULL;
+    }
+    if (g_hServerThread != NULL) {
+        CloseHandle(g_hServerThread);
+        g_hServerThread = NULL;
+    }
+}
+
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
     const int PORT = 7644;
+    const std::string SERVER_URL = "http://localhost:" + std::to_string(PORT);
     
-    // If server is already running, just open the browser and exit
-    if (IsServerRunning(PORT)) {
-        ShellExecuteW(NULL, L"open", L"http://localhost:7644", NULL, NULL, SW_SHOWNORMAL);
-        return 0;
-    }
+    // Check if the server is already running
+    if (!IsServerRunning(PORT)) {
+        // 1. Get path of the current executable
+        wchar_t exePath[MAX_PATH];
+        if (GetModuleFileNameW(NULL, exePath, MAX_PATH) == 0) {
+            MessageBoxW(NULL, L"Failed to determine executable directory.", L"MoonPlayer Launcher Error", MB_OK | MB_ICONERROR);
+            return 1;
+        }
 
-    // 1. Get the path of the current executable
-    wchar_t exePath[MAX_PATH];
-    if (GetModuleFileNameW(NULL, exePath, MAX_PATH) == 0) {
-        MessageBoxW(NULL, L"Failed to get executable directory path.", L"MoonPlayer Launcher Error", MB_OK | MB_ICONERROR);
-        return 1;
-    }
+        // Extract folder from path
+        std::wstring directory = exePath;
+        size_t lastSlash = directory.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos) {
+            directory = directory.substr(0, lastSlash);
+        }
 
-    // Extract directory from path
-    std::wstring directory = exePath;
-    size_t lastSlash = directory.find_last_of(L"\\/");
-    if (lastSlash != std::wstring::npos) {
-        directory = directory.substr(0, lastSlash);
-    }
+        // 2. Start server.js in background with CREATE_NO_WINDOW
+        std::wstring cmd = L"node server.js";
+        std::vector<wchar_t> cmdBuffer(cmd.begin(), cmd.end());
+        cmdBuffer.push_back(L'\0'); // Null-terminate
 
-    // 2. Prepare command line buffer
-    std::wstring cmd = L"node server.js";
-    std::vector<wchar_t> cmdBuffer(cmd.begin(), cmd.end());
-    cmdBuffer.push_back(L'\0'); // Null-terminate
-
-    // 3. Start node server.js with CREATE_NO_WINDOW
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi;
-    
-    BOOL success = CreateProcessW(
-        NULL,
-        cmdBuffer.data(),
-        NULL,
-        NULL,
-        FALSE,
-        CREATE_NO_WINDOW, // Hidden window process
-        NULL,
-        directory.c_str(), // Working directory of the exe
-        &si,
-        &pi
-    );
-
-    if (!success) {
-        MessageBoxW(
-            NULL, 
-            L"Failed to launch Node.js server.\n\nPlease make sure Node.js is installed, added to your system PATH, and that server.js exists in the application directory.", 
-            L"MoonPlayer Launcher Error", 
-            MB_OK | MB_ICONERROR
+        STARTUPINFOW si = { sizeof(si) };
+        PROCESS_INFORMATION pi;
+        
+        BOOL success = CreateProcessW(
+            NULL,
+            cmdBuffer.data(),
+            NULL,
+            NULL,
+            FALSE,
+            CREATE_NO_WINDOW, // Silent background process
+            NULL,
+            directory.c_str(), // Working directory
+            &si,
+            &pi
         );
-        return 1;
-    }
 
-    // Close process handles (let process run independently in background)
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
+        if (!success) {
+            MessageBoxW(
+                NULL, 
+                L"Failed to launch Node.js backend.\n\nPlease verify that Node.js is installed, added to system PATH, and that server.js exists in the app folder.", 
+                L"MoonPlayer Launcher Error", 
+                MB_OK | MB_ICONERROR
+            );
+            return 1;
+        }
 
-    // 4. Wait briefly for the port to open, then launch browser
-    for (int i = 0; i < 10; ++i) {
-        Sleep(200);
-        if (IsServerRunning(PORT)) {
-            break;
+        // Save process information so we can clean it up later
+        g_hServerProcess = pi.hProcess;
+        g_hServerThread = pi.hThread;
+        g_SpawnedServer = true;
+
+        // Associate with a Job Object to guarantee cleanup even if the parent crashes or is killed
+        g_hJob = CreateJobObjectW(NULL, NULL);
+        if (g_hJob != NULL) {
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = { 0 };
+            jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            if (SetInformationJobObject(g_hJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli))) {
+                AssignProcessToJobObject(g_hJob, pi.hProcess);
+            }
+        }
+
+        // 3. Wait for the server port to open
+        bool serverReady = false;
+        for (int i = 0; i < 20; ++i) { // Wait up to 4 seconds (20 * 200ms)
+            Sleep(200);
+            if (IsServerRunning(PORT)) {
+                serverReady = true;
+                break;
+            }
+        }
+
+        if (!serverReady) {
+            CleanupServer();
+            MessageBoxW(
+                NULL,
+                L"The background server did not respond in time.\n\nPlease try restarting the application.",
+                L"MoonPlayer Startup Error",
+                MB_OK | MB_ICONERROR
+            );
+            return 1;
         }
     }
 
-    ShellExecuteW(NULL, L"open", L"http://localhost:7644", NULL, NULL, SW_SHOWNORMAL);
+    // 4. Create and run WebView2 application
+    try {
+        webview::webview w(false, nullptr);
+        w.set_title("MoonPlayer");
+        w.set_size(1200, 800, WEBVIEW_HINT_NONE);
+        w.navigate(SERVER_URL);
+        w.run();
+    }
+    catch (const std::exception& e) {
+        std::string err = "Failed to initialize WebView2:\n";
+        err += e.what();
+        err += "\n\nPlease ensure you have Microsoft Edge WebView2 Runtime installed.";
+        MessageBoxA(NULL, err.c_str(), "MoonPlayer Error", MB_OK | MB_ICONERROR);
+    }
+    catch (...) {
+        MessageBoxW(NULL, L"An unexpected error occurred while initializing WebView2.", L"MoonPlayer Error", MB_OK | MB_ICONERROR);
+    }
+
+    // 5. Cleanup server process if we launched it
+    CleanupServer();
+
     return 0;
 }
 #else

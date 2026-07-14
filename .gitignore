@@ -24,4 +24,11 @@ pnpm-debug.log*
 
 # Compiled binaries
 *.exe
+*.o
+*.obj
+*.pdb
+*.ilk
+
+# WebView2 SDK
+webview2_sdk/
 
