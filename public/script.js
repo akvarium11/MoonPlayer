@@ -1142,7 +1142,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Toggle visibility
         if (albumsGridContainer) albumsGridContainer.classList.add('hidden');
-        if (songListContainer) songListContainer.classList.remove('hidden');
+        if (songListContainer) {
+            songListContainer.classList.remove('hidden');
+            songListContainer.style.display = '';
+        }
 
         const savedPaths = playlists[playlistName] || [];
         const playlistSongs = savedPaths.map(p => allSongs.find(s => s.path === p)).filter(Boolean);
@@ -1553,8 +1556,24 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="result-title">${item.title}</div>
                         <div class="result-subtitle">${item.artist} • ${item.album}</div>
                     </div>
+                    <div class="result-actions">
+                        <button class="result-action-btn add-btn" title="Add to Playlist">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                    </div>
                 `;
-                div.addEventListener('click', () => {
+
+                const addBtn = div.querySelector('.add-btn');
+                if (addBtn) {
+                    addBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        showAddToPlaylistMenu(addBtn, item);
+                    });
+                }
+
+                div.addEventListener('click', (e) => {
+                    if (e.target.closest('.result-actions')) return;
                     document.querySelectorAll('.result-item').forEach(el => el.classList.remove('active'));
                     div.classList.add('active');
                     const albumKey = item.albumKey;
@@ -1654,7 +1673,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Toggle visibility
         if (albumsGridContainer) albumsGridContainer.classList.add('hidden');
-        if (songListContainer) songListContainer.classList.remove('hidden');
+        if (songListContainer) {
+            songListContainer.classList.remove('hidden');
+            songListContainer.style.display = '';
+        }
 
         currentPlaylist = [...album.tracks];
         renderPlaylistView(album.title, album.artist, album.year, album.cover);
@@ -1700,7 +1722,6 @@ document.addEventListener('DOMContentLoaded', () => {
         detailCover.style.borderRadius = '50%'; // circular cover for artist profiles
 
         // Toggle visibility
-        if (songListContainer) songListContainer.style.display = 'none'; // We actually hide it
         // wait, in other places we used hidden class, let's keep consistency:
         if (songListContainer) songListContainer.classList.add('hidden');
         if (albumsGridContainer) albumsGridContainer.classList.remove('hidden');
