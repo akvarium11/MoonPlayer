@@ -230,6 +230,36 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
         webview::webview w(false, nullptr);
         w.set_title("MoonPlayer");
         w.set_size(1200, 800, WEBVIEW_HINT_NONE);
+
+        // Set custom window icon
+        HWND hwnd = (HWND)w.window();
+        if (hwnd != NULL) {
+            HINSTANCE hInst = GetModuleHandleW(NULL);
+            HICON hIconLarge = (HICON)LoadImageW(
+                hInst,
+                MAKEINTRESOURCEW(1),
+                IMAGE_ICON,
+                GetSystemMetrics(SM_CXICON),
+                GetSystemMetrics(SM_CYICON),
+                LR_DEFAULTCOLOR | LR_SHARED
+            );
+            HICON hIconSmall = (HICON)LoadImageW(
+                hInst,
+                MAKEINTRESOURCEW(1),
+                IMAGE_ICON,
+                GetSystemMetrics(SM_CXSMICON),
+                GetSystemMetrics(SM_CYSMICON),
+                LR_DEFAULTCOLOR | LR_SHARED
+            );
+
+            if (hIconLarge != NULL) {
+                SendMessageW(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIconLarge);
+            }
+            if (hIconSmall != NULL) {
+                SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIconSmall);
+            }
+        }
+
         w.navigate(SERVER_URL);
         w.run();
     }

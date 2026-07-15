@@ -135,6 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const islandContainer = document.querySelector('.dynamic-island-container');
     const preloaderContainer = document.getElementById('preloader-container');
     const progressBar = document.getElementById('progress-bar');
+    const preloaderPct = document.getElementById('preloader-pct');
 
     // Simulate entry animation
     let loadingPct = 0;
@@ -187,6 +188,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 300);
         }
         progressBar.style.width = `${loadingPct}%`;
+        if (preloaderPct) {
+            preloaderPct.textContent = `${loadingPct}%`;
+        }
     }, 100);
 
     // Resume AudioContext on first user click anywhere on the page
