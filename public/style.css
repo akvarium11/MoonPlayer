@@ -2375,6 +2375,47 @@ body {
     max-width: 100%;
     white-space: normal;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity: 1;
+    transform: scale(1);
+    height: auto;
+}
+
+.lyrics-line-next.gap-active {
+    opacity: 0;
+    transform: scale(0.9) translateY(-5px);
+    height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.lyrics-gap-progress-container {
+    width: 120px;
+    height: 0;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+    opacity: 0;
+    transform: scale(0.9) translateY(5px);
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lyrics-gap-progress-container.visible {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    height: 4px;
+}
+
+.lyrics-gap-progress-bar {
+    height: 100%;
+    width: 100%;
+    background: var(--accent);
+    transform-origin: left center;
+    transform: scaleX(0);
+    transition: transform 0.1s linear;
 }
 
 .lyrics-status-message {

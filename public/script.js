@@ -2601,7 +2601,13 @@ document.addEventListener('DOMContentLoaded', () => {
             currentLineEl.textContent = 'Loading lyrics...';
             currentLineEl.classList.add('lyrics-status-message');
         }
-        if (nextLineEl) nextLineEl.textContent = '';
+        if (nextLineEl) {
+            nextLineEl.textContent = '';
+            nextLineEl.classList.remove('gap-active');
+        }
+        
+        const progressContainer = document.getElementById('lyrics-gap-progress-container');
+        if (progressContainer) progressContainer.classList.remove('visible');
         
         if (!song.path) {
             if (currentLineEl) {
@@ -2680,6 +2686,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateLyricsDisplay(currentTime) {
         if (!currentLyrics || currentLyrics.length === 0) return;
         
+        const duration = bgAudio.duration || 0;
+        
+        // 1. Find the active line index
         let activeIdx = -1;
         for (let i = 0; i < currentLyrics.length; i++) {
             if (currentTime >= currentLyrics[i].time) {
@@ -2689,21 +2698,77 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
+        // 2. Update current line element
+        const currentLineEl = document.getElementById('lyrics-line-current');
+        const nextLineEl = document.getElementById('lyrics-line-next');
+        const progressContainer = document.getElementById('lyrics-gap-progress-container');
+        const progressBar = document.getElementById('lyrics-gap-progress-bar');
+        
         if (activeIdx !== currentLyricsIndex) {
             currentLyricsIndex = activeIdx;
-            
-            const currentLineEl = document.getElementById('lyrics-line-current');
-            const nextLineEl = document.getElementById('lyrics-line-next');
             
             if (currentLineEl) {
                 currentLineEl.classList.remove('lyrics-status-message');
                 const currentText = activeIdx >= 0 ? currentLyrics[activeIdx].text : '•••';
                 animateLyricText(currentLineEl, currentText);
             }
-            
+        }
+
+        // 3. Determine if there is an active gap/pause for the "next line" area
+        let showProgress = false;
+        let ratio = 0;
+        let nextLineText = '';
+
+        if (activeIdx === -1) {
+            // Before the first line of the song
+            const nextLine = currentLyrics[0];
+            const gap = nextLine.time;
+            if (gap > 4.0) {
+                showProgress = true;
+                ratio = Math.min(1, Math.max(0, currentTime / nextLine.time));
+            } else {
+                nextLineText = nextLine.text;
+            }
+        } else if (activeIdx < currentLyrics.length - 1) {
+            // Between lines
+            const prevLine = currentLyrics[activeIdx];
+            const nextLine = currentLyrics[activeIdx + 1];
+            const gap = nextLine.time - prevLine.time;
+            if (gap > 5.0) {
+                showProgress = true;
+                ratio = Math.min(1, Math.max(0, (currentTime - prevLine.time) / (nextLine.time - prevLine.time)));
+            } else {
+                nextLineText = nextLine.text;
+            }
+        } else {
+            // After the last line
+            const prevLine = currentLyrics[activeIdx];
+            if (duration > prevLine.time) {
+                const gap = duration - prevLine.time;
+                if (gap > 5.0) {
+                    showProgress = true;
+                    ratio = Math.min(1, Math.max(0, (currentTime - prevLine.time) / (duration - prevLine.time)));
+                }
+            }
+        }
+
+        // 4. Update the next line and progress bar display
+        if (showProgress) {
+            if (progressContainer) progressContainer.classList.add('visible');
             if (nextLineEl) {
-                const nextText = (activeIdx + 1 < currentLyrics.length) ? currentLyrics[activeIdx + 1].text : '';
-                animateLyricText(nextLineEl, nextText);
+                nextLineEl.classList.add('gap-active');
+                nextLineEl.textContent = '';
+            }
+            if (progressBar) {
+                progressBar.style.transform = `scaleX(${ratio})`;
+            }
+        } else {
+            if (progressContainer) progressContainer.classList.remove('visible');
+            if (nextLineEl) {
+                nextLineEl.classList.remove('gap-active');
+                if (nextLineEl.textContent !== nextLineText) {
+                    animateLyricText(nextLineEl, nextLineText);
+                }
             }
         }
     }
