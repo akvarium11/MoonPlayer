@@ -2680,6 +2680,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         lyrics.sort((a, b) => a.time - b.time);
+
+        // Heuristic: If the first line starts at the very beginning (e.g. 0.00)
+        // and there is a long instrumental intro before the second line starts,
+        // shift the first line's start time to just before the second line
+        // so that it doesn't show immediately during the intro.
+        if (lyrics.length > 1 && lyrics[0].time < 1.5) {
+            const gap = lyrics[1].time - lyrics[0].time;
+            if (gap > 5.0) {
+                lyrics[0].time = Math.max(1.0, lyrics[1].time - 4.0);
+            }
+        }
+
         return lyrics;
     }
 
