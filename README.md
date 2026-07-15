@@ -33,8 +33,6 @@
 - [x] **3D Card & Cursor Glow** - Eye-candy animations, tilt effects, and snow particles for premium aesthetics.
 - [x] **Lyrics Sync** - Real-time synchronization and display of `.lrc` lyrics file formats inside the expanded Dynamic Island.
 
-### ⏳ Planned / To Be Added
-- [ ] **Global Hotkeys** - Support for play, pause, and skip media keys system-wide.
 
 ---
 
@@ -135,8 +133,6 @@ This project is licensed under the ISC License.
 - [x] **3D-наклон и свечение** - Эффекты наклона карточек, свечение за курсором и падающие снежинки для премиального визуала.
 - [x] **Синхронизация текста песен** - Отображение синхронизированного текста из файлов `.lrc` прямо внутри Dynamic Island.
 
-### ⏳ В планах
-- [ ] **Глобальные горячие клавиши** - Поддержка системных медиа-клавиш (play, pause, next, prev).
 
 ---
 
