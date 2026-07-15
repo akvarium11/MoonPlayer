@@ -283,7 +283,11 @@ body {
     padding: 80px 20px 20px 20px;
     opacity: 0;
     transform: scale(0.97) translateY(10px);
-    transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: padding 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.main-container.tilt-enabled {
+    padding: 110px 100px 100px 100px;
 }
 
 .main-container.visible {

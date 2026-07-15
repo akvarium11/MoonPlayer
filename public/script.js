@@ -89,8 +89,8 @@ document.addEventListener('DOMContentLoaded', () => {
         playerCard.style.transition = 'transform 0.1s ease-out';
         
         // Tilt calculations (mild and premium)
-        const xAxis = (window.innerWidth / 2 - e.clientX) / 80;
-        const yAxis = (window.innerHeight / 2 - e.clientY) / 60;
+        const xAxis = (window.innerWidth / 2 - e.clientX) / 95;
+        const yAxis = (window.innerHeight / 2 - e.clientY) / 80;
         playerCard.style.transform = `perspective(1200px) rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
     });
 
@@ -132,6 +132,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     const preloaderOverlay = document.getElementById('preloader-overlay');
     const mainContainer = document.querySelector('.main-container');
+    if (mainContainer) {
+        mainContainer.classList.toggle('tilt-enabled', isTiltEnabled);
+    }
     const islandContainer = document.querySelector('.dynamic-island-container');
     const preloaderContainer = document.getElementById('preloader-container');
     const progressBar = document.getElementById('progress-bar');
@@ -2917,6 +2920,9 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleTiltCheckbox.addEventListener('change', (e) => {
             isTiltEnabled = e.target.checked;
             localStorage.setItem('moonplayer_tilt', isTiltEnabled);
+            if (mainContainer) {
+                mainContainer.classList.toggle('tilt-enabled', isTiltEnabled);
+            }
             if (!isTiltEnabled && playerCard) {
                 playerCard.style.transform = 'perspective(1200px) rotateY(0deg) rotateX(0deg)';
             }
