@@ -254,6 +254,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let playQueueIndex = -1;
     let originalQueue = []; // Keeps original order when shuffle is active
 
+    // Lyrics State
+    let currentLyrics = [];
+    let currentLyricsTrackPath = null;
+    let currentLyricsIndex = -2;
+
     // Search Mode State & Lazy Loading Results Panel
     let searchType = 'album'; // 'album', 'artist', or 'song'
     let fuse = null; // Fuse.js instance
@@ -427,6 +432,8 @@ document.addEventListener('DOMContentLoaded', () => {
         dynamicIsland.addEventListener('mouseleave', () => {
             if (window.innerWidth > 480 && !isIslandPinned && !dynamicIsland.classList.contains('locked')) {
                 dynamicIsland.classList.remove('expanded');
+                dynamicIsland.classList.remove('queue-expanded');
+                dynamicIsland.classList.remove('lyrics-expanded');
             }
         });
 
@@ -441,6 +448,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 dynamicIsland.classList.remove('expanded');
                 dynamicIsland.classList.remove('locked');
+                dynamicIsland.classList.remove('queue-expanded');
+                dynamicIsland.classList.remove('lyrics-expanded');
             }
         });
 
@@ -451,6 +460,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (dynamicIsland.classList.contains('expanded')) {
                 dynamicIsland.classList.remove('expanded');
                 dynamicIsland.classList.remove('locked');
+                dynamicIsland.classList.remove('queue-expanded');
+                dynamicIsland.classList.remove('lyrics-expanded');
             }
         });
 
@@ -2047,6 +2058,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update Media Session Metadata
         updateMediaSessionMetadata(song);
 
+        // Load lyrics
+        loadLyrics(song);
+
         // Reset progress slider
         progressSlider.value = 0;
         progressSlider.style.setProperty('--value', '0%');
@@ -2394,6 +2408,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const duration = bgAudio.duration;
         currentTimeEl.textContent = formatTime(current);
 
+        // Update lyrics display
+        updateLyricsDisplay(current);
+
         if (duration > 0) {
             const percent = (current / duration) * 100;
             progressSlider.value = percent;
@@ -2478,12 +2495,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Dynamic Island queue toggler and builder
     const islandQueueBtn = document.getElementById('island-queue-btn');
+    const islandLyricsBtn = document.getElementById('island-lyrics-btn');
+
     if (islandQueueBtn && dynamicIsland) {
         islandQueueBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            dynamicIsland.classList.toggle('queue-expanded');
-            if (dynamicIsland.classList.contains('queue-expanded')) {
+            if (dynamicIsland.classList.contains('lyrics-expanded')) {
+                dynamicIsland.classList.remove('lyrics-expanded');
+                dynamicIsland.classList.add('queue-expanded');
                 updateIslandQueue();
+            } else {
+                const isOpening = dynamicIsland.classList.toggle('queue-expanded');
+                if (isOpening && !dynamicIsland.classList.contains('expanded')) {
+                    dynamicIsland.classList.add('expanded');
+                    dynamicIsland.classList.add('locked');
+                }
+                if (isOpening) {
+                    updateIslandQueue();
+                }
+            }
+        });
+    }
+
+    if (islandLyricsBtn && dynamicIsland) {
+        islandLyricsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (dynamicIsland.classList.contains('queue-expanded')) {
+                dynamicIsland.classList.remove('queue-expanded');
+                dynamicIsland.classList.add('lyrics-expanded');
+                updateLyricsDisplay(bgAudio.currentTime);
+            } else {
+                const isOpening = dynamicIsland.classList.toggle('lyrics-expanded');
+                if (isOpening && !dynamicIsland.classList.contains('expanded')) {
+                    dynamicIsland.classList.add('expanded');
+                    dynamicIsland.classList.add('locked');
+                }
+                if (isOpening) {
+                    updateLyricsDisplay(bgAudio.currentTime);
+                }
             }
         });
     }
@@ -2538,6 +2587,133 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             queueListEl.appendChild(itemDiv);
         });
+    }
+
+    function loadLyrics(song) {
+        currentLyrics = [];
+        currentLyricsTrackPath = song.path;
+        currentLyricsIndex = -2;
+        
+        const currentLineEl = document.getElementById('lyrics-line-current');
+        const nextLineEl = document.getElementById('lyrics-line-next');
+        
+        if (currentLineEl) {
+            currentLineEl.textContent = 'Loading lyrics...';
+            currentLineEl.classList.add('lyrics-status-message');
+        }
+        if (nextLineEl) nextLineEl.textContent = '';
+        
+        if (!song.path) {
+            if (currentLineEl) {
+                currentLineEl.textContent = 'Lyrics unavailable';
+                currentLineEl.classList.add('lyrics-status-message');
+            }
+            return;
+        }
+        
+        const lrcPath = song.path.substring(0, song.path.lastIndexOf('.')) + '.lrc';
+        fetch(`/api/stream?path=${encodeURIComponent(lrcPath)}`)
+            .then(res => {
+                if (!res.ok) throw new Error('Lyrics not found');
+                return res.text();
+            })
+            .then(text => {
+                if (currentLyricsTrackPath !== song.path) return;
+                currentLyrics = parseLRC(text);
+                if (currentLyrics.length === 0) {
+                    if (currentLineEl) {
+                        currentLineEl.textContent = 'Lyrics file is empty';
+                        currentLineEl.classList.add('lyrics-status-message');
+                    }
+                } else {
+                    if (currentLineEl) {
+                        currentLineEl.classList.remove('lyrics-status-message');
+                    }
+                    updateLyricsDisplay(bgAudio.currentTime);
+                }
+            })
+            .catch(err => {
+                if (currentLyricsTrackPath !== song.path) return;
+                currentLyrics = [];
+                if (currentLineEl) {
+                    currentLineEl.textContent = 'No lyrics available';
+                    currentLineEl.classList.add('lyrics-status-message');
+                }
+                if (nextLineEl) nextLineEl.textContent = '';
+            });
+    }
+
+    function parseLRC(lrcText) {
+        const lines = lrcText.split(/\r?\n/);
+        const lyrics = [];
+        const timeReg = /\[(\d+):(\d+)(?:\.(\d+))?\]/g;
+        
+        let offset = 0;
+        const offsetMatch = lrcText.match(/\[offset:\s*(-?\d+)\s*\]/i);
+        if (offsetMatch) {
+            offset = parseInt(offsetMatch[1], 10) / 1000.0;
+        }
+
+        for (const line of lines) {
+            let match;
+            const text = line.replace(/\[\d+:\d+(?:\.\d+)?\]/g, '').trim();
+            
+            timeReg.lastIndex = 0;
+            while ((match = timeReg.exec(line)) !== null) {
+                const minutes = parseInt(match[1], 10);
+                const seconds = parseInt(match[2], 10);
+                const msStr = match[3] || '0';
+                let ms = parseFloat('0.' + msStr);
+                const time = minutes * 60 + seconds + ms + offset;
+                
+                // Do not add empty timing headers (or empty tags like [ar:Artist])
+                if (text || line.includes('] ')) {
+                    lyrics.push({ time, text });
+                }
+            }
+        }
+        
+        lyrics.sort((a, b) => a.time - b.time);
+        return lyrics;
+    }
+
+    function updateLyricsDisplay(currentTime) {
+        if (!currentLyrics || currentLyrics.length === 0) return;
+        
+        let activeIdx = -1;
+        for (let i = 0; i < currentLyrics.length; i++) {
+            if (currentTime >= currentLyrics[i].time) {
+                activeIdx = i;
+            } else {
+                break;
+            }
+        }
+        
+        if (activeIdx !== currentLyricsIndex) {
+            currentLyricsIndex = activeIdx;
+            
+            const currentLineEl = document.getElementById('lyrics-line-current');
+            const nextLineEl = document.getElementById('lyrics-line-next');
+            
+            if (currentLineEl) {
+                currentLineEl.classList.remove('lyrics-status-message');
+                const currentText = activeIdx >= 0 ? currentLyrics[activeIdx].text : '•••';
+                animateLyricText(currentLineEl, currentText);
+            }
+            
+            if (nextLineEl) {
+                const nextText = (activeIdx + 1 < currentLyrics.length) ? currentLyrics[activeIdx + 1].text : '';
+                animateLyricText(nextLineEl, nextText);
+            }
+        }
+    }
+
+    function animateLyricText(element, newText) {
+        if (element.textContent === newText) return;
+        element.textContent = newText;
+        element.classList.remove('lyric-animate');
+        void element.offsetWidth; // force reflow
+        element.classList.add('lyric-animate');
     }
 
     // Bind click event on the right header artist name

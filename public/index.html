@@ -67,6 +67,7 @@
             <!-- Expanded State -->
             <div class="island-expanded">
                 <button id="island-lock-btn" class="queue-toggle-btn lock-toggle-btn" title="Lock/Unlock Expanded State"><i class="fa-solid fa-lock-open"></i></button>
+                <button id="island-lyrics-btn" class="queue-toggle-btn lyrics-toggle-btn" title="Show Lyrics"><i class="fa-solid fa-music"></i></button>
                 <button id="island-queue-btn" class="queue-toggle-btn" title="Show Queue"><i class="fa-solid fa-list-ul"></i></button>
                 <div class="audio-player">
                     <div class="covers-container">
@@ -109,6 +110,14 @@
                     <div class="island-queue-title">Upcoming Queue</div>
                     <div class="island-queue-list custom-scrollbar" id="island-queue-list">
                         <!-- Queue items will be generated dynamically -->
+                    </div>
+                </div>
+                <!-- Lyrics section inside dynamic island -->
+                <div class="island-lyrics-section" id="island-lyrics-section">
+                    <div class="island-lyrics-title">Lyrics</div>
+                    <div class="island-lyrics-content" id="island-lyrics-content">
+                        <div class="lyrics-line-current lyrics-status-message" id="lyrics-line-current">Select a song to load lyrics</div>
+                        <div class="lyrics-line-next" id="lyrics-line-next"></div>
                     </div>
                 </div>
                 <div class="visualizer-wrapper">
