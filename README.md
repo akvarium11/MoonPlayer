@@ -22,7 +22,6 @@
 
 ## ⌨️Features 
 
-### ✅ Already Implemented
 - [x] **Desktop WebView Shell** - Native window container wrapping the application using Edge WebView2 (Windows) and WebKit2GTK (Linux).
 - [x] **Floating Dynamic Island** - Interactive, responsive island with smooth animations, compact/expanded states, and audio waveforms.
 - [x] **Accent Customization** - Dynamic theme accents including white, pink, blue, neon green, orange, purple, and a custom color picker.
@@ -125,7 +124,6 @@ This project is licensed under the ISC License.
 
 ## ⌨️Возможности 
 
-### ✅ Уже реализовано
 - [x] **Нативный WebView-контейнер** - Оболочка на C++ с использованием Edge WebView2 (Windows) и WebKit2GTK (Linux).
 - [x] **Интерактивный Dynamic Island** - Всплывающий остров с красивыми анимациями, компактным/расширенным состоянием и звуковыми волнами.
 - [x] **Кастомизация цветов** - Выбор цветовых акцентов (розовый, голубой, зеленый, оранжевый, фиолетовый) и палитра для своего цвета.
