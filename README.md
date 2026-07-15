@@ -22,7 +22,6 @@
 
 ## ⌨️Features 
 
-### ✅ Already Implemented
 - [x] **Desktop WebView Shell** - Native window container wrapping the application using Edge WebView2 (Windows) and WebKit2GTK (Linux).
 - [x] **Floating Dynamic Island** - Interactive, responsive island with smooth animations, compact/expanded states, and audio waveforms.
 - [x] **Accent Customization** - Dynamic theme accents including white, pink, blue, neon green, orange, purple, and a custom color picker.
@@ -32,10 +31,6 @@
 - [x] **Background Customization** - Upload custom images and tweak blur/opacity directly from the settings.
 - [x] **Automatic Server Daemon** - The C++ wrapper automatically boots and halts the Node.js server daemon to clean up resources upon exit.
 - [x] **3D Card & Cursor Glow** - Eye-candy animations, tilt effects, and snow particles for premium aesthetics.
-
-### ⏳ Planned / To Be Added
-- [ ] **Global Hotkeys** - Support for play, pause, and skip media keys system-wide.
-- [ ] **Lyrics Sync** - Displaying synchronized .lrc lyrics file formats.
 
 ---
 
@@ -125,7 +120,6 @@ This project is licensed under the ISC License.
 
 ## ⌨️Возможности 
 
-### ✅ Уже реализовано
 - [x] **Нативный WebView-контейнер** - Оболочка на C++ с использованием Edge WebView2 (Windows) и WebKit2GTK (Linux).
 - [x] **Интерактивный Dynamic Island** - Всплывающий остров с красивыми анимациями, компактным/расширенным состоянием и звуковыми волнами.
 - [x] **Кастомизация цветов** - Выбор цветовых акцентов (розовый, голубой, зеленый, оранжевый, фиолетовый) и палитра для своего цвета.
@@ -135,10 +129,6 @@ This project is licensed under the ISC License.
 - [x] **Настройка фона** - Загрузка своего фонового изображения, настройка прозрачности и размытия (blur) прямо из настроек.
 - [x] **Автоматическое управление сервером** - C++ лаунчер сам запускает Node.js в фоне и автоматически закрывает его при выходе.
 - [x] **3D-наклон и свечение** - Эффекты наклона карточек, свечение за курсором и падающие снежинки для премиального визуала.
-
-### ⏳ В планах
-- [ ] **Глобальные горячие клавиши** - Поддержка системных медиа-клавиш (play, pause, next, prev).
-- [ ] **Синхронизация субтитров** - Поддержка формата .lrc для отображения текста песен.
 
 ---
 
