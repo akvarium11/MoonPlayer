@@ -6,18 +6,21 @@
 #include <shellapi.h>
 // Include MinGW support header for WebView2
 #include "webview_mingw_support.h"
-// Include WebView2 header and the webview wrapper
-#include "webview.h"
 #pragma comment(lib, "ws2_32.lib")
 #else
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/wait.h>
+#include <signal.h>
 #include <limits.h>
 #include <iostream>
 #include <cstdlib>
 #endif
+
+// Include webview wrapper (available for both Windows and Linux)
+#include "webview.h"
 
 #include <string>
 #include <vector>
@@ -27,6 +30,10 @@
 HANDLE g_hServerProcess = NULL;
 HANDLE g_hServerThread = NULL;
 HANDLE g_hJob = NULL;
+bool g_SpawnedServer = false;
+#else
+// Global process/pid for the Linux background Node.js server
+pid_t g_ServerPid = -1;
 bool g_SpawnedServer = false;
 #endif
 
@@ -114,6 +121,8 @@ bool LaunchServerLinux(const std::string& dir) {
         execlp("node", "node", "server.js", (char*)NULL);
         exit(1);
     }
+    g_ServerPid = pid;
+    g_SpawnedServer = true;
     return true;
 }
 #endif
@@ -136,7 +145,18 @@ void CleanupServer() {
         g_hServerThread = NULL;
     }
 }
+#else
+// Clean up spawned server process on Linux
+void CleanupServer() {
+    if (g_SpawnedServer && g_ServerPid > 0) {
+        kill(g_ServerPid, SIGTERM);
+        int status;
+        waitpid(g_ServerPid, &status, WNOHANG);
+    }
+}
+#endif
 
+#ifdef _WIN32
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
     const int PORT = 7644;
     const std::string SERVER_URL = "http://localhost:" + std::to_string(PORT);
@@ -281,29 +301,56 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
 #else
 int main(int argc, char* argv[]) {
     const int PORT = 7644;
+    const std::string SERVER_URL = "http://localhost:" + std::to_string(PORT);
     
-    // If server is already running, just open the browser and exit
-    if (IsServerRunning(PORT)) {
-        system("xdg-open http://localhost:7644 &");
-        return 0;
-    }
+    // Check if the server is already running
+    if (!IsServerRunning(PORT)) {
+        // Launch server in background
+        std::string directory = GetExecutableDirectory();
+        if (!LaunchServerLinux(directory)) {
+            std::cerr << "Failed to launch server daemon." << std::endl;
+            return 1;
+        }
 
-    // Launch server in background
-    std::string directory = GetExecutableDirectory();
-    if (!LaunchServerLinux(directory)) {
-        std::cerr << "Failed to launch server daemon." << std::endl;
-        return 1;
-    }
+        // Wait briefly for port to open
+        bool serverReady = false;
+        for (int i = 0; i < 20; ++i) { // Wait up to 4 seconds (20 * 200ms)
+            usleep(200000); // 200ms
+            if (IsServerRunning(PORT)) {
+                serverReady = true;
+                break;
+            }
+        }
 
-    // Wait briefly for port to open
-    for (int i = 0; i < 10; ++i) {
-        usleep(200000); // 200ms
-        if (IsServerRunning(PORT)) {
-            break;
+        if (!serverReady) {
+            CleanupServer();
+            std::cerr << "The background server did not respond in time." << std::endl;
+            return 1;
         }
     }
 
-    system("xdg-open http://localhost:7644 &");
+    // Create and run WebView application on Linux
+    try {
+        webview::webview w(false, nullptr);
+        w.set_title("MoonPlayer");
+        w.set_size(1200, 800, WEBVIEW_HINT_NONE);
+        w.navigate(SERVER_URL);
+        w.run();
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Failed to initialize WebView: " << e.what() << std::endl;
+        std::cerr << "Attempting fallback to system browser..." << std::endl;
+        std::string cmd = "xdg-open " + SERVER_URL + " &";
+        int ret = system(cmd.c_str());
+        (void)ret;
+    }
+    catch (...) {
+        std::cerr << "An unexpected error occurred while initializing WebView." << std::endl;
+    }
+
+    // Cleanup server process if we launched it
+    CleanupServer();
+
     return 0;
 }
 #endif
