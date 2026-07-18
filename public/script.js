@@ -1230,6 +1230,506 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 50);
     }
 
+    function showTrackContextMenu(e, song) {
+        // Remove existing context menus
+        const existingMenus = document.querySelectorAll('.playlist-context-menu, .track-context-menu');
+        existingMenus.forEach(m => m.remove());
+
+        const menu = document.createElement('div');
+        menu.className = 'playlist-context-menu track-context-menu';
+
+        // Add to Playlist option
+        const addToPlaylistOption = document.createElement('div');
+        addToPlaylistOption.className = 'playlist-context-menu-item has-submenu';
+        addToPlaylistOption.innerHTML = `
+            <i class="fa-solid fa-list-ul"></i>
+            <span>Add to playlist</span>
+            <i class="fa-solid fa-chevron-right" style="margin-left: auto; font-size: 0.7rem; color: var(--text-secondary);"></i>
+        `;
+
+        // Create the submenu
+        const submenu = document.createElement('div');
+        submenu.className = 'playlist-context-submenu';
+
+        const playlistNames = Object.keys(playlists);
+        if (playlistNames.length === 0) {
+            const emptyItem = document.createElement('div');
+            emptyItem.className = 'playlist-context-menu-item';
+            emptyItem.style.color = 'var(--text-muted)';
+            emptyItem.style.cursor = 'default';
+            emptyItem.textContent = 'No playlists created';
+            submenu.appendChild(emptyItem);
+        } else {
+            playlistNames.forEach(name => {
+                const item = document.createElement('div');
+                item.className = 'playlist-context-menu-item';
+                
+                const hasSong = playlists[name].includes(song.path);
+                item.innerHTML = `
+                    <i class="fa-solid ${hasSong ? 'fa-check' : 'fa-music'}" style="${hasSong ? 'color: var(--accent);' : ''}"></i>
+                    <span>${name}</span>
+                `;
+                
+                item.addEventListener('click', (evt) => {
+                    evt.stopPropagation();
+                    if (hasSong) {
+                        playlists[name] = playlists[name].filter(p => p !== song.path);
+                    } else {
+                        playlists[name].push(song.path);
+                    }
+                    savePlaylists();
+                    menu.remove();
+                    if (currentSelectedPlaylistName === name) {
+                        selectPlaylist(name);
+                    }
+                    renderLibraryPanel();
+                });
+                submenu.appendChild(item);
+            });
+        }
+
+        const divider = document.createElement('div');
+        divider.className = 'playlist-context-menu-divider';
+        submenu.appendChild(divider);
+
+        const createOption = document.createElement('div');
+        createOption.className = 'playlist-context-menu-item';
+        createOption.innerHTML = `
+            <i class="fa-solid fa-plus"></i>
+            <span>Create New Playlist...</span>
+        `;
+        createOption.addEventListener('click', async (evt) => {
+            evt.stopPropagation();
+            menu.remove();
+            const name = await showCustomPrompt("New Playlist", "Playlist Name");
+            if (name === null) return;
+            const trimmedName = name.trim();
+            if (!trimmedName) return;
+            if (playlists[trimmedName]) {
+                alert("Playlist already exists!");
+                return;
+            }
+            playlists[trimmedName] = [song.path];
+            savePlaylists();
+            renderLibraryPanel();
+            alert(`Created playlist "${trimmedName}" and added track!`);
+        });
+        submenu.appendChild(createOption);
+
+        addToPlaylistOption.appendChild(submenu);
+        menu.appendChild(addToPlaylistOption);
+
+        // View Album option
+        const viewAlbumOption = document.createElement('div');
+        viewAlbumOption.className = 'playlist-context-menu-item';
+        viewAlbumOption.innerHTML = `
+            <i class="fa-solid fa-compact-disc"></i>
+            <span>View album</span>
+        `;
+        
+        const isUnknownAlbum = !song.album || song.album === 'Unknown Album' || song.album === 'Artist Profile';
+        if (isUnknownAlbum) {
+            viewAlbumOption.style.opacity = '0.5';
+            viewAlbumOption.style.cursor = 'not-allowed';
+            viewAlbumOption.title = 'Unknown Album';
+        } else {
+            viewAlbumOption.addEventListener('click', () => {
+                selectAlbumByNameAndArtist(song.album, song.artist, song.albumKey);
+                menu.remove();
+            });
+        }
+        menu.appendChild(viewAlbumOption);
+
+        document.body.appendChild(menu);
+        menu.style.position = 'fixed';
+
+        // Check placement logic
+        let x = e.clientX;
+        let y = e.clientY;
+        const menuWidth = 200;
+        const menuHeight = menu.offsetHeight || 120; // approximate fallback height
+
+        if (x + menuWidth > window.innerWidth) {
+            x = window.innerWidth - menuWidth - 10;
+        }
+        if (y + menuHeight > window.innerHeight) {
+            y = window.innerHeight - menuHeight - 10;
+        }
+
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+
+        // Position the submenu left or right dynamically
+        addToPlaylistOption.addEventListener('mouseenter', () => {
+            const rect = addToPlaylistOption.getBoundingClientRect();
+            if (rect.right + 180 > window.innerWidth) {
+                submenu.classList.add('submenu-left');
+            } else {
+                submenu.classList.remove('submenu-left');
+            }
+        });
+
+        // Close context menu handler
+        setTimeout(() => {
+            const closeMenu = (evt) => {
+                if (!menu.contains(evt.target)) {
+                    menu.remove();
+                    document.removeEventListener('click', closeMenu);
+                    document.removeEventListener('contextmenu', closeMenu);
+                }
+            };
+            document.addEventListener('click', closeMenu);
+            document.addEventListener('contextmenu', closeMenu);
+        }, 50);
+    }
+
+    function showAlbumContextMenu(e, album) {
+        // Remove existing context menus
+        const existingMenus = document.querySelectorAll('.playlist-context-menu, .track-context-menu');
+        existingMenus.forEach(m => m.remove());
+
+        const menu = document.createElement('div');
+        menu.className = 'playlist-context-menu track-context-menu';
+
+        // Add to Playlist option (adds all tracks of the album)
+        const addToPlaylistOption = document.createElement('div');
+        addToPlaylistOption.className = 'playlist-context-menu-item has-submenu';
+        addToPlaylistOption.innerHTML = `
+            <i class="fa-solid fa-list-ul"></i>
+            <span>Add to playlist</span>
+            <i class="fa-solid fa-chevron-right" style="margin-left: auto; font-size: 0.7rem; color: var(--text-secondary);"></i>
+        `;
+
+        // Create the submenu
+        const submenu = document.createElement('div');
+        submenu.className = 'playlist-context-submenu';
+
+        const playlistNames = Object.keys(playlists);
+        if (playlistNames.length === 0) {
+            const emptyItem = document.createElement('div');
+            emptyItem.className = 'playlist-context-menu-item';
+            emptyItem.style.color = 'var(--text-muted)';
+            emptyItem.style.cursor = 'default';
+            emptyItem.textContent = 'No playlists created';
+            submenu.appendChild(emptyItem);
+        } else {
+            playlistNames.forEach(name => {
+                const item = document.createElement('div');
+                item.className = 'playlist-context-menu-item';
+                
+                // An album's tracks are fully included if every track is in the playlist
+                const allIncluded = album.tracks && album.tracks.length > 0 && album.tracks.every(track => playlists[name].includes(track.path));
+                
+                item.innerHTML = `
+                    <i class="fa-solid ${allIncluded ? 'fa-check' : 'fa-music'}" style="${allIncluded ? 'color: var(--accent);' : ''}"></i>
+                    <span>${name}</span>
+                `;
+                
+                item.addEventListener('click', (evt) => {
+                    evt.stopPropagation();
+                    if (!album.tracks || album.tracks.length === 0) return;
+                    
+                    if (allIncluded) {
+                        // Remove all tracks of this album from the playlist
+                        const trackPaths = album.tracks.map(t => t.path);
+                        playlists[name] = playlists[name].filter(p => !trackPaths.includes(p));
+                    } else {
+                        // Add all tracks of this album to the playlist (avoiding duplicates)
+                        album.tracks.forEach(track => {
+                            if (!playlists[name].includes(track.path)) {
+                                playlists[name].push(track.path);
+                            }
+                        });
+                    }
+                    savePlaylists();
+                    menu.remove();
+                    if (currentSelectedPlaylistName === name) {
+                        selectPlaylist(name);
+                    }
+                    renderLibraryPanel();
+                });
+                submenu.appendChild(item);
+            });
+        }
+
+        const divider = document.createElement('div');
+        divider.className = 'playlist-context-menu-divider';
+        submenu.appendChild(divider);
+
+        const createOption = document.createElement('div');
+        createOption.className = 'playlist-context-menu-item';
+        createOption.innerHTML = `
+            <i class="fa-solid fa-plus"></i>
+            <span>Create New Playlist...</span>
+        `;
+        createOption.addEventListener('click', async (evt) => {
+            evt.stopPropagation();
+            menu.remove();
+            const name = await showCustomPrompt("New Playlist", "Playlist Name");
+            if (name === null) return;
+            const trimmedName = name.trim();
+            if (!trimmedName) return;
+            if (playlists[trimmedName]) {
+                alert("Playlist already exists!");
+                return;
+            }
+            // Add all tracks from the album to the new playlist
+            playlists[trimmedName] = album.tracks ? album.tracks.map(t => t.path) : [];
+            savePlaylists();
+            renderLibraryPanel();
+            alert(`Created playlist "${trimmedName}" and added all tracks of the album!`);
+        });
+        submenu.appendChild(createOption);
+
+        addToPlaylistOption.appendChild(submenu);
+        menu.appendChild(addToPlaylistOption);
+
+        // View Artist option
+        const viewArtistOption = document.createElement('div');
+        viewArtistOption.className = 'playlist-context-menu-item';
+        viewArtistOption.innerHTML = `
+            <i class="fa-solid fa-user"></i>
+            <span>View artist</span>
+        `;
+        
+        const isUnknownArtist = !album.artist || album.artist === 'Unknown Artist' || album.artist === 'Artist Profile';
+        if (isUnknownArtist) {
+            viewArtistOption.style.opacity = '0.5';
+            viewArtistOption.style.cursor = 'not-allowed';
+            viewArtistOption.title = 'Unknown Artist';
+        } else {
+            viewArtistOption.addEventListener('click', () => {
+                const artistKey = album.artist.toLowerCase();
+                selectArtist(artistKey);
+                menu.remove();
+            });
+        }
+        menu.appendChild(viewArtistOption);
+
+        document.body.appendChild(menu);
+        menu.style.position = 'fixed';
+
+        // Check placement logic
+        let x = e.clientX;
+        let y = e.clientY;
+        const menuWidth = 200;
+        const menuHeight = menu.offsetHeight || 120; // approximate fallback height
+
+        if (x + menuWidth > window.innerWidth) {
+            x = window.innerWidth - menuWidth - 10;
+        }
+        if (y + menuHeight > window.innerHeight) {
+            y = window.innerHeight - menuHeight - 10;
+        }
+
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+
+        // Position the submenu left or right dynamically
+        addToPlaylistOption.addEventListener('mouseenter', () => {
+            const rect = addToPlaylistOption.getBoundingClientRect();
+            if (rect.right + 180 > window.innerWidth) {
+                submenu.classList.add('submenu-left');
+            } else {
+                submenu.classList.remove('submenu-left');
+            }
+        });
+
+        // Close context menu handler
+        setTimeout(() => {
+            const closeMenu = (evt) => {
+                if (!menu.contains(evt.target)) {
+                    menu.remove();
+                    document.removeEventListener('click', closeMenu);
+                    document.removeEventListener('contextmenu', closeMenu);
+                }
+            };
+            document.addEventListener('click', closeMenu);
+            document.addEventListener('contextmenu', closeMenu);
+        }, 50);
+    }
+
+    async function renamePlaylist(oldName) {
+        const newName = await showCustomPrompt("Rename Playlist", "New Playlist Name", oldName);
+        if (newName === null) return;
+        const trimmedName = newName.trim();
+        if (!trimmedName) return;
+        if (trimmedName === oldName) return;
+        if (playlists[trimmedName]) {
+            alert("Playlist already exists!");
+            return;
+        }
+        
+        // Rename playlist in the playlists map
+        playlists[trimmedName] = playlists[oldName];
+        delete playlists[oldName];
+        savePlaylists();
+        
+        // Update current selected playlist name
+        if (currentSelectedPlaylistName === oldName) {
+            currentSelectedPlaylistName = trimmedName;
+            selectPlaylist(trimmedName); // reload the view
+        } else {
+            renderLibraryPanel();
+        }
+    }
+
+    function showPlaylistContextMenu(e, playlistName) {
+        // Remove existing context menus
+        const existingMenus = document.querySelectorAll('.playlist-context-menu, .track-context-menu');
+        existingMenus.forEach(m => m.remove());
+
+        const menu = document.createElement('div');
+        menu.className = 'playlist-context-menu track-context-menu';
+
+        // Add to Playlist option
+        const addToPlaylistOption = document.createElement('div');
+        addToPlaylistOption.className = 'playlist-context-menu-item has-submenu';
+        addToPlaylistOption.innerHTML = `
+            <i class="fa-solid fa-list-ul"></i>
+            <span>Add to playlist</span>
+            <i class="fa-solid fa-chevron-right" style="margin-left: auto; font-size: 0.7rem; color: var(--text-secondary);"></i>
+        `;
+
+        // Create the submenu
+        const submenu = document.createElement('div');
+        submenu.className = 'playlist-context-submenu';
+
+        const otherPlaylistNames = Object.keys(playlists).filter(name => name !== playlistName);
+        if (otherPlaylistNames.length === 0) {
+            const emptyItem = document.createElement('div');
+            emptyItem.className = 'playlist-context-menu-item';
+            emptyItem.style.color = 'var(--text-muted)';
+            emptyItem.style.cursor = 'default';
+            emptyItem.textContent = 'No other playlists';
+            submenu.appendChild(emptyItem);
+        } else {
+            otherPlaylistNames.forEach(name => {
+                const item = document.createElement('div');
+                item.className = 'playlist-context-menu-item';
+                
+                // Check if all tracks of source playlist are in target playlist
+                const sourceTracks = playlists[playlistName] || [];
+                const targetTracks = playlists[name] || [];
+                const allIncluded = sourceTracks.length > 0 && sourceTracks.every(tPath => targetTracks.includes(tPath));
+
+                item.innerHTML = `
+                    <i class="fa-solid ${allIncluded ? 'fa-check' : 'fa-music'}" style="${allIncluded ? 'color: var(--accent);' : ''}"></i>
+                    <span>${name}</span>
+                `;
+                
+                item.addEventListener('click', (evt) => {
+                    evt.stopPropagation();
+                    if (sourceTracks.length === 0) return;
+                    
+                    if (allIncluded) {
+                        // Remove source playlist tracks from target playlist
+                        playlists[name] = playlists[name].filter(p => !sourceTracks.includes(p));
+                    } else {
+                        // Add source playlist tracks to target playlist
+                        sourceTracks.forEach(tPath => {
+                            if (!playlists[name].includes(tPath)) {
+                                playlists[name].push(tPath);
+                            }
+                        });
+                    }
+                    savePlaylists();
+                    menu.remove();
+                    if (currentSelectedPlaylistName === name) {
+                        selectPlaylist(name);
+                    }
+                    renderLibraryPanel();
+                });
+                submenu.appendChild(item);
+            });
+        }
+
+        const divider = document.createElement('div');
+        divider.className = 'playlist-context-menu-divider';
+        submenu.appendChild(divider);
+
+        const createOption = document.createElement('div');
+        createOption.className = 'playlist-context-menu-item';
+        createOption.innerHTML = `
+            <i class="fa-solid fa-plus"></i>
+            <span>Create New Playlist...</span>
+        `;
+        createOption.addEventListener('click', async (evt) => {
+            evt.stopPropagation();
+            menu.remove();
+            const name = await showCustomPrompt("New Playlist", "Playlist Name");
+            if (name === null) return;
+            const trimmedName = name.trim();
+            if (!trimmedName) return;
+            if (playlists[trimmedName]) {
+                alert("Playlist already exists!");
+                return;
+            }
+            // Copy all tracks to the new playlist
+            playlists[trimmedName] = [...(playlists[playlistName] || [])];
+            savePlaylists();
+            renderLibraryPanel();
+            alert(`Created playlist "${trimmedName}" and copied tracks!`);
+        });
+        submenu.appendChild(createOption);
+
+        addToPlaylistOption.appendChild(submenu);
+        menu.appendChild(addToPlaylistOption);
+
+        // Rename option
+        const renameOption = document.createElement('div');
+        renameOption.className = 'playlist-context-menu-item';
+        renameOption.innerHTML = `
+            <i class="fa-solid fa-pen"></i>
+            <span>Rename</span>
+        `;
+        renameOption.addEventListener('click', () => {
+            menu.remove();
+            renamePlaylist(playlistName);
+        });
+        menu.appendChild(renameOption);
+
+        document.body.appendChild(menu);
+        menu.style.position = 'fixed';
+
+        // Placement logic
+        let x = e.clientX;
+        let y = e.clientY;
+        const menuWidth = 200;
+        const menuHeight = menu.offsetHeight || 120;
+
+        if (x + menuWidth > window.innerWidth) {
+            x = window.innerWidth - menuWidth - 10;
+        }
+        if (y + menuHeight > window.innerHeight) {
+            y = window.innerHeight - menuHeight - 10;
+        }
+
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+
+        addToPlaylistOption.addEventListener('mouseenter', () => {
+            const rect = addToPlaylistOption.getBoundingClientRect();
+            if (rect.right + 180 > window.innerWidth) {
+                submenu.classList.add('submenu-left');
+            } else {
+                submenu.classList.remove('submenu-left');
+            }
+        });
+
+        setTimeout(() => {
+            const closeMenu = (evt) => {
+                if (!menu.contains(evt.target)) {
+                    menu.remove();
+                    document.removeEventListener('click', closeMenu);
+                    document.removeEventListener('contextmenu', closeMenu);
+                }
+            };
+            document.addEventListener('click', closeMenu);
+            document.addEventListener('contextmenu', closeMenu);
+        }, 50);
+    }
+
     function showAddToPlaylistMenu(btn, song) {
         const existingMenu = document.querySelector('.playlist-context-menu');
         if (existingMenu) existingMenu.remove();
@@ -1252,7 +1752,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const hasSong = playlists[name].includes(song.path);
                 item.innerHTML = `
-                    <i class="fa-solid ${hasSong ? 'fa-check' : 'fa-list-music'}" style="${hasSong ? 'color: var(--accent);' : ''}"></i>
+                    <i class="fa-solid ${hasSong ? 'fa-check' : 'fa-music'}" style="${hasSong ? 'color: var(--accent);' : ''}"></i>
                     <span>${name}</span>
                 `;
                 
@@ -1484,7 +1984,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     renderLibraryPanel();
                 };
                 
-                btn.addEventListener('click', createPlaylistFn);
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    createPlaylistFn();
+                });
                 input.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
                         createPlaylistFn();
@@ -1500,7 +2004,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     info.className = 'empty-state';
                     info.style.padding = '20px 10px';
                     info.innerHTML = `
-                        <i class="fa-solid fa-list-music"></i>
+                        <i class="fa-solid fa-list-ul"></i>
                         <p>No playlists yet</p>
                         <span>Create one above to get started!</span>
                     `;
@@ -1544,6 +2048,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.querySelectorAll('.result-item').forEach(el => el.classList.remove('active'));
                     div.classList.add('active');
                     selectAlbum(item.albumKey);
+                });
+                div.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    showAlbumContextMenu(e, item);
                 });
             } else if (searchType === 'artist') {
                 const artistCover = item.tracks[0]?.cover || DEFAULT_COVER;
@@ -1589,6 +2097,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         showAddToPlaylistMenu(addBtn, item);
                     });
                 }
+
+                div.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    showTrackContextMenu(e, item);
+                });
 
                 div.addEventListener('click', (e) => {
                     if (e.target.closest('.result-actions')) return;
@@ -1645,6 +2158,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.querySelectorAll('.result-item').forEach(el => el.classList.remove('active'));
                     div.classList.add('active');
                     selectPlaylist(item.name);
+                });
+                div.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    showPlaylistContextMenu(e, item.name);
                 });
             }
 
@@ -1763,6 +2280,10 @@ document.addEventListener('DOMContentLoaded', () => {
             card.addEventListener('click', () => {
                 selectAlbum(album.albumKey);
             });
+            card.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showAlbumContextMenu(e, album);
+            });
             albumsGridContainer.appendChild(card);
         });
     }
@@ -1782,7 +2303,23 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedDetailsView.offsetHeight; // trigger reflow
             selectedDetailsView.style.animation = 'fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both';
         }
-        detailTitle.textContent = title;
+        if (currentSelectedPlaylistName && title === currentSelectedPlaylistName) {
+            detailTitle.innerHTML = `
+                <span>${title}</span>
+                <span id="playlist-rename-btn" class="playlist-edit-icon" title="Rename Playlist"><i class="fa-solid fa-pen"></i></span>
+            `;
+            setTimeout(() => {
+                const renameBtn = document.getElementById('playlist-rename-btn');
+                if (renameBtn) {
+                    renameBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        renamePlaylist(title);
+                    });
+                }
+            }, 10);
+        } else {
+            detailTitle.textContent = title;
+        }
         if (detailArtist) {
             if (detailArtist.classList.contains('clickable-artist') && artist) {
                 detailArtist.innerHTML = formatArtistLinks(artist);
@@ -1821,6 +2358,11 @@ document.addEventListener('DOMContentLoaded', () => {
             songDiv.className = `song-item ${isTrackPlaying ? 'playing' : ''}`;
             songDiv.style.animation = 'fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both';
             songDiv.style.animationDelay = `${batchIdx * 25}ms`;
+            
+            songDiv.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showTrackContextMenu(e, song);
+            });
             
             const isPlaylistView = (currentSelectedPlaylistName !== null);
             const actionButtonHTML = isPlaylistView
@@ -2587,6 +3129,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const queueTargetIdx = (playQueueIndex + 1 + localIdx) % playQueue.length;
                 playQueueIndex = queueTargetIdx;
                 playTrack(song.globalIndex);
+            });
+            itemDiv.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showTrackContextMenu(e, song);
             });
             queueListEl.appendChild(itemDiv);
         });

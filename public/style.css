@@ -2462,3 +2462,73 @@ body {
     animation: lyricSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Custom Submenu styles for Track Context Menu */
+.playlist-context-menu-item.has-submenu {
+    position: relative;
+}
+
+.playlist-context-submenu {
+    position: absolute;
+    top: -8px;
+    left: 100%;
+    background: rgba(13, 13, 16, 0.95);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    padding: 8px 0;
+    min-width: 180px;
+    display: none;
+    z-index: 10001;
+    animation: menuFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    margin-left: 4px;
+}
+
+.playlist-context-menu-item.has-submenu:hover .playlist-context-submenu {
+    display: block;
+}
+
+.playlist-context-submenu.submenu-left {
+    left: auto !important;
+    right: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 4px !important;
+}
+
+/* Invisible hover bridge to prevent submenu closing when moving cursor over the gap */
+.playlist-context-submenu::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -10px;
+    width: 10px;
+    height: 100%;
+    background: transparent;
+}
+
+.playlist-context-submenu.submenu-left::before {
+    left: auto;
+    right: -10px;
+    width: 10px;
+}
+
+/* Playlist Title Edit Icon Styles */
+.playlist-edit-icon {
+    opacity: 0.4;
+    margin-left: 10px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: inline-flex;
+    vertical-align: middle;
+    transition: all 0.2s ease;
+}
+.playlist-edit-icon:hover {
+    opacity: 1 !important;
+    transform: scale(1.1);
+    color: var(--accent);
+}
+
+
+
+
