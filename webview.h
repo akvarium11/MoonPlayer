@@ -2158,6 +2158,11 @@ public:
         }
 
         switch (msg) {
+        case WM_ACTIVATE:
+          if (LOWORD(wp) != WA_INACTIVE && w->m_controller != nullptr) {
+            w->m_controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+          }
+          break;
         case WM_SIZE:
           w->resize_widget();
           break;

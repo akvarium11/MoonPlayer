@@ -4789,6 +4789,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Restore focus to document body on Alt+Tab/focus window so global shortcuts work immediately
+    document.body.setAttribute('tabindex', '-1');
+    const restoreFocus = () => {
+        const activeEl = document.activeElement;
+        if (activeEl) {
+            const tag = activeEl.tagName.toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || activeEl.isContentEditable) {
+                return; // Keep focus on typing inputs
+            }
+        }
+        document.body.focus();
+    };
+    window.addEventListener('focus', restoreFocus);
+    document.addEventListener('focusin', restoreFocus);
+    restoreFocus();
+
     // ==========================================
     // 15. SLEEP TIMER LOGIC (CUSTOM DROPDOWN)
     // ==========================================
