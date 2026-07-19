@@ -1291,6 +1291,165 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 2600);
     }
 
+    function showArtistSelectionModal(artistsList) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.style.position = 'fixed';
+            overlay.style.top = '0';
+            overlay.style.left = '0';
+            overlay.style.width = '100vw';
+            overlay.style.height = '100vh';
+            overlay.style.background = 'rgba(0, 0, 0, 0.6)';
+            overlay.style.backdropFilter = 'blur(12px)';
+            overlay.style.webkitBackdropFilter = 'blur(12px)';
+            overlay.style.display = 'flex';
+            overlay.style.alignItems = 'center';
+            overlay.style.justifyContent = 'center';
+            overlay.style.zIndex = '100000';
+            overlay.style.opacity = '0';
+            overlay.style.transition = 'opacity 0.3s ease';
+
+            const modal = document.createElement('div');
+            modal.style.background = 'rgba(25, 25, 25, 0.75)';
+            modal.style.backdropFilter = 'blur(20px)';
+            modal.style.webkitBackdropFilter = 'blur(20px)';
+            modal.style.border = '1px solid rgba(255, 255, 255, 0.08)';
+            modal.style.borderRadius = '16px';
+            modal.style.padding = '24px';
+            modal.style.width = '340px';
+            modal.style.boxShadow = '0 12px 40px rgba(0, 0, 0, 0.6)';
+            modal.style.display = 'flex';
+            modal.style.flexDirection = 'column';
+            modal.style.gap = '16px';
+            modal.style.transform = 'scale(0.9) translateY(20px)';
+            modal.style.transition = 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)';
+
+            const title = document.createElement('div');
+            title.textContent = 'SELECT ARTIST';
+            title.style.fontFamily = "'Unbounded', sans-serif";
+            title.style.fontSize = '0.75rem';
+            title.style.fontWeight = '700';
+            title.style.letterSpacing = '0.08em';
+            title.style.color = 'var(--accent, #ffffff)';
+            title.style.textAlign = 'center';
+
+            const listContainer = document.createElement('div');
+            listContainer.style.display = 'flex';
+            listContainer.style.flexDirection = 'column';
+            listContainer.style.gap = '8px';
+            listContainer.style.maxHeight = '200px';
+            listContainer.style.overflowY = 'auto';
+            listContainer.style.paddingRight = '4px';
+            listContainer.className = 'custom-scrollbar';
+
+            artistsList.forEach(artistName => {
+                const button = document.createElement('button');
+                button.style.width = '100%';
+                button.style.border = 'none';
+                button.style.background = 'rgba(255, 255, 255, 0.03)';
+                button.style.border = '1px solid rgba(255, 255, 255, 0.03)';
+                button.style.borderRadius = '8px';
+                button.style.padding = '12px 16px';
+                button.style.color = 'var(--text-secondary, #b3b3b3)';
+                button.style.fontFamily = "'Outfit', sans-serif";
+                button.style.fontSize = '0.85rem';
+                button.style.fontWeight = '500';
+                button.style.textAlign = 'left';
+                button.style.cursor = 'pointer';
+                button.style.transition = 'all 0.2s ease';
+                button.style.display = 'flex';
+                button.style.alignItems = 'center';
+                button.style.gap = '10px';
+
+                button.innerHTML = `
+                    <i class="fa-solid fa-user" style="font-size: 0.85rem; width: 14px; text-align: center; color: var(--text-secondary);"></i>
+                    <span>${artistName}</span>
+                `;
+
+                button.addEventListener('mouseenter', () => {
+                    button.style.background = 'rgba(255, 255, 255, 0.08)';
+                    button.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                    button.style.color = '#ffffff';
+                    button.style.paddingLeft = '20px';
+                    const icon = button.querySelector('i');
+                    if (icon) {
+                        icon.style.color = 'var(--accent, #ffffff)';
+                        icon.style.transform = 'scale(1.15)';
+                    }
+                });
+
+                button.addEventListener('mouseleave', () => {
+                    button.style.background = 'rgba(255, 255, 255, 0.03)';
+                    button.style.borderColor = 'rgba(255, 255, 255, 0.03)';
+                    button.style.color = 'var(--text-secondary, #b3b3b3)';
+                    button.style.paddingLeft = '16px';
+                    const icon = button.querySelector('i');
+                    if (icon) {
+                        icon.style.color = 'var(--text-secondary)';
+                        icon.style.transform = 'scale(1)';
+                    }
+                });
+
+                button.addEventListener('click', () => {
+                    cleanup(artistName);
+                });
+
+                listContainer.appendChild(button);
+            });
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = 'CANCEL';
+            cancelBtn.style.fontFamily = "'Outfit', sans-serif";
+            cancelBtn.style.fontSize = '0.75rem';
+            cancelBtn.style.fontWeight = '600';
+            cancelBtn.style.letterSpacing = '0.05em';
+            cancelBtn.style.color = 'var(--text-secondary, #b3b3b3)';
+            cancelBtn.style.background = 'transparent';
+            cancelBtn.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+            cancelBtn.style.borderRadius = '8px';
+            cancelBtn.style.padding = '10px';
+            cancelBtn.style.cursor = 'pointer';
+            cancelBtn.style.transition = 'all 0.2s';
+
+            cancelBtn.addEventListener('mouseenter', () => {
+                cancelBtn.style.background = 'rgba(255, 255, 255, 0.05)';
+                cancelBtn.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                cancelBtn.style.color = '#ffffff';
+            });
+
+            cancelBtn.addEventListener('mouseleave', () => {
+                cancelBtn.style.background = 'transparent';
+                cancelBtn.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                cancelBtn.style.color = 'var(--text-secondary, #b3b3b3)';
+            });
+
+            cancelBtn.addEventListener('click', () => {
+                cleanup(null);
+            });
+
+            modal.appendChild(title);
+            modal.appendChild(listContainer);
+            modal.appendChild(cancelBtn);
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            // Animate in
+            requestAnimationFrame(() => {
+                overlay.style.opacity = '1';
+                modal.style.transform = 'scale(1) translateY(0)';
+            });
+
+            function cleanup(selectedValue) {
+                overlay.style.opacity = '0';
+                modal.style.transform = 'scale(0.9) translateY(20px)';
+                setTimeout(() => {
+                    overlay.remove();
+                    resolve(selectedValue);
+                }, 300);
+            }
+        });
+    }
+
     function showTrackContextMenu(e, song) {
         // Remove existing context menus
         const existingMenus = document.querySelectorAll('.playlist-context-menu, .track-context-menu');
@@ -1529,6 +1688,34 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         menu.appendChild(viewAlbumOption);
+
+        // View Artist option
+        const viewArtistOption = document.createElement('div');
+        viewArtistOption.className = 'playlist-context-menu-item';
+        viewArtistOption.innerHTML = `
+            <i class="fa-solid fa-user"></i>
+            <span>View artist</span>
+        `;
+        
+        viewArtistOption.addEventListener('click', async () => {
+            menu.remove();
+            
+            const artistsList = splitArtists(song.artist);
+            if (artistsList.length === 0 || (artistsList.length === 1 && (!artistsList[0] || artistsList[0] === 'Unknown Artist'))) {
+                showToast("Unknown Artist");
+                return;
+            }
+
+            if (artistsList.length === 1) {
+                selectArtistByName(artistsList[0]);
+            } else {
+                const selectedArtist = await showArtistSelectionModal(artistsList);
+                if (selectedArtist) {
+                    selectArtistByName(selectedArtist);
+                }
+            }
+        });
+        menu.appendChild(viewArtistOption);
 
         document.body.appendChild(menu);
         menu.style.position = 'fixed';
