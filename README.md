@@ -95,7 +95,7 @@ Compile using the build script or manually:
 
 ## 📄 License
 
-This project is licensed under the ISC License.
+This project is licensed under the GPL-3.0 License.
 
 ---
 ---
@@ -195,4 +195,4 @@ This project is licensed under the ISC License.
 
 ## 📄 Лицензия
 
-Этот проект распространяется под лицензией ISC.
+Этот проект распространяется под лицензией GPL-3.0.
