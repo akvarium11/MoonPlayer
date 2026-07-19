@@ -1,17 +1,17 @@
 # ✨ MoonPlayer
 
-# [🇺🇸 Eng](https://github.com/akvarium11/MoonPlayer#header) | [🇷🇺 Rus](https://github.com/akvarium11/MoonPlayer#header-rus)
+# [🇺🇸 Eng](#header) | [🇷🇺 Rus](#header-rus)
 
 ## <a id="header"></a>📖 Table of Contents
-- [About the Project](#-about-the-project)
-- [Features](#%EF%B8%8Ffeatures)
-- [Compilation](#%EF%B8%8Fcompilation)
-- [How to use](#-how-to-use)
-- [License](#-license)
+- [About the Project](#about-the-project)
+- [Features](#features)
+- [Compilation](#compilation)
+- [How to use](#how-to-use)
+- [License](#license)
 
 ---
 
-## 📌 About the Project
+## <a id="about-the-project"></a>📌 About the Project
 
 *MoonPlayer* is a lightweight, high-performance desktop music player designed for listening to local audio files. It combines a native C++ launcher wrapper (`launcher.cpp` powered by Webview) and a feature-rich, high-performance Node.js backend (`server.js`) with an interactive web UI. It is built to look stunning while running efficiently on both Windows and Linux.
 
@@ -20,7 +20,7 @@
 
 ---
 
-## ⌨️Features 
+## <a id="features"></a>⌨️ Features
 
 - [x] **Desktop WebView Shell** - Native window container wrapping the application using Edge WebView2 (Windows) and WebKit2GTK (Linux).
 - [x] **Floating Dynamic Island** - Interactive, responsive island with smooth animations, compact/expanded states, and audio waveforms.
@@ -36,7 +36,7 @@
 
 ---
 
-## 🛠️Compilation
+## <a id="compilation"></a>🛠️ Compilation
 
 ### 🪟 Windows (MinGW/GCC)
 To compile the Windows version, you will need MinGW (with `g++` and `windres` toolchains):
@@ -83,7 +83,7 @@ Compile using the build script or manually:
 
 ---
 
-## ▶️How to Use
+## <a id="how-to-use"></a>▶️ How to Use
 
 1. Place your music folders in any location on your PC.
 2. Launch `MoonPlayer` (or `MoonPlayer.exe` on Windows).
@@ -93,7 +93,7 @@ Compile using the build script or manually:
 
 ---
 
-## 📄 License
+## <a id="license"></a>📄 License
 
 This project is licensed under the GPL-3.0 License.
 
@@ -103,15 +103,15 @@ This project is licensed under the GPL-3.0 License.
 # <a id="header-rus"></a>✨ MoonPlayer (Русский)
 
 ## 📖 Оглавление
-- [О проекте](#-о-проекте)
-- [Возможности](#-возможности)
-- [Компиляция](#-компиляция)
-- [Как использовать](#-как-использовать)
-- [Лицензия](#-лицензия)
+- [О проекте](#about-the-project-rus)
+- [Возможности](#features-rus)
+- [Компиляция](#compilation-rus)
+- [Как использовать](#how-to-use-rus)
+- [Лицензия](#license-rus)
 
 ---
 
-## 📌 О проекте
+## <a id="about-the-project-rus"></a>📌 О проекте
 
 *MoonPlayer* — это легкий и производительный локальный музыкальный плеер для прослушивания аудиофайлов с вашего компьютера. Он совмещает нативный C++ лаунчер-клиент (`launcher.cpp` на базе Webview) и функциональный Node.js сервер (`server.js`) со стильным и современным веб-интерфейсом.
 
@@ -120,7 +120,7 @@ This project is licensed under the GPL-3.0 License.
 
 ---
 
-## ⌨️Возможности 
+## <a id="features-rus"></a>⌨️ Возможности
 
 - [x] **Нативный WebView-контейнер** - Оболочка на C++ с использованием Edge WebView2 (Windows) и WebKit2GTK (Linux).
 - [x] **Интерактивный Dynamic Island** - Всплывающий остров с красивыми анимациями, компактным/расширенным состоянием и звуковыми волнами.
@@ -136,7 +136,7 @@ This project is licensed under the GPL-3.0 License.
 
 ---
 
-## 🛠️Компиляция
+## <a id="compilation-rus"></a>🛠️ Компиляция
 
 ### 🪟 Windows (MinGW/GCC)
 Для сборки Windows-версии вам понадобится компилятор MinGW (с установленными `g++` и `windres`):
@@ -183,7 +183,7 @@ This project is licensed under the GPL-3.0 License.
 
 ---
 
-## ▶️Как использовать
+## <a id="how-to-use-rus"></a>▶️ Как использовать
 
 1. Поместите папки с музыкой в любое место на ПК.
 2. Запустите `MoonPlayer` (или `MoonPlayer.exe` в Windows).
@@ -193,6 +193,6 @@ This project is licensed under the GPL-3.0 License.
 
 ---
 
-## 📄 Лицензия
+## <a id="license-rus"></a>📄 Лицензия
 
 Этот проект распространяется под лицензией GPL-3.0.
