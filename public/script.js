@@ -990,6 +990,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 9b. PLAYLIST MANAGEMENT
     // ==========================================
     function resetRightPanel() {
+        if (songListContainer) songListContainer.scrollTop = 0;
         pushToHistory({ type: 'home' });
         if (detailTitle) detailTitle.textContent = "Welcome to MoonPlayer";
         if (detailArtist) detailArtist.textContent = "Load your offline music files";
@@ -1147,6 +1148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function selectPlaylist(playlistName) {
+        if (songListContainer) songListContainer.scrollTop = 0;
         currentSelectedPlaylistName = playlistName;
         pushToHistory({ type: 'playlist', key: playlistName });
         
@@ -2380,6 +2382,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Group Selection Helpers
     function selectAlbum(albumKey) {
+        if (songListContainer) songListContainer.scrollTop = 0;
         const album = albums.find(a => a.albumKey === albumKey);
         if (!album) return;
 
@@ -2406,6 +2409,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function selectArtist(artistKey) {
+        if (albumsGridContainer) albumsGridContainer.scrollTop = 0;
+        if (songListContainer) songListContainer.scrollTop = 0;
         const artist = artists.find(a => a.artistKey === artistKey);
         if (!artist) return;
 
