@@ -1269,7 +1269,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         toast.innerHTML = `
             <i class="fa-solid fa-angles-right" style="color: var(--accent, #ffffff); font-size: 0.95rem;"></i>
-            <span>${message}</span>
+            <span>${escapeHtml(message)}</span>
         `;
 
         toastContainer.appendChild(toast);
@@ -1487,7 +1487,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const hasSong = playlists[name].includes(song.path);
                 item.innerHTML = `
                     <i class="fa-solid ${hasSong ? 'fa-check' : 'fa-music'}" style="${hasSong ? 'color: var(--accent);' : ''}"></i>
-                    <span>${name}</span>
+                    <span>${escapeHtml(name)}</span>
                 `;
                 
                 item.addEventListener('click', (evt) => {
@@ -1799,7 +1799,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 item.innerHTML = `
                     <i class="fa-solid ${allIncluded ? 'fa-check' : 'fa-music'}" style="${allIncluded ? 'color: var(--accent);' : ''}"></i>
-                    <span>${name}</span>
+                    <span>${escapeHtml(name)}</span>
                 `;
                 
                 item.addEventListener('click', (evt) => {
@@ -1992,7 +1992,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 item.innerHTML = `
                     <i class="fa-solid ${allIncluded ? 'fa-check' : 'fa-music'}" style="${allIncluded ? 'color: var(--accent);' : ''}"></i>
-                    <span>${name}</span>
+                    <span>${escapeHtml(name)}</span>
                 `;
                 
                 item.addEventListener('click', (evt) => {
@@ -2130,7 +2130,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const hasSong = playlists[name].includes(song.path);
                 item.innerHTML = `
                     <i class="fa-solid ${hasSong ? 'fa-check' : 'fa-music'}" style="${hasSong ? 'color: var(--accent);' : ''}"></i>
-                    <span>${name}</span>
+                    <span>${escapeHtml(name)}</span>
                 `;
                 
                 item.addEventListener('click', () => {
@@ -2414,11 +2414,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (searchType === 'album') {
                 div.innerHTML = `
                     <div class="result-img-wrapper">
-                        <img src="${item.cover || DEFAULT_COVER}" class="result-img" alt="${item.title}">
+                        <img src="${item.cover || DEFAULT_COVER}" class="result-img" alt="${escapeHtml(item.title)}">
                     </div>
                     <div class="result-info">
-                        <div class="result-title">${item.title}</div>
-                        <div class="result-subtitle">${item.artist} • ${item.tracks.length} tracks</div>
+                        <div class="result-title">${escapeHtml(item.title)}</div>
+                        <div class="result-subtitle">${escapeHtml(item.artist)} • ${item.tracks.length} tracks</div>
                     </div>
                 `;
                 div.addEventListener('click', () => {
@@ -2434,10 +2434,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const artistCover = item.tracks[0]?.cover || DEFAULT_COVER;
                 div.innerHTML = `
                     <div class="result-img-wrapper" style="border-radius: 50%;">
-                        <img src="${artistCover}" class="result-img" alt="${item.name}">
+                        <img src="${artistCover}" class="result-img" alt="${escapeHtml(item.name)}">
                     </div>
                     <div class="result-info">
-                        <div class="result-title">${item.name}</div>
+                        <div class="result-title">${formatArtistLinks(item.name)}</div>
                         <div class="result-subtitle">${item.tracks.length} songs</div>
                     </div>
                 `;
@@ -2453,11 +2453,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 div.innerHTML = `
                     <div class="result-img-wrapper">
-                        <img src="${item.cover || DEFAULT_COVER}" class="result-img" alt="${item.title}">
+                        <img src="${item.cover || DEFAULT_COVER}" class="result-img" alt="${escapeHtml(item.title)}">
                     </div>
                     <div class="result-info">
-                        <div class="result-title">${item.title}</div>
-                        <div class="result-subtitle">${item.artist} • ${item.album}</div>
+                        <div class="result-title">${escapeHtml(item.title)}</div>
+                        <div class="result-subtitle">${formatArtistLinks(item.artist)} • ${escapeHtml(item.album)}</div>
                     </div>
                     <div class="result-actions">
                         <button class="result-action-btn add-btn" title="Add to Playlist">
@@ -2509,10 +2509,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 div.className = 'result-item playlist-result-item';
                 div.innerHTML = `
                     <div class="result-img-wrapper">
-                        <img src="${cover}" class="result-img" alt="${item.name}">
+                        <img src="${cover}" class="result-img" alt="${escapeHtml(item.name)}">
                     </div>
                     <div class="result-info">
-                        <div class="result-title">${item.name}</div>
+                        <div class="result-title">${escapeHtml(item.name)}</div>
                         <div class="result-subtitle">${playlistTracks.length} track${playlistTracks.length !== 1 ? 's' : ''}</div>
                     </div>
                     <button class="playlist-delete-btn" title="Delete Playlist"><i class="fa-solid fa-trash-can"></i></button>
@@ -2650,11 +2650,11 @@ document.addEventListener('DOMContentLoaded', () => {
             card.style.animationDelay = `${idx * 45}ms`;
             card.innerHTML = `
                 <div class="grid-album-cover-wrapper">
-                    <img src="${album.cover || DEFAULT_COVER}" class="grid-album-cover" alt="${album.title}">
+                    <img src="${album.cover || DEFAULT_COVER}" class="grid-album-cover" alt="${escapeHtml(album.title)}">
                 </div>
                 <div class="grid-album-info">
-                    <div class="grid-album-title">${album.title}</div>
-                    <div class="grid-album-meta">${album.year ? album.year + ' • ' : ''}${album.tracks.length} tracks</div>
+                    <div class="grid-album-title">${escapeHtml(album.title)}</div>
+                    <div class="grid-album-meta">${album.year ? escapeHtml(album.year) + ' • ' : ''}${album.tracks.length} tracks</div>
                 </div>
             `;
             card.addEventListener('click', () => {
@@ -2685,7 +2685,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (currentSelectedPlaylistName && title === currentSelectedPlaylistName) {
             detailTitle.innerHTML = `
-                <span>${title}</span>
+                <span>${escapeHtml(title)}</span>
                 <span id="playlist-rename-btn" class="playlist-edit-icon" title="Rename Playlist"><i class="fa-solid fa-pen"></i></span>
             `;
             setTimeout(() => {
@@ -2763,10 +2763,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="song-index-play"><i class="fa-solid ${isTrackPlaying && isPlaying ? 'fa-volume-high' : 'fa-play'}"></i></span>
                 </div>
                 <div class="song-main-info">
-                    <div class="song-title clickable-artist">${song.title}</div>
+                    <div class="song-title">${escapeHtml(song.title)}</div>
                     <div class="song-artist">${formatArtistLinks(song.artist)}</div>
                 </div>
-                <div class="song-album clickable-artist">${song.album}</div>
+                <div class="song-album">${escapeHtml(song.album)}</div>
                 <div class="song-duration" id="duration-${song.globalIndex}">--:--</div>
                 ${actionButtonHTML}
             `;
@@ -3549,8 +3549,8 @@ document.addEventListener('DOMContentLoaded', () => {
             itemDiv.className = 'queue-item';
             itemDiv.style.animationDelay = `${localIdx * 45}ms`;
             itemDiv.innerHTML = `
-                <span class="queue-item-title">${song.title}</span>
-                <span class="queue-item-artist">${song.artist}</span>
+                <span class="queue-item-title">${escapeHtml(song.title)}</span>
+                <span class="queue-item-artist">${escapeHtml(song.artist)}</span>
             `;
             itemDiv.addEventListener('click', (e) => {
                 e.stopPropagation();
