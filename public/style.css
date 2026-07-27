@@ -384,6 +384,35 @@ body {
     gap: 25px;
     min-height: 0; /* Important for flex child scrolling */
     z-index: 6;
+    transition: gap 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.panel-left,
+.panel-right {
+    transition: flex 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                max-width 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                max-height 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dashboard-layout.maximized-view {
+    gap: 0;
+}
+
+.dashboard-layout.maximized-view .panel-left {
+    flex: 0 0 0px !important;
+    max-width: 0px !important;
+    opacity: 0 !important;
+    transform: translateX(-30px) scale(0.95);
+    margin: 0 !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+}
+
+.dashboard-layout.maximized-view .panel-right {
+    flex: 1 1 100% !important;
+    max-width: 100% !important;
 }
 
 /* Scrollbars */
@@ -409,10 +438,12 @@ body {
 /* LEFT PANEL (Search & library list) */
 .panel-left {
     flex: 3.5;
+    max-width: 600px;
     display: flex;
     flex-direction: column;
     gap: 15px;
     min-width: 0;
+    overflow: hidden;
 }
 
 .search-section {
@@ -725,6 +756,69 @@ body {
 .detail-meta {
     font-size: 0.75rem;
     color: var(--text-muted);
+}
+
+.selected-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+    align-self: flex-start;
+    margin-top: 4px;
+    flex-shrink: 0;
+}
+
+.maximize-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    border: 1px solid var(--card-border);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+    backdrop-filter: blur(8px);
+    outline: none;
+}
+
+.maximize-btn i {
+    font-size: 0.9rem;
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s ease;
+}
+
+.maximize-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--accent);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), 0 0 15px var(--accent-glow, rgba(255, 255, 255, 0.2));
+}
+
+.maximize-btn:hover i {
+    transform: scale(1.15);
+}
+
+.maximize-btn:active {
+    transform: translateY(0) scale(0.92);
+}
+
+.maximize-btn.maximized {
+    background: var(--hover-bg);
+    color: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 15px var(--accent-glow, rgba(255, 255, 255, 0.25));
+}
+
+.maximize-btn.maximized i {
+    transform: rotate(180deg) scale(1.05);
+}
+
+.maximize-btn.maximized:hover i {
+    transform: rotate(180deg) scale(1.2);
 }
 
 /* Playlist / Song list section */
@@ -1320,10 +1414,28 @@ body {
     }
 
     .panel-left {
-        flex: 5;
+        flex: 4;
+        max-height: 450px;
+        max-width: 100%;
         display: flex;
         flex-direction: column;
         min-height: 0;
+        overflow: hidden;
+        transition: flex 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                    max-height 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                    opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+                    transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .dashboard-layout.maximized-view .panel-left {
+        flex: 0 0 0px !important;
+        max-height: 0px !important;
+        height: 0px !important;
+        opacity: 0 !important;
+        transform: translateY(-30px) scale(0.95);
+        margin: 0 !important;
+        padding: 0 !important;
+        pointer-events: none !important;
     }
 
     .results-list {
@@ -1333,10 +1445,11 @@ body {
     }
 
     .panel-right {
-        flex: 5;
+        flex: 6;
         display: flex;
         flex-direction: column;
         min-height: 0;
+        transition: flex 0.45s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .song-list-container {

@@ -4939,6 +4939,42 @@ document.addEventListener('DOMContentLoaded', () => {
         if (navBackBtn) {
             navBackBtn.addEventListener('click', handleGoBack);
         }
+
+        // Maximize / Minimize View logic
+        const maximizeBtn = document.getElementById('maximize-btn');
+        const dashboardLayout = document.querySelector('.dashboard-layout');
+
+        function toggleMaximizeView() {
+            if (!dashboardLayout || !maximizeBtn) return;
+            const isMaximized = dashboardLayout.classList.toggle('maximized-view');
+            maximizeBtn.classList.toggle('maximized', isMaximized);
+            const icon = maximizeBtn.querySelector('i');
+            
+            if (isMaximized) {
+                if (icon) icon.className = 'fa-solid fa-compress';
+                maximizeBtn.setAttribute('title', 'Restore View');
+            } else {
+                if (icon) icon.className = 'fa-solid fa-expand';
+                maximizeBtn.setAttribute('title', 'Maximize View');
+            }
+
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+            }, 300);
+        }
+
+        if (maximizeBtn) {
+            maximizeBtn.addEventListener('click', toggleMaximizeView);
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && dashboardLayout && dashboardLayout.classList.contains('maximized-view')) {
+                const activeModal = document.querySelector('.modal-overlay.active');
+                if (!activeModal) {
+                    toggleMaximizeView();
+                }
+            }
+        });
         
         // Initialize history stack with current/initial home state
         pushToHistory({ type: 'home' });
