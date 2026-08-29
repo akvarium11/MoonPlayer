@@ -2642,6 +2642,370 @@ body {
     color: var(--accent);
 }
 
+/* ==========================================
+   EQUALIZER MODAL & CONTROLS STYLING
+   ========================================== */
+.eq-modal-content {
+    width: 820px !important;
+    max-width: 95vw !important;
+    padding: 24px 28px !important;
+}
+
+.eq-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.eq-toggle-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--card-border);
+    padding: 4px 12px;
+    border-radius: 20px;
+}
+
+.eq-status-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    text-shadow: 0 0 10px var(--accent-glow, rgba(255, 255, 255, 0.3));
+    transition: color 0.3s ease;
+}
+
+.eq-status-label.disabled {
+    color: var(--text-muted);
+    text-shadow: none;
+}
+
+.eq-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.eq-reset-btn {
+    margin-top: 0 !important;
+    padding: 6px 14px !important;
+    font-size: 0.72rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.05em !important;
+    border-radius: 8px !important;
+}
+
+.eq-preset-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--card-border);
+    flex-wrap: wrap;
+}
+
+.eq-preset-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.eq-preset-title {
+    font-size: 0.75rem;
+    font-family: var(--font-header);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+}
+
+.eq-preset-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.eq-preset-actions .settings-action-btn {
+    margin-top: 0 !important;
+    padding: 6px 12px !important;
+    font-size: 0.72rem !important;
+}
+
+#eq-preset-dropdown {
+    width: auto !important;
+    min-width: 220px;
+    padding: 8px 14px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    z-index: 1000;
+}
+
+#eq-preset-dropdown:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+#eq-preset-options-list {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    width: max-content;
+    min-width: 230px;
+    max-height: 280px;
+    overflow-y: auto;
+    background: #0d0d12;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.9);
+    z-index: 999999;
+    padding: 6px 0;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-6px);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+    pointer-events: none;
+}
+
+#eq-preset-dropdown.open #eq-preset-options-list {
+    opacity: 1 !important;
+    visibility: visible !important;
+    transform: translateY(0) !important;
+    pointer-events: auto !important;
+}
+
+#eq-preset-options-list .dropdown-option {
+    padding: 9px 16px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+#eq-preset-options-list .dropdown-option:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    padding-left: 20px;
+}
+
+#eq-preset-options-list .dropdown-option.active-preset {
+    color: var(--accent) !important;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.eq-modal-body {
+    overflow-y: visible !important;
+}
+
+/* EQ Curve Visualizer Canvas */
+.eq-curve-container {
+    width: 100%;
+    height: 130px;
+    background: radial-gradient(ellipse at center, rgba(30, 30, 40, 0.4) 0%, rgba(10, 10, 14, 0.7) 100%);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 20px;
+    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+#eq-curve-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* EQ Sliders Container */
+.eq-sliders-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+    width: 100%;
+    gap: 6px;
+    padding: 10px 4px;
+    background: rgba(255, 255, 255, 0.015);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+}
+
+.eq-slider-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    position: relative;
+}
+
+.eq-preamp-col {
+    flex: 0 0 54px;
+    border-right: 1px solid var(--card-border);
+    padding-right: 6px;
+}
+
+.eq-divider {
+    width: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 4px 2px;
+}
+
+.eq-bands-wrapper {
+    display: flex;
+    flex: 1;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+.eq-db-val {
+    font-size: 0.68rem;
+    font-family: var(--font-header);
+    font-weight: 600;
+    color: var(--text-secondary);
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.eq-db-val.boost {
+    color: var(--accent);
+    text-shadow: 0 0 8px var(--accent-glow, rgba(255, 255, 255, 0.3));
+}
+
+.eq-db-val.cut {
+    color: #ff4d6d;
+    text-shadow: 0 0 8px rgba(255, 77, 109, 0.3);
+}
+
+.eq-slider-track-wrap {
+    position: relative;
+    height: 170px;
+    width: 32px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.eq-zero-line {
+    position: absolute;
+    top: 50%;
+    left: 4px;
+    right: 4px;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.18);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Custom Vertical Range Slider via Rotate */
+.eq-slider {
+    position: absolute;
+    width: 154px;
+    height: 6px;
+    transform: rotate(-90deg);
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    z-index: 2;
+}
+
+.eq-slider:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.eq-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #141419;
+    box-shadow: 0 0 10px var(--accent-glow, rgba(255, 255, 255, 0.4)), 0 2px 5px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.eq-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.25);
+    box-shadow: 0 0 14px var(--accent-glow, rgba(255, 255, 255, 0.6)), 0 3px 8px rgba(0, 0, 0, 0.6);
+}
+
+.eq-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #141419;
+    box-shadow: 0 0 10px var(--accent-glow, rgba(255, 255, 255, 0.4)), 0 2px 5px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.eq-freq-label {
+    font-size: 0.68rem;
+    font-family: var(--font-header);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-align: center;
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+    margin-top: 2px;
+}
+
+/* Discord Status Dot animation */
+.discord-status-dot.connected {
+    background: #22c55e !important;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+
+.discord-status-dot.disconnected {
+    background: #ef4444 !important;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.discord-status-dot.connecting {
+    background: #eab308 !important;
+    box-shadow: 0 0 8px rgba(234, 179, 8, 0.6);
+}
+
+.discord-status-dot.disabled {
+    background: #6b7280 !important;
+    box-shadow: none;
+}
+
+@media (max-width: 768px) {
+    .eq-modal-content {
+        width: 95vw !important;
+        padding: 16px !important;
+    }
+    .eq-sliders-container {
+        overflow-x: auto;
+        padding-bottom: 12px;
+    }
+    .eq-slider-col {
+        min-width: 44px;
+    }
+}
+
+
 
 
 

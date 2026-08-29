@@ -22,6 +22,8 @@
 
 ## <a id="features"></a>⌨️ Features
 
+- [x] **10-Band Graphic Equalizer** - Built-in ISO standard 10-band graphic equalizer (32Hz to 16kHz) with preamp control, live frequency response curve canvas, pre-configured presets (Rock, Pop, Bass Boost, Vocal, Jazz, EDM, Hip-Hop, Classical, Acoustic, Deep), and custom preset saving.
+- [x] **Discord Rich Presence (RPC)** - Live Discord status integration showing currently playing track, artist, album, elapsed & remaining playback time, and automated high-resolution album cover fetching (via Deezer, iTunes, and Last.fm).
 - [x] **Desktop WebView Shell** - Native window container wrapping the application using Edge WebView2 (Windows) and WebKit2GTK (Linux).
 - [x] **Floating Dynamic Island** - Interactive, responsive island with smooth animations, compact/expanded states, and audio waveforms.
 - [x] **Accent Customization** - Dynamic theme accents including white, pink, blue, neon green, orange, purple, and a custom color picker.
@@ -122,6 +124,8 @@ This project is licensed under the GPL-3.0 License.
 
 ## <a id="features-rus"></a>⌨️ Возможности
 
+- [x] **10-полосный графический эквалайзер** - Встроенный эквалайзер по стандарту ISO (от 32 Гц до 16 кГц) с регулировкой Preamp, живым графиком АЧХ (частотной характеристики), готовыми пресетами (Rock, Pop, Bass Boost, Vocal, Jazz, EDM, Hip-Hop, Classical, Acoustic, Deep) и возможностью сохранять свои пресеты.
+- [x] **Интеграция с Discord Rich Presence (RPC)** - Отображение играющего трека, исполнителя, альбома, таймлайна и автоматическая подгрузка HD-обложек альбомов (через Deezer, iTunes и Last.fm).
 - [x] **Нативный WebView-контейнер** - Оболочка на C++ с использованием Edge WebView2 (Windows) и WebKit2GTK (Linux).
 - [x] **Интерактивный Dynamic Island** - Всплывающий остров с красивыми анимациями, компактным/расширенным состоянием и звуковыми волнами.
 - [x] **Кастомизация цветов** - Выбор цветовых акцентов (розовый, голубой, зеленый, оранжевый, фиолетовый) и палитра для своего цвета.

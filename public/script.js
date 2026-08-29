@@ -297,11 +297,65 @@ document.addEventListener('DOMContentLoaded', () => {
     const muteBtn = document.getElementById('mute-btn');
     const muteIcon = muteBtn.querySelector('i');
 
+    // Equalizer Constants & Frequency Bands (10-Band ISO Graphic EQ)
+    const EQ_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+    const EQ_LABELS = ['32', '64', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
+
+    const EQ_PRESETS = {
+        'Flat': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        'Bass Boost': [7.0, 6.0, 4.5, 2.5, 1.0, 0, 0, 0, 0, 0],
+        'Bass Reducer': [-7.0, -5.5, -4.0, -2.0, -1.0, 0, 0, 0, 0, 0],
+        'Deep Sub-bass': [8.5, 7.0, 3.5, 0, 0, 0, 0, 0, 0, 0],
+        'Mega Bass': [10.0, 8.5, 5.5, 2.0, 0, 0, 0, 1.0, 2.5, 3.5],
+        'Treble Boost': [0, 0, 0, 0, 0, 1.5, 3.5, 5.5, 7.5, 9.0],
+        'Treble Reducer': [0, 0, 0, 0, 0, -1.5, -3.5, -5.5, -7.5, -9.0],
+        'Vocal Booster': [-2.5, -2.0, -1.0, 2.0, 4.5, 5.0, 4.0, 2.0, 0, -1.5],
+        'Vocal Cut': [1.0, 1.0, 0, -2.5, -5.0, -5.0, -3.5, -1.0, 1.0, 1.0],
+        'Rock': [5.5, 4.0, 2.0, -0.5, -2.0, -0.5, 2.0, 4.0, 5.0, 6.0],
+        'Hard Rock / Metal': [6.5, 5.5, 2.5, -1.5, -3.0, -1.0, 3.0, 5.5, 7.0, 7.5],
+        'Pop': [-1.5, 0.5, 2.5, 4.0, 4.5, 3.0, 1.5, 0.5, 1.5, 2.5],
+        'Jazz': [4.0, 3.0, 1.5, 1.5, -1.0, -1.0, 0, 2.0, 3.5, 4.5],
+        'Classical': [5.0, 4.0, 2.5, 1.5, -1.0, -1.0, 0, 2.5, 3.5, 4.0],
+        'Electronic / EDM': [6.5, 5.5, 2.5, 0, -1.5, 2.0, 3.5, 5.0, 6.0, 6.5],
+        'Hip-Hop / Rap': [7.5, 6.5, 3.5, 1.5, -1.0, -1.0, 1.5, 2.5, 3.5, 4.5],
+        'Acoustic': [4.0, 3.0, 2.0, 1.0, 1.5, 2.0, 3.0, 3.5, 4.0, 3.5],
+        'R&B / Soul': [4.5, 6.5, 4.0, 1.0, -1.5, 1.0, 2.5, 3.5, 4.0, 4.5],
+        'Dance / Club': [6.0, 7.5, 3.5, 0, 1.0, 2.5, 4.0, 4.5, 4.0, 2.0],
+        'Lounge / Chill': [3.5, 2.5, 1.0, 0, 1.0, 1.5, 2.0, 1.5, 2.5, 3.0],
+        'Loudness & Clarity': [6.0, 4.5, 1.5, 0, -1.0, 0, 2.0, 4.0, 6.5, 7.5],
+        'Gaming / Spatial': [4.0, 2.0, 0, -1.0, 1.0, 2.0, 3.5, 5.0, 6.0, 6.5]
+    };
+
+    let isEqEnabled = localStorage.getItem('moonplayer_eq_enabled') !== 'false';
+    let currentEqPreset = localStorage.getItem('moonplayer_eq_preset') || 'Flat';
+    let eqPreamp = parseFloat(localStorage.getItem('moonplayer_eq_preamp')) || 0;
+    let customEqPresets = {};
+    try {
+        customEqPresets = JSON.parse(localStorage.getItem('moonplayer_eq_custom_presets') || '{}');
+    } catch (e) {
+        customEqPresets = {};
+    }
+
+    let eqValues = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const savedEqValues = localStorage.getItem('moonplayer_eq_values');
+    if (savedEqValues) {
+        try {
+            const parsed = JSON.parse(savedEqValues);
+            if (Array.isArray(parsed) && parsed.length === 10) {
+                eqValues = parsed.map(v => parseFloat(v) || 0);
+            }
+        } catch (e) {}
+    } else if (EQ_PRESETS[currentEqPreset]) {
+        eqValues = [...EQ_PRESETS[currentEqPreset]];
+    }
+
     let audioContext = null;
     let analyser = null;
     let dataArray = null;
     let sourceNode = null;
     let visualizerAnimationId = null;
+    let preampGainNode = null;
+    let eqFilterNodes = [];
 
     function initAudioContext() {
         if (audioContext) return;
@@ -310,8 +364,35 @@ document.addEventListener('DOMContentLoaded', () => {
             analyser = audioContext.createAnalyser();
             analyser.fftSize = 64; // 32 frequency bins
 
+            preampGainNode = audioContext.createGain();
+            const preampLinear = isEqEnabled ? Math.pow(10, eqPreamp / 20) : 1.0;
+            preampGainNode.gain.setValueAtTime(preampLinear, audioContext.currentTime);
+
+            eqFilterNodes = EQ_FREQUENCIES.map((freq, idx) => {
+                const filter = audioContext.createBiquadFilter();
+                if (idx === 0) {
+                    filter.type = 'lowshelf';
+                } else if (idx === EQ_FREQUENCIES.length - 1) {
+                    filter.type = 'highshelf';
+                } else {
+                    filter.type = 'peaking';
+                    filter.Q.value = 1.4;
+                }
+                filter.frequency.value = freq;
+                filter.gain.value = isEqEnabled ? (eqValues[idx] || 0) : 0;
+                return filter;
+            });
+
             sourceNode = audioContext.createMediaElementSource(bgAudio);
-            sourceNode.connect(analyser);
+            sourceNode.connect(preampGainNode);
+
+            let lastNode = preampGainNode;
+            eqFilterNodes.forEach(filter => {
+                lastNode.connect(filter);
+                lastNode = filter;
+            });
+
+            lastNode.connect(analyser);
             analyser.connect(audioContext.destination);
 
             const bufferLength = analyser.frequencyBinCount;
@@ -321,6 +402,157 @@ document.addEventListener('DOMContentLoaded', () => {
             drawVisualizer();
         } catch (e) {
             console.error("Web Audio API not supported / blocked:", e);
+        }
+    }
+
+    function applyEqGains() {
+        if (!audioContext) return;
+        const now = audioContext.currentTime;
+        if (preampGainNode) {
+            const linearGain = isEqEnabled ? Math.pow(10, eqPreamp / 20) : 1.0;
+            preampGainNode.gain.setTargetAtTime(linearGain, now, 0.01);
+        }
+        eqFilterNodes.forEach((filter, idx) => {
+            const targetGain = isEqEnabled ? (eqValues[idx] || 0) : 0;
+            filter.gain.setTargetAtTime(targetGain, now, 0.01);
+        });
+    }
+
+    // EQ Frequency Response Curve Canvas
+    const eqCurveCanvas = document.getElementById('eq-curve-canvas');
+    const eqCurveCtx = eqCurveCanvas ? eqCurveCanvas.getContext('2d') : null;
+
+    function resizeEqCurveCanvas() {
+        if (!eqCurveCanvas || !eqCurveCanvas.parentElement) return;
+        const targetWidth = Math.floor(eqCurveCanvas.parentElement.clientWidth * window.devicePixelRatio);
+        const targetHeight = Math.floor(eqCurveCanvas.parentElement.clientHeight * window.devicePixelRatio);
+        if (eqCurveCanvas.width !== targetWidth || eqCurveCanvas.height !== targetHeight) {
+            eqCurveCanvas.width = targetWidth;
+            eqCurveCanvas.height = targetHeight;
+        }
+    }
+
+    function drawEqCurve() {
+        if (!eqCurveCanvas || !eqCurveCtx) return;
+        resizeEqCurveCanvas();
+
+        const w = eqCurveCanvas.width;
+        const h = eqCurveCanvas.height;
+        eqCurveCtx.clearRect(0, 0, w, h);
+
+        const padX = 24 * window.devicePixelRatio;
+        const padY = 14 * window.devicePixelRatio;
+        const drawW = w - padX * 2;
+        const drawH = h - padY * 2;
+        const centerY = padY + drawH / 2;
+
+        // Draw horizontal grid lines (-12, -6, 0, +6, +12 dB)
+        const dbLevels = [12, 6, 0, -6, -12];
+        eqCurveCtx.font = `${Math.round(8 * window.devicePixelRatio)}px Unbounded, sans-serif`;
+        eqCurveCtx.textAlign = 'right';
+        eqCurveCtx.textBaseline = 'middle';
+
+        dbLevels.forEach(db => {
+            const y = centerY - (db / 12) * (drawH / 2);
+            eqCurveCtx.beginPath();
+            if (db === 0) {
+                eqCurveCtx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+                eqCurveCtx.lineWidth = 1 * window.devicePixelRatio;
+                eqCurveCtx.setLineDash([]);
+            } else {
+                eqCurveCtx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+                eqCurveCtx.lineWidth = 1 * window.devicePixelRatio;
+                eqCurveCtx.setLineDash([4 * window.devicePixelRatio, 4 * window.devicePixelRatio]);
+            }
+            eqCurveCtx.moveTo(padX, y);
+            eqCurveCtx.lineTo(w - padX, y);
+            eqCurveCtx.stroke();
+
+            // Label
+            eqCurveCtx.fillStyle = db === 0 ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.2)';
+            eqCurveCtx.fillText((db > 0 ? `+${db}` : `${db}`) + 'dB', padX - 4 * window.devicePixelRatio, y);
+        });
+        eqCurveCtx.setLineDash([]);
+
+        // Calculate control points for the 10 bands
+        const points = [];
+        const numBands = EQ_FREQUENCIES.length;
+        for (let i = 0; i < numBands; i++) {
+            const x = padX + (i / (numBands - 1)) * drawW;
+            const gain = isEqEnabled ? (eqValues[i] || 0) : 0;
+            const y = centerY - (gain / 12) * (drawH / 2);
+            points.push({ x, y });
+        }
+
+        // Draw smooth interpolated curve
+        if (points.length > 0) {
+            const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ffffff';
+
+            eqCurveCtx.beginPath();
+            eqCurveCtx.moveTo(points[0].x, points[0].y);
+
+            for (let i = 0; i < points.length - 1; i++) {
+                const p0 = points[Math.max(0, i - 1)];
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                const p3 = points[Math.min(points.length - 1, i + 2)];
+
+                // Catmull-Rom spline to Bezier conversion
+                const cp1x = p1.x + (p2.x - p0.x) / 6;
+                const cp1y = p1.y + (p2.y - p0.y) / 6;
+                const cp2x = p2.x - (p3.x - p1.x) / 6;
+                const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+                eqCurveCtx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+            }
+
+            // Fill area under the curve to center line
+            const fillRegion = new Path2D();
+            fillRegion.moveTo(points[0].x, centerY);
+            fillRegion.lineTo(points[0].x, points[0].y);
+
+            for (let i = 0; i < points.length - 1; i++) {
+                const p0 = points[Math.max(0, i - 1)];
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                const p3 = points[Math.min(points.length - 1, i + 2)];
+
+                const cp1x = p1.x + (p2.x - p0.x) / 6;
+                const cp1y = p1.y + (p2.y - p0.y) / 6;
+                const cp2x = p2.x - (p3.x - p1.x) / 6;
+                const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+                fillRegion.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+            }
+            fillRegion.lineTo(points[points.length - 1].x, centerY);
+            fillRegion.closePath();
+
+            const grad = eqCurveCtx.createLinearGradient(0, padY, 0, h - padY);
+            grad.addColorStop(0, 'rgba(255, 255, 255, 0.18)');
+            grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.04)');
+            grad.addColorStop(1, 'rgba(255, 255, 255, 0.12)');
+            eqCurveCtx.fillStyle = grad;
+            eqCurveCtx.fill(fillRegion);
+
+            // Stroke the main response line
+            eqCurveCtx.strokeStyle = isEqEnabled ? accentColor : 'rgba(255, 255, 255, 0.3)';
+            eqCurveCtx.lineWidth = 2.5 * window.devicePixelRatio;
+            eqCurveCtx.shadowColor = isEqEnabled ? (getComputedStyle(document.documentElement).getPropertyValue('--accent-glow').trim() || 'rgba(255, 255, 255, 0.4)') : 'transparent';
+            eqCurveCtx.shadowBlur = 10 * window.devicePixelRatio;
+            eqCurveCtx.stroke();
+            eqCurveCtx.shadowBlur = 0;
+
+            // Draw glowing control points
+            points.forEach((p, idx) => {
+                const gain = isEqEnabled ? (eqValues[idx] || 0) : 0;
+                eqCurveCtx.beginPath();
+                eqCurveCtx.arc(p.x, p.y, (Math.abs(gain) > 0.1 ? 4 : 2.5) * window.devicePixelRatio, 0, Math.PI * 2);
+                eqCurveCtx.fillStyle = isEqEnabled ? accentColor : 'rgba(255, 255, 255, 0.5)';
+                eqCurveCtx.fill();
+                eqCurveCtx.strokeStyle = '#0d0d10';
+                eqCurveCtx.lineWidth = 1.5 * window.devicePixelRatio;
+                eqCurveCtx.stroke();
+            });
         }
     }
 
@@ -338,7 +570,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', () => {
+        resizeCanvas();
+        drawEqCurve();
+    });
 
     const barCount = 32;
     const bars = [];
@@ -2885,6 +3120,87 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
+    // DISCORD RICH PRESENCE INTEGRATION HELPERS
+    // ==========================================
+    async function syncDiscordRpcStatus() {
+        try {
+            const res = await fetch('/api/discord-rpc/status');
+            if (!res.ok) return;
+            const status = await res.json();
+            
+            const toggleRpc = document.getElementById('toggle-discord-rpc');
+            const togglePaused = document.getElementById('toggle-discord-show-paused');
+            const statusDot = document.getElementById('discord-status-dot');
+            const statusMsg = document.getElementById('discord-status-msg');
+            const clientIdInput = document.getElementById('discord-client-id-input');
+            const lastFmInput = document.getElementById('lastfm-api-key-input');
+
+            if (toggleRpc) toggleRpc.checked = status.enabled;
+            if (togglePaused) togglePaused.checked = status.showPaused;
+            if (clientIdInput && !clientIdInput.value) {
+                clientIdInput.value = (status.clientId === '1198273645839204352') ? '' : status.clientId;
+            }
+            if (lastFmInput && !lastFmInput.value && status.lastFmApiKey) {
+                lastFmInput.value = status.lastFmApiKey;
+            }
+
+            if (statusDot && statusMsg) {
+                statusDot.className = 'discord-status-dot';
+                if (!status.enabled) {
+                    statusDot.classList.add('disabled');
+                    statusMsg.textContent = 'Disabled in settings';
+                } else if (status.isConnected) {
+                    statusDot.classList.add('connected');
+                    const uname = status.user ? status.user.username : 'Active';
+                    statusMsg.textContent = `Connected as @${uname}`;
+                } else if (status.isConnecting) {
+                    statusDot.classList.add('connecting');
+                    statusMsg.textContent = 'Connecting to Discord...';
+                } else {
+                    statusDot.classList.add('disconnected');
+                    statusMsg.textContent = 'Discord not detected';
+                }
+            }
+        } catch (e) {
+            // Server might be busy or restarting
+        }
+    }
+
+    async function sendDiscordRpcActivity(song, isPlayingState) {
+        if (!song) return;
+        try {
+            const title = song.title || song.name || 'Unknown Track';
+            const artist = song.artist || 'Unknown Artist';
+            const album = song.album || '';
+            const duration = (!isNaN(bgAudio.duration) && bgAudio.duration > 0) ? bgAudio.duration : 0;
+            const currentTime = (!isNaN(bgAudio.currentTime) && bgAudio.currentTime >= 0) ? bgAudio.currentTime : 0;
+            const playing = isPlayingState !== undefined ? isPlayingState : isPlaying;
+
+            await fetch('/api/discord-rpc/activity', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: title,
+                    artist: artist,
+                    album: album,
+                    duration: duration,
+                    currentTime: currentTime,
+                    isPlaying: playing,
+                    coverUrl: (typeof song.cover === 'string' && song.cover.startsWith('http')) ? song.cover : ''
+                })
+            });
+        } catch (e) {
+            console.error('[Discord RPC] send activity failed:', e);
+        }
+    }
+
+    async function clearDiscordRpcActivity() {
+        try {
+            await fetch('/api/discord-rpc/clear', { method: 'POST' });
+        } catch (e) {}
+    }
+
+    // ==========================================
     // 11. AUDIO CONTROLS & EVENT BINDINGS
     // ==========================================
 
@@ -3048,6 +3364,7 @@ document.addEventListener('DOMContentLoaded', () => {
             playIcon.className = 'fa-solid fa-pause';
             setCoverAnimationState(true);
             updateMediaSessionPlaybackState('playing');
+            sendDiscordRpcActivity(song, true);
             
             if (isCrossfadeEnabled) {
                 const fadeInterval = 50; // ms
@@ -3079,6 +3396,7 @@ document.addEventListener('DOMContentLoaded', () => {
             playIcon.className = 'fa-solid fa-play';
             setCoverAnimationState(false);
             updateMediaSessionPlaybackState('paused');
+            sendDiscordRpcActivity(song, false);
             updateHighlighting();
         });
     }
@@ -3147,6 +3465,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setCoverAnimationState(false);
             isPlaying = false;
             updateMediaSessionPlaybackState('paused');
+            sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], false);
         } else {
             if (crossfadeIntervalId) {
                 clearInterval(crossfadeIntervalId);
@@ -3157,6 +3476,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setCoverAnimationState(true);
                 isPlaying = true;
                 updateMediaSessionPlaybackState('playing');
+                sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], true);
             }).catch(e => console.log(e));
         }
         updateHighlighting();
@@ -3374,6 +3694,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bgAudio.addEventListener('loadedmetadata', () => {
         totalTimeEl.textContent = formatTime(bgAudio.duration);
+        if (allSongs[currentlyPlayingIndex]) {
+            sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], isPlaying);
+        }
     });
 
     bgAudio.addEventListener('timeupdate', () => {
@@ -3408,6 +3731,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const pct = parseFloat(e.target.value);
         bgAudio.currentTime = (pct / 100) * bgAudio.duration;
         progressSlider.style.setProperty('--value', `${pct}%`);
+    });
+
+    progressSlider.addEventListener('change', () => {
+        if (allSongs[currentlyPlayingIndex]) {
+            sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], isPlaying);
+        }
     });
 
     // Time formatting helper
@@ -4024,6 +4353,469 @@ document.addEventListener('DOMContentLoaded', () => {
             highlightActiveColorOption(color);
         });
     }
+
+    // ==========================================
+    // EQUALIZER MODAL, PRESETS & CONTROLS BINDINGS
+    // ==========================================
+    const equalizerBtn = document.getElementById('equalizer-btn');
+    const equalizerModal = document.getElementById('equalizer-modal');
+    const closeEqBtn = document.getElementById('close-eq-btn');
+    const toggleEqCheckbox = document.getElementById('toggle-eq');
+    const eqStatusLabel = document.getElementById('eq-status-label');
+    const resetEqBtn = document.getElementById('reset-eq-btn');
+    const eqBandsWrapper = document.getElementById('eq-bands-wrapper');
+    const eqSliderPreamp = document.getElementById('eq-slider-preamp');
+    const eqPreampVal = document.getElementById('eq-preamp-val');
+    const eqPresetDropdown = document.getElementById('eq-preset-dropdown');
+    const selectedEqPresetText = document.getElementById('selected-eq-preset-text');
+    const eqPresetOptionsList = document.getElementById('eq-preset-options-list');
+    const saveCustomPresetBtn = document.getElementById('save-custom-preset-btn');
+    const deleteCustomPresetBtn = document.getElementById('delete-custom-preset-btn');
+
+    const eqPresetPromptModal = document.getElementById('eq-preset-prompt-modal');
+    const closeEqPresetPromptBtn = document.getElementById('close-eq-preset-prompt-btn');
+    const eqPresetPromptInput = document.getElementById('eq-preset-prompt-input');
+    const eqPresetPromptCancel = document.getElementById('eq-preset-prompt-cancel');
+    const eqPresetPromptSubmit = document.getElementById('eq-preset-prompt-submit');
+
+    function formatDbValue(val) {
+        const num = parseFloat(val) || 0;
+        if (num > 0) return `+${num.toFixed(1)} dB`;
+        if (num < 0) return `${num.toFixed(1)} dB`;
+        return `0.0 dB`;
+    }
+
+    function updateDbValClass(el, val) {
+        if (!el) return;
+        el.classList.remove('boost', 'cut');
+        if (val > 0.1) el.classList.add('boost');
+        else if (val < -0.1) el.classList.add('cut');
+    }
+
+    // Populate the 10 EQ Bands in HTML
+    function initEqBandsUI() {
+        if (!eqBandsWrapper) return;
+        eqBandsWrapper.innerHTML = '';
+
+        EQ_FREQUENCIES.forEach((freq, idx) => {
+            const val = eqValues[idx] || 0;
+            const col = document.createElement('div');
+            col.className = 'eq-slider-col';
+
+            col.innerHTML = `
+                <span class="eq-db-val" id="eq-val-${idx}">${formatDbValue(val)}</span>
+                <div class="eq-slider-track-wrap">
+                    <div class="eq-zero-line"></div>
+                    <input type="range" class="eq-slider" id="eq-slider-${idx}" min="-12" max="12" step="0.5" value="${val}">
+                </div>
+                <span class="eq-freq-label">${EQ_LABELS[idx]}</span>
+            `;
+
+            eqBandsWrapper.appendChild(col);
+
+            const valEl = col.querySelector(`#eq-val-${idx}`);
+            const sliderEl = col.querySelector(`#eq-slider-${idx}`);
+            updateDbValClass(valEl, val);
+
+            sliderEl.addEventListener('input', (e) => {
+                const newVal = parseFloat(e.target.value);
+                eqValues[idx] = newVal;
+                valEl.textContent = formatDbValue(newVal);
+                updateDbValClass(valEl, newVal);
+
+                // Set preset to Custom
+                currentEqPreset = 'Custom';
+                if (selectedEqPresetText) selectedEqPresetText.textContent = '▼ Custom';
+                localStorage.setItem('moonplayer_eq_preset', 'Custom');
+                localStorage.setItem('moonplayer_eq_values', JSON.stringify(eqValues));
+                updatePresetDeleteBtn();
+
+                initAudioContext();
+                applyEqGains();
+                drawEqCurve();
+            });
+        });
+
+        // Initialize Preamp
+        if (eqSliderPreamp && eqPreampVal) {
+            eqSliderPreamp.value = eqPreamp;
+            eqPreampVal.textContent = formatDbValue(eqPreamp);
+            updateDbValClass(eqPreampVal, eqPreamp);
+
+            eqSliderPreamp.addEventListener('input', (e) => {
+                eqPreamp = parseFloat(e.target.value);
+                eqPreampVal.textContent = formatDbValue(eqPreamp);
+                updateDbValClass(eqPreampVal, eqPreamp);
+                localStorage.setItem('moonplayer_eq_preamp', eqPreamp);
+
+                initAudioContext();
+                applyEqGains();
+                drawEqCurve();
+            });
+        }
+
+        // Initialize Toggle
+        if (toggleEqCheckbox && eqStatusLabel) {
+            toggleEqCheckbox.checked = isEqEnabled;
+            eqStatusLabel.textContent = isEqEnabled ? 'ENABLED' : 'DISABLED';
+            eqStatusLabel.classList.toggle('disabled', !isEqEnabled);
+
+            toggleEqCheckbox.addEventListener('change', (e) => {
+                isEqEnabled = e.target.checked;
+                localStorage.setItem('moonplayer_eq_enabled', isEqEnabled);
+                eqStatusLabel.textContent = isEqEnabled ? 'ENABLED' : 'DISABLED';
+                eqStatusLabel.classList.toggle('disabled', !isEqEnabled);
+
+                initAudioContext();
+                applyEqGains();
+                drawEqCurve();
+            });
+        }
+
+        // Render presets list in dropdown
+        renderPresetDropdownList();
+    }
+
+    function renderPresetDropdownList() {
+        if (!eqPresetOptionsList) return;
+        eqPresetOptionsList.innerHTML = '';
+
+        const builtInNames = Object.keys(EQ_PRESETS);
+        builtInNames.forEach(name => {
+            const opt = document.createElement('div');
+            opt.className = `dropdown-option ${name === currentEqPreset ? 'active-preset' : ''}`;
+            opt.setAttribute('data-value', name);
+            opt.textContent = name;
+            opt.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectEqPreset(name);
+                if (eqPresetDropdown) eqPresetDropdown.classList.remove('open');
+            });
+            eqPresetOptionsList.appendChild(opt);
+        });
+
+        // Custom presets saved by user
+        const customNames = Object.keys(customEqPresets);
+        if (customNames.length > 0) {
+            const divider = document.createElement('div');
+            divider.className = 'playlist-context-menu-divider';
+            eqPresetOptionsList.appendChild(divider);
+
+            customNames.forEach(name => {
+                const opt = document.createElement('div');
+                opt.className = `dropdown-option ${name === currentEqPreset ? 'active-preset' : ''}`;
+                opt.setAttribute('data-value', name);
+                opt.textContent = `★ ${name}`;
+                opt.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectEqPreset(name);
+                    if (eqPresetDropdown) eqPresetDropdown.classList.remove('open');
+                });
+                eqPresetOptionsList.appendChild(opt);
+            });
+        }
+
+        // Custom option
+        const customOpt = document.createElement('div');
+        customOpt.className = `dropdown-option ${currentEqPreset === 'Custom' ? 'active-preset' : ''}`;
+        customOpt.setAttribute('data-value', 'Custom');
+        customOpt.textContent = 'Custom';
+        customOpt.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectEqPreset('Custom');
+            if (eqPresetDropdown) eqPresetDropdown.classList.remove('open');
+        });
+        eqPresetOptionsList.appendChild(customOpt);
+
+        if (selectedEqPresetText) {
+            selectedEqPresetText.textContent = `▼ ${currentEqPreset}`;
+        }
+        updatePresetDeleteBtn();
+    }
+
+    function updatePresetDeleteBtn() {
+        if (!deleteCustomPresetBtn) return;
+        if (customEqPresets[currentEqPreset]) {
+            deleteCustomPresetBtn.classList.remove('hidden');
+        } else {
+            deleteCustomPresetBtn.classList.add('hidden');
+        }
+    }
+
+    function selectEqPreset(name) {
+        currentEqPreset = name;
+        if (selectedEqPresetText) {
+            selectedEqPresetText.textContent = `▼ ${name}`;
+        }
+        localStorage.setItem('moonplayer_eq_preset', name);
+
+        let targetGains = null;
+        if (EQ_PRESETS[name]) {
+            targetGains = EQ_PRESETS[name];
+        } else if (customEqPresets[name]) {
+            targetGains = customEqPresets[name];
+        }
+
+        if (targetGains) {
+            eqValues = [...targetGains];
+            localStorage.setItem('moonplayer_eq_values', JSON.stringify(eqValues));
+
+            // Update UI sliders and readouts
+            EQ_FREQUENCIES.forEach((_, idx) => {
+                const slider = document.getElementById(`eq-slider-${idx}`);
+                const valEl = document.getElementById(`eq-val-${idx}`);
+                const val = eqValues[idx] || 0;
+                if (slider) slider.value = val;
+                if (valEl) {
+                    valEl.textContent = formatDbValue(val);
+                    updateDbValClass(valEl, val);
+                }
+            });
+
+            initAudioContext();
+            applyEqGains();
+            drawEqCurve();
+        }
+
+        // Update active class in options list
+        if (eqPresetOptionsList) {
+            eqPresetOptionsList.querySelectorAll('.dropdown-option').forEach(opt => {
+                const val = opt.getAttribute('data-value');
+                if (val === name) {
+                    opt.classList.add('active-preset');
+                } else {
+                    opt.classList.remove('active-preset');
+                }
+            });
+        }
+
+        updatePresetDeleteBtn();
+    }
+
+    // Toggle preset dropdown
+    if (eqPresetDropdown) {
+        eqPresetDropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+            eqPresetDropdown.classList.toggle('open');
+        });
+    }
+
+    document.addEventListener('click', () => {
+        if (eqPresetDropdown) {
+            eqPresetDropdown.classList.remove('open');
+        }
+    });
+
+    // Reset EQ
+    if (resetEqBtn) {
+        resetEqBtn.addEventListener('click', () => {
+            eqPreamp = 0;
+            if (eqSliderPreamp && eqPreampVal) {
+                eqSliderPreamp.value = 0;
+                eqPreampVal.textContent = formatDbValue(0);
+                updateDbValClass(eqPreampVal, 0);
+                localStorage.setItem('moonplayer_eq_preamp', 0);
+            }
+            selectEqPreset('Flat');
+            if (typeof showToast === 'function') {
+                showToast('Equalizer reset to Flat');
+            }
+        });
+    }
+
+    // Open Equalizer Modal
+    if (equalizerBtn && equalizerModal) {
+        equalizerBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            equalizerModal.classList.add('visible');
+            setTimeout(() => {
+                drawEqCurve();
+            }, 50);
+        });
+    }
+
+    // Close Equalizer Modal
+    if (closeEqBtn && equalizerModal) {
+        closeEqBtn.addEventListener('click', () => {
+            equalizerModal.classList.remove('visible');
+        });
+    }
+
+    if (equalizerModal) {
+        equalizerModal.addEventListener('click', (e) => {
+            if (e.target === equalizerModal) {
+                equalizerModal.classList.remove('visible');
+            }
+        });
+        const content = equalizerModal.querySelector('.settings-content');
+        if (content) {
+            content.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+        }
+    }
+
+    // Save Custom Preset Prompt
+    if (saveCustomPresetBtn && eqPresetPromptModal) {
+        saveCustomPresetBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (eqPresetPromptInput) eqPresetPromptInput.value = '';
+            eqPresetPromptModal.classList.add('visible');
+            if (eqPresetPromptInput) eqPresetPromptInput.focus();
+        });
+    }
+
+    if (closeEqPresetPromptBtn && eqPresetPromptModal) {
+        closeEqPresetPromptBtn.addEventListener('click', () => {
+            eqPresetPromptModal.classList.remove('visible');
+        });
+    }
+
+    if (eqPresetPromptCancel && eqPresetPromptModal) {
+        eqPresetPromptCancel.addEventListener('click', () => {
+            eqPresetPromptModal.classList.remove('visible');
+        });
+    }
+
+    if (eqPresetPromptSubmit && eqPresetPromptModal) {
+        const handleSavePreset = () => {
+            const name = (eqPresetPromptInput ? eqPresetPromptInput.value.trim() : '');
+            if (!name) return;
+            customEqPresets[name] = [...eqValues];
+            localStorage.setItem('moonplayer_eq_custom_presets', JSON.stringify(customEqPresets));
+            eqPresetPromptModal.classList.remove('visible');
+            renderPresetDropdownList();
+            selectEqPreset(name);
+            if (typeof showToast === 'function') {
+                showToast(`Preset "${name}" saved!`);
+            }
+        };
+
+        eqPresetPromptSubmit.addEventListener('click', handleSavePreset);
+        if (eqPresetPromptInput) {
+            eqPresetPromptInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSavePreset();
+                } else if (e.key === 'Escape') {
+                    eqPresetPromptModal.classList.remove('visible');
+                }
+            });
+        }
+    }
+
+    // Delete Custom Preset
+    if (deleteCustomPresetBtn) {
+        deleteCustomPresetBtn.addEventListener('click', () => {
+            if (customEqPresets[currentEqPreset]) {
+                const deletedName = currentEqPreset;
+                delete customEqPresets[currentEqPreset];
+                localStorage.setItem('moonplayer_eq_custom_presets', JSON.stringify(customEqPresets));
+                selectEqPreset('Flat');
+                renderPresetDropdownList();
+                if (typeof showToast === 'function') {
+                    showToast(`Preset "${deletedName}" deleted!`);
+                }
+            }
+        });
+    }
+
+    // Initialize EQ UI
+    initEqBandsUI();
+
+    // ==========================================
+    // DISCORD RICH PRESENCE SETTINGS BINDINGS
+    // ==========================================
+    const toggleDiscordRpc = document.getElementById('toggle-discord-rpc');
+    const toggleDiscordShowPaused = document.getElementById('toggle-discord-show-paused');
+    const discordRpcRefreshBtn = document.getElementById('discord-rpc-refresh-btn');
+    const discordClientIdInput = document.getElementById('discord-client-id-input');
+    const discordClientIdSaveBtn = document.getElementById('discord-client-id-save-btn');
+    const lastFmApiKeyInput = document.getElementById('lastfm-api-key-input');
+    const lastFmApiKeySaveBtn = document.getElementById('lastfm-api-key-save-btn');
+
+    if (toggleDiscordRpc) {
+        toggleDiscordRpc.addEventListener('change', async (e) => {
+            try {
+                await fetch('/api/discord-rpc/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: e.target.checked })
+                });
+                syncDiscordRpcStatus();
+                if (e.target.checked && isPlaying && allSongs[currentlyPlayingIndex]) {
+                    sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], true);
+                } else if (!e.target.checked) {
+                    clearDiscordRpcActivity();
+                }
+            } catch (err) {}
+        });
+    }
+
+    if (toggleDiscordShowPaused) {
+        toggleDiscordShowPaused.addEventListener('change', async (e) => {
+            try {
+                await fetch('/api/discord-rpc/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ showPaused: e.target.checked })
+                });
+                if (!isPlaying && allSongs[currentlyPlayingIndex]) {
+                    sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], false);
+                }
+            } catch (err) {}
+        });
+    }
+
+    if (discordRpcRefreshBtn) {
+        discordRpcRefreshBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            syncDiscordRpcStatus();
+            if (isPlaying && allSongs[currentlyPlayingIndex]) {
+                sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], true);
+            }
+            if (typeof showToast === 'function') {
+                showToast('Discord connection refreshed');
+            }
+        });
+    }
+
+    if (discordClientIdSaveBtn && discordClientIdInput) {
+        discordClientIdSaveBtn.addEventListener('click', async () => {
+            const clientId = discordClientIdInput.value.trim();
+            try {
+                await fetch('/api/discord-rpc/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ clientId: clientId || '1198273645839204352' })
+                });
+                syncDiscordRpcStatus();
+                if (typeof showToast === 'function') {
+                    showToast('Discord Client ID saved');
+                }
+            } catch (err) {}
+        });
+    }
+
+    if (lastFmApiKeySaveBtn && lastFmApiKeyInput) {
+        lastFmApiKeySaveBtn.addEventListener('click', async () => {
+            const apiKey = lastFmApiKeyInput.value.trim();
+            try {
+                await fetch('/api/discord-rpc/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lastFmApiKey: apiKey })
+                });
+                syncDiscordRpcStatus();
+                if (typeof showToast === 'function') {
+                    showToast('Last.fm API Key saved');
+                }
+            } catch (err) {}
+        });
+    }
+
+    // Sync Discord status on load
+    syncDiscordRpcStatus();
 
     // ==========================================
     // 13. INDEXEDDB FOR BG IMAGE STORAGE & SLIDERS

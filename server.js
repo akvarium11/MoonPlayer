@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const discordPresence = require('./discord_presence');
 
 const app = express();
 const PORT = process.env.PORT || 7644;
@@ -216,6 +217,40 @@ app.get(['/api/stream', '/api/stream/:filename'], (req, res) => {
     }
 
     res.sendFile(resolvedPath);
+});
+
+// API: Discord RPC Status
+app.get('/api/discord-rpc/status', (req, res) => {
+    res.json(discordPresence.getStatus());
+});
+
+// API: Discord RPC Update Config
+app.post('/api/discord-rpc/config', (req, res) => {
+    const updated = discordPresence.updateConfig(req.body);
+    res.json({ success: true, config: updated });
+});
+
+// API: Discord RPC Update Activity
+app.post('/api/discord-rpc/activity', (req, res) => {
+    discordPresence.updateActivity(req.body);
+    res.json({ success: true });
+});
+
+// API: Discord RPC Clear Activity
+app.post('/api/discord-rpc/clear', (req, res) => {
+    discordPresence.clearActivity();
+    res.json({ success: true });
+});
+
+// API: Search & Resolve Cover Art
+app.get('/api/cover-art', async (req, res) => {
+    const { title, artist, album } = req.query;
+    try {
+        const coverUrl = await discordPresence.resolveCover(title, artist, album);
+        res.json({ success: true, coverUrl });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // Serve index.html for root path

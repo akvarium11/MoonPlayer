@@ -143,6 +143,9 @@
             <div class="card-header">
                 <img src="/assets/logo.png" alt="MoonPlayer Logo" class="logo">
                 <div class="header-right">
+                    <button class="settings-btn" id="equalizer-btn" title="Equalizer">
+                        <i class="fa-solid fa-sliders"></i>
+                    </button>
                     <button class="settings-btn" id="settings-btn" title="Settings">
                         <i class="fa-solid fa-gear"></i>
                     </button>
@@ -290,6 +293,51 @@
                             </div>
                             <input type="range" id="island-size-slider" min="0.7" max="1.5" step="0.05" value="1.0" class="custom-slider" style="width: 100%;">
                         </div>
+
+                        <!-- Discord Rich Presence Settings -->
+                        <div class="setting-item flex-column" style="margin-top: 15px; border-top: 1px solid var(--card-border); padding-top: 15px; width: 100%;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                                <label for="toggle-discord-rpc" style="font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fa-brands fa-discord" style="color: #5865F2; font-size: 1.1rem;"></i> Discord Rich Presence
+                                </label>
+                                <label class="switch">
+                                    <input type="checkbox" id="toggle-discord-rpc" checked>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            <div id="discord-rpc-status-container" style="display: flex; align-items: center; justify-content: space-between; width: 100%; font-size: 0.75rem; margin-top: 6px; padding: 6px 10px; background: rgba(255, 255, 255, 0.03); border-radius: 8px; border: 1px solid var(--card-border);">
+                                <div id="discord-rpc-status-text" style="display: flex; align-items: center; gap: 6px; color: var(--text-secondary);">
+                                    <span class="discord-status-dot" id="discord-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #eab308; display: inline-block;"></span>
+                                    <span id="discord-status-msg">Checking Discord...</span>
+                                </div>
+                                <button id="discord-rpc-refresh-btn" class="settings-action-btn" style="padding: 3px 8px; font-size: 0.7rem; margin-top: 0;" title="Refresh Discord connection">
+                                    <i class="fa-solid fa-rotate"></i>
+                                </button>
+                            </div>
+                            <div id="discord-rpc-options" style="width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
+                                <div class="setting-item" style="margin-bottom: 0; width: 100%; justify-content: space-between;">
+                                    <label for="toggle-discord-show-paused" style="font-size: 0.8rem;">Show Activity When Paused</label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="toggle-discord-show-paused" checked>
+                                        <span class="switch-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-item flex-column" style="margin-bottom: 0; width: 100%; align-items: flex-start; gap: 4px;">
+                                    <label for="discord-client-id-input" style="font-size: 0.75rem;">Discord Application ID (Optional)</label>
+                                    <div style="display: flex; gap: 6px; width: 100%;">
+                                        <input type="text" id="discord-client-id-input" placeholder="Default MoonPlayer App ID" autocomplete="off" style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); border-radius: 8px; padding: 6px 10px; color: #ffffff; font-family: inherit; font-size: 0.75rem; outline: none;">
+                                        <button id="discord-client-id-save-btn" class="settings-action-btn" style="padding: 6px 10px; font-size: 0.72rem; margin-top: 0;">SAVE</button>
+                                    </div>
+                                </div>
+                                <div class="setting-item flex-column" style="margin-bottom: 0; width: 100%; align-items: flex-start; gap: 4px;">
+                                    <label for="lastfm-api-key-input" style="font-size: 0.75rem;">Last.fm API Key (Optional)</label>
+                                    <div style="display: flex; gap: 6px; width: 100%;">
+                                        <input type="password" id="lastfm-api-key-input" placeholder="Last.fm API Key for covers" autocomplete="off" style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); border-radius: 8px; padding: 6px 10px; color: #ffffff; font-family: inherit; font-size: 0.75rem; outline: none;">
+                                        <button id="lastfm-api-key-save-btn" class="settings-action-btn" style="padding: 6px 10px; font-size: 0.72rem; margin-top: 0;">SAVE</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="settings-column">
@@ -360,6 +408,95 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Equalizer Modal -->
+    <div id="equalizer-modal" class="modal-overlay">
+        <div class="settings-content eq-modal-content">
+            <div class="modal-header">
+                <div class="eq-header-left">
+                    <h3>EQUALIZER</h3>
+                    <div class="eq-toggle-wrapper">
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-eq" checked>
+                            <span class="switch-slider"></span>
+                        </label>
+                        <span class="eq-status-label" id="eq-status-label">ENABLED</span>
+                    </div>
+                </div>
+                <div class="eq-header-right">
+                    <button id="reset-eq-btn" class="settings-action-btn eq-reset-btn" title="Reset to Flat">
+                        <i class="fa-solid fa-rotate-left"></i> RESET
+                    </button>
+                    <button id="close-eq-btn" class="close-btn" title="Close Equalizer"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
+            <div class="modal-body eq-modal-body">
+                <!-- Preset Bar -->
+                <div class="eq-preset-bar">
+                    <div class="eq-preset-selector">
+                        <span class="eq-preset-title">PRESET:</span>
+                        <div class="dropdown-select" id="eq-preset-dropdown">
+                            <span id="selected-eq-preset-text">▼ Flat</span>
+                            <div class="dropdown-options custom-scrollbar" id="eq-preset-options-list"></div>
+                        </div>
+                    </div>
+                    <div class="eq-preset-actions">
+                        <button id="save-custom-preset-btn" class="settings-action-btn" title="Save current values as a new preset">
+                            <i class="fa-solid fa-floppy-disk"></i> SAVE AS...
+                        </button>
+                        <button id="delete-custom-preset-btn" class="settings-action-btn delete-action hidden" title="Delete selected custom preset">
+                            <i class="fa-solid fa-trash-can"></i> DELETE
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live EQ Frequency Curve Canvas -->
+                <div class="eq-curve-container">
+                    <canvas id="eq-curve-canvas"></canvas>
+                </div>
+
+                <!-- Equalizer Sliders -->
+                <div class="eq-sliders-container">
+                    <!-- Preamp Gain Column -->
+                    <div class="eq-slider-col eq-preamp-col">
+                        <span class="eq-db-val" id="eq-preamp-val">0.0 dB</span>
+                        <div class="eq-slider-track-wrap">
+                            <div class="eq-zero-line"></div>
+                            <input type="range" class="eq-slider" id="eq-slider-preamp" min="-12" max="12" step="0.5" value="0">
+                        </div>
+                        <span class="eq-freq-label">PREAMP</span>
+                    </div>
+
+                    <div class="eq-divider"></div>
+
+                    <!-- 10 Frequency Bands -->
+                    <div class="eq-bands-wrapper" id="eq-bands-wrapper">
+                        <!-- Populated with 10 frequency band columns dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom EQ Preset Prompt Modal -->
+    <div id="eq-preset-prompt-modal" class="modal-overlay">
+        <div class="settings-content" style="width: 380px;">
+            <div class="modal-header">
+                <h3>SAVE EQ PRESET</h3>
+                <button id="close-eq-preset-prompt-btn" class="close-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 15px;">
+                <div class="setting-item flex-column" style="align-items: flex-start; gap: 8px;">
+                    <label for="eq-preset-prompt-input" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Preset Name</label>
+                    <input type="text" id="eq-preset-prompt-input" placeholder="My Custom EQ" autocomplete="off" style="width: 100%; background-color: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); padding: 10px 12px; border-radius: 8px; color: white; font-family: var(--font-body); outline: none;">
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px; border-top: 1px solid var(--card-border); padding-top: 15px;">
+                <button id="eq-preset-prompt-cancel" class="settings-btn" style="background: none; border: 1px solid var(--card-border); color: white; padding: 8px 16px; border-radius: 10px; cursor: pointer; font-family: var(--font-body); font-size: 0.75rem;">Cancel</button>
+                <button id="eq-preset-prompt-submit" class="settings-btn" style="background: var(--accent); color: #000000; font-weight: 700; border: none; padding: 8px 16px; border-radius: 10px; cursor: pointer; font-family: var(--font-body); font-size: 0.75rem;">Save</button>
             </div>
         </div>
     </div>
