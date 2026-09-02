@@ -611,6 +611,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 3px;
+    overflow: hidden;
 }
 
 .result-title {
@@ -620,10 +621,12 @@ body {
     display: flex;
     align-items: center;
     min-width: 0;
+    max-width: 100%;
     overflow: hidden;
 }
 
 .result-title-text {
+    flex: 0 1 auto;
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
@@ -904,6 +907,7 @@ body {
     flex: 1;
     min-width: 0;
     padding-right: 15px;
+    overflow: hidden;
 }
 
 .song-title {
@@ -913,10 +917,12 @@ body {
     display: flex;
     align-items: center;
     min-width: 0;
+    max-width: 100%;
     overflow: hidden;
 }
 
 .song-title-text {
+    flex: 0 1 auto;
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
@@ -1085,16 +1091,18 @@ body {
 
 .compact-center {
     flex: 1;
-    margin: 0 12px;
+    min-width: 0;
+    margin: 0 8px;
     overflow: hidden;
     display: flex;
+    align-items: center;
     justify-content: center;
 }
 
 .mini-track-title {
     font-size: 0.65rem;
     font-weight: 600;
-    max-width: 160px;
+    max-width: 100%;
     min-width: 0;
     color: rgba(255, 255, 255, 0.9);
     letter-spacing: 0.04em;
@@ -1105,6 +1113,7 @@ body {
 }
 
 .mini-track-title-text {
+    flex: 0 1 auto;
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
@@ -1262,7 +1271,7 @@ body {
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    padding-right: 76px;
+    padding-right: 112px;
 }
 
 .island-expanded #track-title {
@@ -1273,10 +1282,12 @@ body {
     display: flex;
     align-items: center;
     min-width: 0;
+    max-width: 100%;
     overflow: hidden;
 }
 
 .island-expanded #track-title .track-title-text {
+    flex: 0 1 auto;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2168,6 +2179,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 8px;
     padding: 5px 8px;
     border-radius: 6px;
     cursor: pointer;
@@ -2175,6 +2187,7 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.01);
     transition: all 0.2s;
     animation: slideInQueueItem 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+    overflow: hidden;
 }
 
 @keyframes slideInQueueItem {
@@ -2209,11 +2222,12 @@ body {
     display: flex;
     align-items: center;
     min-width: 0;
-    max-width: 250px;
+    flex: 1;
     overflow: hidden;
 }
 
 .queue-item-title-text {
+    flex: 0 1 auto;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2226,7 +2240,9 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100px;
+    max-width: 110px;
+    flex-shrink: 0;
+    text-align: right;
 }
 
 /* Playlist Management Styles */
@@ -3056,47 +3072,41 @@ body {
     height: 14px;
     min-width: 14px;
     max-width: 14px;
-    border-radius: 3px;
-    background-color: rgba(255, 255, 255, 0.12);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: rgba(255, 255, 255, 0.88);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Outfit", sans-serif;
-    font-size: 8.5px;
-    font-weight: 700;
-    line-height: 1;
-    letter-spacing: 0;
-    text-transform: uppercase;
-    text-align: center;
-    text-decoration: none !important;
-    user-select: none;
-    flex-shrink: 0;
-    box-sizing: border-box;
     margin-left: 6px;
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.45);
+    background: transparent !important;
+    border: none !important;
+    padding: 0;
+    box-sizing: border-box;
     cursor: default;
-    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
+    user-select: none;
+    line-height: 0;
+    text-decoration: none !important;
+    transition: color 0.2s ease;
+}
+
+.flac-badge svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
 }
 
 /* Hover effects */
 .song-item:hover .flac-badge,
 .result-item:hover .flac-badge,
 .queue-item:hover .flac-badge {
-    background-color: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.35);
-    color: #ffffff;
+    color: rgba(255, 255, 255, 0.82);
 }
 
 .flac-badge:hover {
-    background-color: rgba(255, 255, 255, 0.28);
-    border-color: rgba(255, 255, 255, 0.45);
     color: #ffffff;
-    transform: scale(1.05);
 }
 
 /* Playing state */
 .song-item.playing .flac-badge {
-    background-color: rgba(255, 255, 255, 0.22);
-    border-color: rgba(255, 255, 255, 0.38);
-    color: #ffffff;
+    color: rgba(255, 255, 255, 0.95);
 }
 
 /* Mini badge for Compact Dynamic Island */
@@ -3105,19 +3115,15 @@ body {
     height: 11px;
     min-width: 11px;
     max-width: 11px;
-    font-size: 6.5px;
-    border-radius: 2px;
     margin-left: 4px;
 }
 
 /* Queue badge for Dynamic Island Queue */
 .flac-badge-queue {
-    width: 13px;
-    height: 13px;
-    min-width: 13px;
-    max-width: 13px;
-    font-size: 7.5px;
-    border-radius: 2.5px;
+    width: 12px;
+    height: 12px;
+    min-width: 12px;
+    max-width: 12px;
     margin-left: 5px;
 }
 

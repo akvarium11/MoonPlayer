@@ -978,11 +978,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
     }
 
-    // Helper: Return HTML for format badge (minimalist explicit style with letter 'F')
+    // Helper: Return HTML for format badge (minimalist explicit style with letter 'F', no background, perfectly centered)
     function getFormatBadgeHTML(song, extraClass = '') {
         if (!isFlacTrack(song)) return '';
         const cls = extraClass ? `flac-badge ${extraClass}` : 'flac-badge';
-        return `<span class="${cls}" title="FLAC Lossless Audio" aria-label="FLAC">F</span>`;
+        return `<span class="${cls}" title="FLAC Lossless Audio" aria-label="FLAC"><svg viewBox="0 0 14 14" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="0.75" y="0.75" width="12.5" height="12.5" rx="2.5" stroke="currentColor" stroke-width="1.1"/><path d="M4.75 3.75 H9.25 V5.05 H6.25 V6.45 H8.65 V7.75 H6.25 V10.25 H4.75 Z" fill="currentColor"/></svg></span>`;
     }
 
     // Helper: Filename parsing ("Artist - Title.mp3")
