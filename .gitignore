@@ -32,3 +32,6 @@ pnpm-debug.log*
 # WebView2 SDK
 webview2_sdk/
 
+# Build artifacts
+dist/
+

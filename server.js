@@ -9,12 +9,34 @@ const PORT = process.env.PORT || 7644;
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-// Config file path
-const CONFIG_FILE = path.join(__dirname, 'music_folders.json');
+// Resolve writable data directory (portable exe or appData or local directory)
+function getWritableDir() {
+    if (process.env.PORTABLE_EXECUTABLE_DIR) {
+        return process.env.PORTABLE_EXECUTABLE_DIR;
+    }
+    try {
+        const electron = require('electron');
+        const app = electron.app || (electron.remote && electron.remote.app);
+        if (app && app.getPath) {
+            return app.getPath('userData');
+        }
+    } catch (e) {}
+    return __dirname;
+}
+
+const DATA_DIR = getWritableDir();
+const CONFIG_FILE = path.join(DATA_DIR, 'music_folders.json');
 
 // Helper to read configured folders
 function getFolders() {
     if (!fs.existsSync(CONFIG_FILE)) {
+        const fallback = path.join(__dirname, 'music_folders.json');
+        if (CONFIG_FILE !== fallback && fs.existsSync(fallback)) {
+            try {
+                const data = fs.readFileSync(fallback, 'utf8');
+                return JSON.parse(data);
+            } catch (e) {}
+        }
         return [];
     }
     try {
@@ -29,6 +51,9 @@ function getFolders() {
 // Helper to save configured folders
 function saveFolders(folders) {
     try {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
         fs.writeFileSync(CONFIG_FILE, JSON.stringify(folders, null, 2), 'utf8');
     } catch (e) {
         console.error("Failed to save config file:", e);

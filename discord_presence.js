@@ -2,9 +2,25 @@ const DiscordRPC = require('discord-rpc');
 const fs = require('fs');
 const path = require('path');
 
-const CONFIG_FILE = path.join(__dirname, 'discord_config.json');
-const CACHE_FILE = path.join(__dirname, 'cover_cache.json');
-const DEFAULT_CLIENT_ID = '1198273645839204352';
+// Resolve writable data directory (portable exe or appData or local directory)
+function getWritableDir() {
+    if (process.env.PORTABLE_EXECUTABLE_DIR) {
+        return process.env.PORTABLE_EXECUTABLE_DIR;
+    }
+    try {
+        const electron = require('electron');
+        const app = electron.app || (electron.remote && electron.remote.app);
+        if (app && app.getPath) {
+            return app.getPath('userData');
+        }
+    } catch (e) {}
+    return __dirname;
+}
+
+const DATA_DIR = getWritableDir();
+const CONFIG_FILE = path.join(DATA_DIR, 'discord_config.json');
+const CACHE_FILE = path.join(DATA_DIR, 'cover_cache.json');
+const DEFAULT_CLIENT_ID = '1543154845958275114';
 const DEFAULT_ICON_URL = 'https://raw.githubusercontent.com/akvarium11/MoonPlayer/main/assets/icon.png';
 
 function cleanRpcString(str, fallback, maxLength = 60) {
@@ -49,9 +65,25 @@ class DiscordPresenceManager {
         if (fs.existsSync(CONFIG_FILE)) {
             try {
                 const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-                return { ...defaults, ...data };
+                const config = { ...defaults, ...data };
+                if (!config.clientId || config.clientId === '1198273645839204352') {
+                    config.clientId = DEFAULT_CLIENT_ID;
+                }
+                return config;
             } catch (e) {
                 console.error('[Discord RPC] Error reading config file:', e.message);
+            }
+        } else {
+            const fallback = path.join(__dirname, 'discord_config.json');
+            if (CONFIG_FILE !== fallback && fs.existsSync(fallback)) {
+                try {
+                    const data = JSON.parse(fs.readFileSync(fallback, 'utf8'));
+                    const config = { ...defaults, ...data };
+                    if (!config.clientId || config.clientId === '1198273645839204352') {
+                        config.clientId = DEFAULT_CLIENT_ID;
+                    }
+                    return config;
+                } catch (e) {}
             }
         }
         return defaults;
@@ -59,6 +91,9 @@ class DiscordPresenceManager {
 
     saveConfig() {
         try {
+            if (!fs.existsSync(DATA_DIR)) {
+                fs.mkdirSync(DATA_DIR, { recursive: true });
+            }
             fs.writeFileSync(CONFIG_FILE, JSON.stringify(this.config, null, 2), 'utf8');
         } catch (e) {
             console.error('[Discord RPC] Error saving config file:', e.message);
@@ -72,12 +107,22 @@ class DiscordPresenceManager {
             } catch (e) {
                 console.error('[Discord RPC] Error reading cover cache:', e.message);
             }
+        } else {
+            const fallback = path.join(__dirname, 'cover_cache.json');
+            if (CACHE_FILE !== fallback && fs.existsSync(fallback)) {
+                try {
+                    return JSON.parse(fs.readFileSync(fallback, 'utf8'));
+                } catch (e) {}
+            }
         }
         return {};
     }
 
     saveCoverCache() {
         try {
+            if (!fs.existsSync(DATA_DIR)) {
+                fs.mkdirSync(DATA_DIR, { recursive: true });
+            }
             // Keep cache at max 1000 items
             const keys = Object.keys(this.coverCache);
             if (keys.length > 1000) {
@@ -357,6 +402,9 @@ class DiscordPresenceManager {
             ...this.config,
             ...newConfig
         };
+        if (!this.config.clientId || this.config.clientId === '1198273645839204352') {
+            this.config.clientId = DEFAULT_CLIENT_ID;
+        }
         this.saveConfig();
 
         if (oldClientId !== this.config.clientId || oldEnabled !== this.config.enabled) {

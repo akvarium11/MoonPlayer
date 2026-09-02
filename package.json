@@ -2,16 +2,55 @@
   "name": "moonplayer",
   "version": "1.0.0",
   "description": "Local browser-based music player with dynamic island and smart search",
-  "main": "server.js",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "electron .",
+    "dev": "electron .",
+    "server": "node server.js",
+    "build": "electron-builder --win portable",
+    "build:installer": "electron-builder --win nsis",
+    "dist": "electron-builder"
   },
   "keywords": [],
-  "author": "",
+  "author": "akvarium11",
   "license": "ISC",
   "dependencies": {
     "discord-rpc": "^4.0.1",
     "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "electron": "^44.1.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.moonplayer.desktop",
+    "productName": "MoonPlayer",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "MoonPlayer.exe"
+    },
+    "asar": true,
+    "files": [
+      "main.js",
+      "server.js",
+      "discord_presence.js",
+      "package.json",
+      "assets/**/*",
+      "public/**/*",
+      "node_modules/**/*"
+    ]
   }
 }

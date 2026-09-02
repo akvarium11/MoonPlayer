@@ -118,6 +118,7 @@ MoonPlayer/
 
 ### 4.4. Discord Rich Presence
 - Фоновый клиент RPC (`discord-rpc`).
+- Default Client ID зафиксирован: `1543154845958275114` (опция ручного ввода Application ID скрыта/удалена из UI настроек).
 - Передает в профиль: название трека, артиста, альбом, таймлайны воспроизведения (elapsed/remaining), статус паузы.
 - Интеллектуальный поиск обложек через Deezer, iTunes Search API и Last.fm с локальным кэшированием в `cover_cache.json`.
 
@@ -128,15 +129,25 @@ MoonPlayer/
 
 ---
 
-## 🛠️ 5. Сборка и разработка
+## 🛠️ 5. Сборка и распространение
 
-### Запуск в режиме разработки:
+### 5.1. Автономный переносимый бинарник (Один `.exe` файл без зависимостей)
+Для конечных пользователей собран полностью автономный исполняемый файл **`dist/MoonPlayer.exe`** (~96 MB):
+- **Не требует установки Node.js, npm, Python или библиотек на компьютере пользователя**.
+- Включает в себя всё: рантайм, Chromium окно, Express бэкенд, Discord RPC, шрифты и ассеты.
+- Запускается в один клик на любой Windows 10/11:
 ```bash
-npm install
-npm run dev # Запускает server.js на http://localhost:7644
+npm run build        # Собирает автономный dist/MoonPlayer.exe (portable)
+npm run build:installer # Собирает полноценный Windows инсталлятор (NSIS setup)
 ```
 
-### Сборка C++ лаунчера:
+### 5.2. Запуск в режиме разработки:
+```bash
+npm start            # Запуск десктопного приложения в режиме разработки (Electron)
+npm run server       # Запуск только фонового сервера Node.js (http://localhost:7644)
+```
+
+### 5.3. Классический C++ лаунчер (WebView2):
 - **Windows (MinGW/GCC)**:
   ```cmd
   windres resources.rc -o resources.o

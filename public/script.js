@@ -183,11 +183,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             setTimeout(() => {
                 // Load directly
-                if (preloaderOverlay) preloaderOverlay.classList.add('hidden');
-                mainContainer.classList.add('visible');
-                if (islandContainer) {
-                    islandContainer.classList.add('visible');
+                if (preloaderOverlay) {
+                    preloaderOverlay.classList.add('hidden');
+                    setTimeout(() => {
+                        preloaderOverlay.style.display = 'none';
+                    }, 600);
                 }
+                if (mainContainer) mainContainer.classList.add('visible');
+                if (islandContainer) islandContainer.classList.add('visible');
             }, 300);
         }
         progressBar.style.width = `${loadingPct}%`;
@@ -3177,14 +3180,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const togglePaused = document.getElementById('toggle-discord-show-paused');
             const statusDot = document.getElementById('discord-status-dot');
             const statusMsg = document.getElementById('discord-status-msg');
-            const clientIdInput = document.getElementById('discord-client-id-input');
             const lastFmInput = document.getElementById('lastfm-api-key-input');
 
             if (toggleRpc) toggleRpc.checked = status.enabled;
             if (togglePaused) togglePaused.checked = status.showPaused;
-            if (clientIdInput && !clientIdInput.value) {
-                clientIdInput.value = (status.clientId === '1198273645839204352') ? '' : status.clientId;
-            }
             if (lastFmInput && !lastFmInput.value && status.lastFmApiKey) {
                 lastFmInput.value = status.lastFmApiKey;
             }
@@ -4828,8 +4827,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggleDiscordRpc = document.getElementById('toggle-discord-rpc');
     const toggleDiscordShowPaused = document.getElementById('toggle-discord-show-paused');
     const discordRpcRefreshBtn = document.getElementById('discord-rpc-refresh-btn');
-    const discordClientIdInput = document.getElementById('discord-client-id-input');
-    const discordClientIdSaveBtn = document.getElementById('discord-client-id-save-btn');
     const lastFmApiKeyInput = document.getElementById('lastfm-api-key-input');
     const lastFmApiKeySaveBtn = document.getElementById('lastfm-api-key-save-btn');
 
@@ -4876,23 +4873,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (typeof showToast === 'function') {
                 showToast('Discord connection refreshed');
             }
-        });
-    }
-
-    if (discordClientIdSaveBtn && discordClientIdInput) {
-        discordClientIdSaveBtn.addEventListener('click', async () => {
-            const clientId = discordClientIdInput.value.trim();
-            try {
-                await fetch('/api/discord-rpc/config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ clientId: clientId || '1198273645839204352' })
-                });
-                syncDiscordRpcStatus();
-                if (typeof showToast === 'function') {
-                    showToast('Discord Client ID saved');
-                }
-            } catch (err) {}
         });
     }
 
