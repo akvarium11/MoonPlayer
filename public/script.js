@@ -3671,14 +3671,40 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleNext() {
         if (playQueue.length === 0) return;
 
+        if (isLoop === 'one') {
+            const currentSong = playQueue[playQueueIndex];
+            if (currentSong) {
+                playTrack(currentSong.globalIndex, 1);
+            }
+            return;
+        }
+
         if (isLoop === 'all') {
             playQueueIndex = (playQueueIndex + 1) % playQueue.length;
         } else {
             if (playQueueIndex >= playQueue.length - 1) {
+                if (crossfadeIntervalId) {
+                    clearInterval(crossfadeIntervalId);
+                    crossfadeIntervalId = null;
+                    bgAudio.volume = parseFloat(volumeSlider.value);
+                }
+                bgAudio.pause();
                 bgAudio.currentTime = 0;
+                if (progressSlider) {
+                    progressSlider.value = 0;
+                    progressSlider.style.setProperty('--value', '0%');
+                }
+                if (currentTimeEl) {
+                    currentTimeEl.textContent = formatTime(0);
+                }
                 isPlaying = false;
                 playIcon.className = 'fa-solid fa-play';
                 setCoverAnimationState(false);
+                updateMediaSessionPlaybackState('paused');
+                if (allSongs[currentlyPlayingIndex]) {
+                    sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], false);
+                }
+                updateHighlighting();
                 return;
             }
             playQueueIndex = playQueueIndex + 1;
@@ -3702,6 +3728,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (currentTimeEl) {
                 currentTimeEl.textContent = formatTime(0);
+            }
+            return;
+        }
+
+        if (isLoop === 'one') {
+            const currentSong = playQueue[playQueueIndex];
+            if (currentSong) {
+                playTrack(currentSong.globalIndex, -1);
             }
             return;
         }
@@ -3737,7 +3771,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isLoop === 'one') {
             bgAudio.currentTime = 0;
             bgAudio.play().then(() => {
+                isPlaying = true;
+                playIcon.className = 'fa-solid fa-pause';
                 setCoverAnimationState(true);
+                updateMediaSessionPlaybackState('playing');
+                if (allSongs[currentlyPlayingIndex]) {
+                    sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], true);
+                }
+                updateHighlighting();
             }).catch(e => console.log(e));
         } else {
             handleNext();
@@ -3770,6 +3811,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     isCrossfadingTriggered = true;
                     if (isLoop === 'one') {
                         playTrack(currentlyPlayingIndex);
+                    } else if (isLoop === 'none' && playQueueIndex >= playQueue.length - 1) {
+                        // At end of queue without looping, let track finish to ended event
                     } else {
                         handleNext();
                     }
