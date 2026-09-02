@@ -94,6 +94,7 @@ function scanDirectory(dirPath, fileList = []) {
                     fileList.push({
                         path: filePath,
                         name: file,
+                        format: ext.replace('.', ''),
                         url: `/api/stream/${encodeURIComponent(file)}?path=${encodeURIComponent(filePath)}`,
                         folderCoverUrl: folderCoverUrl
                     });

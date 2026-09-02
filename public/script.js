@@ -898,9 +898,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
 
+                    const ext = (file.name || '').split('.').pop().toLowerCase();
                     resolve({
                         file: file,
                         src: URL.createObjectURL(file),
+                        format: ext,
                         title: title || file.name,
                         artist: artist,
                         album: album,
@@ -951,6 +953,38 @@ document.addEventListener('DOMContentLoaded', () => {
         return artistsList.map(name => `<span class="artist-link" data-name="${escapeHtml(name)}">${escapeHtml(name)}</span>`).join(', ');
     }
 
+    // Helper: Check if a track is in FLAC format
+    function isFlacTrack(song) {
+        if (!song) return false;
+        if (song.format && typeof song.format === 'string' && song.format.toLowerCase() === 'flac') {
+            return true;
+        }
+        if (song.file && song.file.name && typeof song.file.name === 'string' && song.file.name.toLowerCase().endsWith('.flac')) {
+            return true;
+        }
+        if (song.path && typeof song.path === 'string' && song.path.toLowerCase().endsWith('.flac')) {
+            return true;
+        }
+        if (song.name && typeof song.name === 'string' && song.name.toLowerCase().endsWith('.flac')) {
+            return true;
+        }
+        const urlToCheck = song.src || song.url;
+        if (urlToCheck && typeof urlToCheck === 'string') {
+            const cleanUrl = urlToCheck.split('?')[0].toLowerCase();
+            if (cleanUrl.endsWith('.flac') || urlToCheck.toLowerCase().includes('.flac')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Helper: Return HTML for format badge (minimalist explicit style with letter 'F')
+    function getFormatBadgeHTML(song, extraClass = '') {
+        if (!isFlacTrack(song)) return '';
+        const cls = extraClass ? `flac-badge ${extraClass}` : 'flac-badge';
+        return `<span class="${cls}" title="FLAC Lossless Audio" aria-label="FLAC">F</span>`;
+    }
+
     // Helper: Filename parsing ("Artist - Title.mp3")
     function parseFilename(name) {
         const withoutExt = name.substring(0, name.lastIndexOf('.')) || name;
@@ -992,10 +1026,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function generateFallbackMetadata(file) {
         const pathInfo = parseRelativePath(file.webkitRelativePath);
         const fileInfo = parseFilename(file.name);
+        const ext = (file.name || '').split('.').pop().toLowerCase();
 
         return {
             file: file,
             src: URL.createObjectURL(file),
+            format: ext,
             title: fileInfo.title || file.name,
             artist: fileInfo.artist || pathInfo.artist || "Unknown Artist",
             album: pathInfo.album || "Unknown Album",
@@ -2652,7 +2688,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <img src="${item.cover || DEFAULT_COVER}" class="result-img" alt="${escapeHtml(item.title)}">
                     </div>
                     <div class="result-info">
-                        <div class="result-title">${escapeHtml(item.title)}</div>
+                        <div class="result-title"><span class="result-title-text">${escapeHtml(item.title)}</span></div>
                         <div class="result-subtitle">${escapeHtml(item.artist)} • ${item.tracks.length} tracks</div>
                     </div>
                 `;
@@ -2672,7 +2708,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <img src="${artistCover}" class="result-img" alt="${escapeHtml(item.name)}">
                     </div>
                     <div class="result-info">
-                        <div class="result-title">${formatArtistLinks(item.name)}</div>
+                        <div class="result-title"><span class="result-title-text">${formatArtistLinks(item.name)}</span></div>
                         <div class="result-subtitle">${item.tracks.length} songs</div>
                     </div>
                 `;
@@ -2686,12 +2722,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (currentlyPlayingIndex === item.globalIndex) {
                     div.classList.add('active');
                 }
+                const flacBadgeHTML = getFormatBadgeHTML(item);
                 div.innerHTML = `
                     <div class="result-img-wrapper">
                         <img src="${item.cover || DEFAULT_COVER}" class="result-img" alt="${escapeHtml(item.title)}">
                     </div>
                     <div class="result-info">
-                        <div class="result-title">${escapeHtml(item.title)}</div>
+                        <div class="result-title">
+                            <span class="result-title-text">${escapeHtml(item.title)}</span>
+                            ${flacBadgeHTML}
+                        </div>
                         <div class="result-subtitle">${formatArtistLinks(item.artist)} • ${escapeHtml(item.album)}</div>
                     </div>
                     <div class="result-actions">
@@ -2747,7 +2787,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <img src="${cover}" class="result-img" alt="${escapeHtml(item.name)}">
                     </div>
                     <div class="result-info">
-                        <div class="result-title">${escapeHtml(item.name)}</div>
+                        <div class="result-title"><span class="result-title-text">${escapeHtml(item.name)}</span></div>
                         <div class="result-subtitle">${playlistTracks.length} track${playlistTracks.length !== 1 ? 's' : ''}</div>
                     </div>
                     <button class="playlist-delete-btn" title="Delete Playlist"><i class="fa-solid fa-trash-can"></i></button>
@@ -2992,13 +3032,18 @@ document.addEventListener('DOMContentLoaded', () => {
                        </button>
                    </div>`;
 
+            const flacBadgeHTML = getFormatBadgeHTML(song);
+
             songDiv.innerHTML = `
                 <div class="song-index">
                     <span class="song-index-num">${absoluteIdx + 1}</span>
                     <span class="song-index-play"><i class="fa-solid ${isTrackPlaying && isPlaying ? 'fa-volume-high' : 'fa-play'}"></i></span>
                 </div>
                 <div class="song-main-info">
-                    <div class="song-title">${escapeHtml(song.title)}</div>
+                    <div class="song-title">
+                        <span class="song-title-text">${escapeHtml(song.title)}</span>
+                        ${flacBadgeHTML}
+                    </div>
                     <div class="song-artist">${formatArtistLinks(song.artist)}</div>
                 </div>
                 <div class="song-album">${escapeHtml(song.album)}</div>
@@ -3288,8 +3333,11 @@ document.addEventListener('DOMContentLoaded', () => {
             bgAudio.volume = targetVol;
         }
 
-        // Update Dynamic Island Details
-        document.getElementById('mini-track-title').textContent = song.title;
+        const miniTrackTitleEl = document.getElementById('mini-track-title');
+        if (miniTrackTitleEl) {
+            const miniFlacBadgeHTML = getFormatBadgeHTML(song, 'flac-badge-mini');
+            miniTrackTitleEl.innerHTML = `<span class="mini-track-title-text">${escapeHtml(song.title)}</span>${miniFlacBadgeHTML}`;
+        }
         document.getElementById('mini-cover').src = song.cover || DEFAULT_COVER;
         
         // Dynamic Island Cover transition animation
@@ -3340,7 +3388,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        document.getElementById('track-title').textContent = song.title;
+        const trackTitleEl = document.getElementById('track-title');
+        if (trackTitleEl) {
+            const flacBadgeHTML = getFormatBadgeHTML(song);
+            trackTitleEl.innerHTML = `<span class="track-title-text">${escapeHtml(song.title)}</span>${flacBadgeHTML}`;
+        }
         document.getElementById('track-artist').innerHTML = formatArtistLinks(song.artist);
         updateLikeButtonState();
         
@@ -3877,8 +3929,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'queue-item';
             itemDiv.style.animationDelay = `${localIdx * 45}ms`;
+            const flacBadgeHTML = getFormatBadgeHTML(song, 'flac-badge-queue');
             itemDiv.innerHTML = `
-                <span class="queue-item-title">${escapeHtml(song.title)}</span>
+                <div class="queue-item-title">
+                    <span class="queue-item-title-text">${escapeHtml(song.title)}</span>
+                    ${flacBadgeHTML}
+                </div>
                 <span class="queue-item-artist">${escapeHtml(song.artist)}</span>
             `;
             itemDiv.addEventListener('click', (e) => {
@@ -5246,9 +5302,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
 
+                    const ext = (song.name || song.path || song.url || '').split('?')[0].split('.').pop().toLowerCase();
                     resolve({
                         path: song.path,
                         src: song.url,
+                        format: song.format || ext,
                         title: title || song.name,
                         artist: artist,
                         album: album,
@@ -5268,10 +5326,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function generateServerFallbackMetadata(song) {
         const pathInfo = parseRelativePath(song.path);
         const fileInfo = parseFilename(song.name);
+        const ext = (song.name || song.path || song.url || '').split('?')[0].split('.').pop().toLowerCase();
 
         return {
             path: song.path,
             src: song.url,
+            format: song.format || ext,
             title: fileInfo.title || song.name,
             artist: fileInfo.artist || pathInfo.artist || "Unknown Artist",
             album: pathInfo.album || "Unknown Album",
@@ -5330,6 +5390,9 @@ document.addEventListener('DOMContentLoaded', () => {
             songs.forEach((song, idx) => {
                 const cached = cachedResults[idx];
                 if (cached) {
+                    if (!cached.format && song.format) {
+                        cached.format = song.format;
+                    }
                     processedSongs.push(cached);
                 } else {
                     uncachedSongs.push(song);
@@ -5455,6 +5518,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (detailTitle) detailTitle.textContent = "Welcome to MoonPlayer";
                     if (detailArtist) detailArtist.textContent = "Load your offline music files";
                     if (detailMeta) detailMeta.textContent = "Select a folder to start indexing tracks";
+                    const trackTitleEl = document.getElementById('track-title');
+                    if (trackTitleEl) trackTitleEl.innerHTML = 'Select a folder with music';
+                    const miniTrackTitleEl = document.getElementById('mini-track-title');
+                    if (miniTrackTitleEl) miniTrackTitleEl.innerHTML = 'MoonPlayer - Empty Playlist';
                     
                     alert("All music cleared successfully.");
                 } catch (e) {

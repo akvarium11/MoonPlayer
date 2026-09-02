@@ -617,9 +617,17 @@ body {
     font-size: 0.9rem;
     font-weight: 600;
     color: #ffffff;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.result-title-text {
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
+    min-width: 0;
 }
 
 .result-subtitle {
@@ -902,9 +910,17 @@ body {
     font-size: 0.92rem;
     font-weight: 500;
     color: #ffffff;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.song-title-text {
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
+    min-width: 0;
 }
 
 .song-item.playing .song-title {
@@ -1078,13 +1094,21 @@ body {
 .mini-track-title {
     font-size: 0.65rem;
     font-weight: 600;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
     max-width: 160px;
+    min-width: 0;
     color: rgba(255, 255, 255, 0.9);
     letter-spacing: 0.04em;
     text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+}
+
+.mini-track-title-text {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    min-width: 0;
 }
 
 .compact-right {
@@ -1245,10 +1269,18 @@ body {
     font-size: 0.82rem;
     font-weight: 600;
     color: #ffffff;
+    line-height: 1.2;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.island-expanded #track-title .track-title-text {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    line-height: 1.2;
+    min-width: 0;
 }
 
 .island-expanded .progress-section {
@@ -2174,10 +2206,18 @@ body {
     font-size: 0.72rem;
     font-weight: 500;
     color: #ffffff;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 250px;
+    overflow: hidden;
+}
+
+.queue-item-title-text {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 250px;
+    min-width: 0;
 }
 
 .queue-item-artist {
@@ -3004,6 +3044,83 @@ body {
         min-width: 44px;
     }
 }
+
+/* ==========================================
+   FLAC AUDIO FORMAT BADGE (Minimalist Explicit Style)
+   ========================================== */
+.flac-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    min-width: 14px;
+    max-width: 14px;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.88);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Outfit", sans-serif;
+    font-size: 8.5px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    text-align: center;
+    text-decoration: none !important;
+    user-select: none;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    margin-left: 6px;
+    cursor: default;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
+}
+
+/* Hover effects */
+.song-item:hover .flac-badge,
+.result-item:hover .flac-badge,
+.queue-item:hover .flac-badge {
+    background-color: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.35);
+    color: #ffffff;
+}
+
+.flac-badge:hover {
+    background-color: rgba(255, 255, 255, 0.28);
+    border-color: rgba(255, 255, 255, 0.45);
+    color: #ffffff;
+    transform: scale(1.05);
+}
+
+/* Playing state */
+.song-item.playing .flac-badge {
+    background-color: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.38);
+    color: #ffffff;
+}
+
+/* Mini badge for Compact Dynamic Island */
+.flac-badge-mini {
+    width: 11px;
+    height: 11px;
+    min-width: 11px;
+    max-width: 11px;
+    font-size: 6.5px;
+    border-radius: 2px;
+    margin-left: 4px;
+}
+
+/* Queue badge for Dynamic Island Queue */
+.flac-badge-queue {
+    width: 13px;
+    height: 13px;
+    min-width: 13px;
+    max-width: 13px;
+    font-size: 7.5px;
+    border-radius: 2.5px;
+    margin-left: 5px;
+}
+
 
 
 
