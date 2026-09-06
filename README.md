@@ -1,202 +1,409 @@
+<a id="readme-top" name="readme-top"></a>
+
+<div align="center">
+
+<img src="https://files.catbox.moe/blni3p.png" width="120" height="120" alt="MoonPlayer Logo" />
+
 # ✨ MoonPlayer
 
-# [🇺🇸 Eng](#header) | [🇷🇺 Rus](#header-rus)
+### *Elevate your local music listening experience.*
+A sleek, modern desktop audio player featuring an interactive Dynamic Island, 10-Band Graphic Equalizer, real-time Discord Rich Presence, and audiophile lossless playback.
 
-## <a id="header"></a>📖 Table of Contents
-- [About the Project](#about-the-project)
-- [Features](#features)
-- [Compilation](#compilation)
-- [How to use](#how-to-use)
-- [License](#license)
-
----
-
-## <a id="about-the-project"></a>📌 About the Project
-
-*MoonPlayer* is a lightweight, high-performance desktop music player designed for listening to local audio files. It combines a native C++ launcher wrapper (`launcher.cpp` powered by Webview) and a feature-rich, high-performance Node.js backend (`server.js`) with an interactive web UI. It is built to look stunning while running efficiently on both Windows and Linux.
-
-> [!IMPORTANT]  
-> Make sure to install [Node.js](https://nodejs.org/) on your computer, as it is required to run the player backend.
+[![GitHub License](https://img.shields.io/github/license/akvarium11/MoonPlayer?style=for-the-badge&color=7c3aed)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/akvarium11/MoonPlayer?style=for-the-badge&color=eab308)](https://github.com/akvarium11/MoonPlayer/stargazers)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078D6?style=for-the-badge&logo=windows)](https://github.com/akvarium11/MoonPlayer)
+[![Electron](https://img.shields.io/badge/Electron-44.1.1-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://electronjs.org)
+[![Node.js](https://img.shields.io/badge/Node.js-Express%205-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
+[![Discord RPC](https://img.shields.io/badge/Discord-Rich%20Presence-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com)
 
 ---
 
-## <a id="features"></a>⌨️ Features
-
-- [x] **10-Band Graphic Equalizer** - Built-in ISO standard 10-band graphic equalizer (32Hz to 16kHz) with preamp control, live frequency response curve canvas, pre-configured presets (Rock, Pop, Bass Boost, Vocal, Jazz, EDM, Hip-Hop, Classical, Acoustic, Deep), and custom preset saving.
-- [x] **Discord Rich Presence (RPC)** - Live Discord status integration showing currently playing track, artist, album, elapsed & remaining playback time, and automated high-resolution album cover fetching (via Deezer, iTunes, and Last.fm).
-- [x] **Desktop WebView Shell** - Native window container wrapping the application using Edge WebView2 (Windows) and WebKit2GTK (Linux).
-- [x] **Floating Dynamic Island** - Interactive, responsive island with smooth animations, compact/expanded states, and audio waveforms.
-- [x] **Accent Customization** - Dynamic theme accents including white, pink, blue, neon green, orange, purple, and a custom color picker.
-- [x] **Smart Search** - Typo-tolerant, fuzzy search for songs, albums, and artists powered by Fuse.js.
-- [x] **Sleep Timer** - Built-in shutdown countdown (15, 30, 45, 60 minutes) to pause playback automatically.
-- [x] **Visualizer** - Interactive audio frequency visualizer rendered in real-time.
-- [x] **Background Customization** - Upload custom images and tweak blur/opacity directly from the settings.
-- [x] **Automatic Server Daemon** - The C++ wrapper automatically boots and halts the Node.js server daemon to clean up resources upon exit.
-- [x] **3D Card & Cursor Glow** - Eye-candy animations, tilt effects, and snow particles for premium aesthetics.
-- [x] **Lyrics Sync** - Real-time synchronization and display of `.lrc` lyrics file formats inside the expanded Dynamic Island.
-
+### [ 🌐 Read in English ](#english) &nbsp;&nbsp;•&nbsp;&nbsp; [ 🇷🇺 Читать на русском ](#russian)
 
 ---
 
-## <a id="compilation"></a>🛠️ Compilation
+</div>
 
-### 🪟 Windows (MinGW/GCC)
-To compile the Windows version, you will need MinGW (with `g++` and `windres` toolchains):
+<br/>
 
-1. Compile the icon and resource file:
-   ```cmd
-   windres resources.rc -o resources.o
-   ```
-2. Compile the launcher executable:
-   ```cmd
-   g++ -std=c++17 launcher.cpp resources.o -o MoonPlayer.exe -Iwebview2_sdk/build/native/include -lws2_32 -lole32 -lversion -lshlwapi -luuid -luser32 -lgdi32 -ldwmapi -mwindows -municode
-   ```
-3. Remove the temporary object file:
-   ```cmd
-   del resources.o
-   ```
+# <a id="english" name="english"></a><a id="header-en" name="header-en"></a>🇺🇸 English
 
-### 🐧 Linux (GTK3 / WebKit2GTK)
-Ensure you have the required development headers installed on your distribution:
-
-- **Ubuntu/Debian**:
-  ```bash
-  sudo apt install build-essential libgtk-3-dev libwebkit2gtk-4.0-dev
-  ```
-- **Fedora**:
-  ```bash
-  sudo dnf install gcc-c++ gtk3-devel webkit2gtk3-devel
-  ```
-- **Arch Linux**:
-  ```bash
-  sudo pacman -S gcc gtk3 webkit2gtk
-  ```
-
-Compile using the build script or manually:
-- **Using build script**:
-  ```bash
-  chmod +x build_linux.sh
-  ./build_linux.sh
-  ```
-- **Manually**:
-  ```bash
-  g++ -std=c++17 launcher.cpp -o MoonPlayer $(pkg-config --cflags --libs gtk+-3.0 webkit2gtk-4.0)
-  ```
+> **Quick Navigation:**  
+> [ 📸 Screenshots ](#screenshots-en) &nbsp;•&nbsp; [ 🌟 Features ](#features-en) &nbsp;•&nbsp; [ 🏗️ Architecture ](#architecture-en) &nbsp;•&nbsp; [ 🚀 Installation ](#installation-en) &nbsp;•&nbsp; [ 📖 How to Use ](#usage-en) &nbsp;•&nbsp; [ 🇷🇺 Перейти на русский ](#russian)
 
 ---
 
-## <a id="how-to-use"></a>▶️ How to Use
+## <a id="screenshots-en" name="screenshots-en"></a>📸 Screenshots Showcase
 
-1. Place your music folders in any location on your PC.
-2. Launch `MoonPlayer` (or `MoonPlayer.exe` on Windows).
-3. Open **SETTINGS** (gear icon) in the top-right corner.
-4. Input the absolute path of your music directory in **Server Music Folders** and click **ADD**.
-5. Click **Close** and enjoy your custom library!
+<div align="center">
 
----
+### 🌌 Main Library & Album Explorer
+*Dark glassmorphic UI, artist list, fuzzy search, and clean lossless FLAC badges.*
+<br/>
+<img src="https://files.catbox.moe/n8mnpw.png" alt="MoonPlayer Main Interface" width="95%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);" />
 
-## <a id="license"></a>📄 License
+<br/><br/>
 
-This project is licensed under the GPL-3.0 License.
+### 🏝️ Interactive Dynamic Island (Expanded View)
+*Floating Dynamic Island with spinning vinyl turntable, real-time audio spectrum visualizer, synced lyrics, and queue.*
+<br/>
+<img src="https://files.catbox.moe/b8wvng.png" alt="MoonPlayer Dynamic Island" width="95%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);" />
 
----
----
+</div>
 
-# <a id="header-rus"></a>✨ MoonPlayer (Русский)
-
-## 📖 Оглавление
-- [О проекте](#about-the-project-rus)
-- [Возможности](#features-rus)
-- [Компиляция](#compilation-rus)
-- [Как использовать](#how-to-use-rus)
-- [Лицензия](#license-rus)
+<br/>
 
 ---
 
-## <a id="about-the-project-rus"></a>📌 О проекте
+## <a id="features-en" name="features-en"></a>🌟 Key Features
 
-*MoonPlayer* — это легкий и производительный локальный музыкальный плеер для прослушивания аудиофайлов с вашего компьютера. Он совмещает нативный C++ лаунчер-клиент (`launcher.cpp` на базе Webview) и функциональный Node.js сервер (`server.js`) со стильным и современным веб-интерфейсом.
-
-> [!IMPORTANT]  
-> Для работы плеера на компьютере должен быть установлен [Node.js](https://nodejs.org/).
-
----
-
-## <a id="features-rus"></a>⌨️ Возможности
-
-- [x] **10-полосный графический эквалайзер** - Встроенный эквалайзер по стандарту ISO (от 32 Гц до 16 кГц) с регулировкой Preamp, живым графиком АЧХ (частотной характеристики), готовыми пресетами (Rock, Pop, Bass Boost, Vocal, Jazz, EDM, Hip-Hop, Classical, Acoustic, Deep) и возможностью сохранять свои пресеты.
-- [x] **Интеграция с Discord Rich Presence (RPC)** - Отображение играющего трека, исполнителя, альбома, таймлайна и автоматическая подгрузка HD-обложек альбомов (через Deezer, iTunes и Last.fm).
-- [x] **Нативный WebView-контейнер** - Оболочка на C++ с использованием Edge WebView2 (Windows) и WebKit2GTK (Linux).
-- [x] **Интерактивный Dynamic Island** - Всплывающий остров с красивыми анимациями, компактным/расширенным состоянием и звуковыми волнами.
-- [x] **Кастомизация цветов** - Выбор цветовых акцентов (розовый, голубой, зеленый, оранжевый, фиолетовый) и палитра для своего цвета.
-- [x] **Умный поиск** - Отказоустойчивый нечеткий поиск треков, альбомов и артистов на базе Fuse.js.
-- [x] **Таймер сна** - Встроенный таймер выключения (15, 30, 45, 60 минут) для автопаузы.
-- [x] **Аудио-визуализатор** - Частотный визуализатор, рисующийся на холсте в реальном времени.
-- [x] **Настройка фона** - Загрузка своего фонового изображения, настройка прозрачности и размытия (blur) прямо из настроек.
-- [x] **Автоматическое управление сервером** - C++ лаунчер сам запускает Node.js в фоне и автоматически закрывает его при выходе.
-- [x] **3D-наклон и свечение** - Эффекты наклона карточек, свечение за курсором и падающие снежинки для премиального визуала.
-- [x] **Синхронизация текста песен** - Отображение синхронизированного текста из файлов `.lrc` прямо внутри Dynamic Island.
-
+| Feature | Description |
+| :--- | :--- |
+| 🏝️ **Floating Dynamic Island** | Responsive capsule floating at the top. Expands into a full-featured player with spinning vinyl animation, live audio visualizer, timeline scrub, lyrics switcher, and queue drawer. Compact mode displays mini-waveforms and track info. |
+| 🎚️ **10-Band ISO Equalizer** | Studio-grade Web Audio API equalizer covering standard ISO frequencies (`32Hz` to `16kHz`). Features Preamp gain control (`-12dB` to `+12dB`), live spline curve (АЧХ) canvas, 10 crafted presets, and custom preset saving. |
+| 💎 **Lossless & Multi-Format** | First-class support for **FLAC Lossless** audio with an elegant `[F]` vector badge, plus `.mp3`, `.wav`, `.ogg`, `.m4a`, `.aac`, `.opus`, and `.webm`. |
+| 🎮 **Discord Rich Presence** | Automatically updates your Discord status with current track title, artist, album name, elapsed & remaining playback time, pause detection, and dynamic high-res album covers via Deezer, iTunes, and Last.fm. |
+| 🔍 **Smart Fuzzy Search** | Typo-tolerant, instantaneous search powered by **Fuse.js**. Quickly search across songs, artists, and albums without missing a beat. |
+| ⚡ **IndexedDB Metadata Engine** | Scans massive local music libraries in seconds. Caches parsed ID3 tags and album artwork in the browser's IndexedDB for zero-lag subsequent launches. |
+| 🎨 **Aesthetic Customization** | Vibrant accent presets (Neon Green, Pink, Electric Blue, Purple, Sunset Orange, Minimalist White) plus a custom color picker. Upload your own wallpapers with customizable blur and opacity. |
+| 📜 **Synchronized Lyrics (.lrc)** | Real-time karaoke-style lyrics display synced directly with playback inside the expanded island. |
+| ⏱️ **Sleep Timer** | Built-in shutdown countdown timers (15, 30, 45, 60 minutes) to gently pause your music when heading to sleep. |
+| 🪟 **Dual Engine Architecture** | Run as a standalone portable Electron app, or use the ultra-lightweight native C++ launcher (`launcher.cpp`) with Edge WebView2 on Windows and WebKit2GTK on Linux. |
 
 ---
 
-## <a id="compilation-rus"></a>🛠️ Компиляция
+## <a id="architecture-en" name="architecture-en"></a>🏗️ Architecture
 
-### 🪟 Windows (MinGW/GCC)
-Для сборки Windows-версии вам понадобится компилятор MinGW (с установленными `g++` и `windres`):
-
-1. Компиляция иконки и ресурсов:
-   ```cmd
-   windres resources.rc -o resources.o
-   ```
-2. Сборка исполняемого файла:
-   ```cmd
-   g++ -std=c++17 launcher.cpp resources.o -o MoonPlayer.exe -Iwebview2_sdk/build/native/include -lws2_32 -lole32 -lversion -lshlwapi -luuid -luser32 -lgdi32 -ldwmapi -mwindows -municode
-   ```
-3. Удаление временного файла ресурсов:
-   ```cmd
-   del resources.o
-   ```
-
-### 🐧 Linux (GTK3 / WebKit2GTK)
-Установите необходимые пакеты разработчика для вашего дистрибутива:
-
-- **Ubuntu/Debian**:
-  ```bash
-  sudo apt install build-essential libgtk-3-dev libwebkit2gtk-4.0-dev
-  ```
-- **Fedora**:
-  ```bash
-  sudo dnf install gcc-c++ gtk3-devel webkit2gtk3-devel
-  ```
-- **Arch Linux**:
-  ```bash
-  sudo pacman -S gcc gtk3 webkit2gtk
-  ```
-
-Скомпилируйте проект с помощью скрипта или вручную:
-- **Через скрипт сборки**:
-  ```bash
-  chmod +x build_linux.sh
-  ./build_linux.sh
-  ```
-- **Вручную**:
-  ```bash
-  g++ -std=c++17 launcher.cpp -o MoonPlayer $(pkg-config --cflags --libs gtk+-3.0 webkit2gtk-4.0)
-  ```
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Desktop Shell / Launcher                        │
+│   • Electron Standalone (dist/MoonPlayer.exe)                          │
+│   • OR Native C++ Wrapper (launcher.cpp + WebView2 / WebKitGTK)        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Embeds Web Engine
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                    Frontend UI (HTML5 / CSS3 / ES6+)                   │
+│   • Dynamic Island (Compact Capsule & Expanded Vinyl Turntable)        │
+│   • Web Audio API 10-Band Equalizer & Visualizer Spectrum Canvas       │
+│   • IndexedDB Metadata & Artwork Caching                               │
+│   • Fuse.js Typo-Tolerant Search & .LRC Lyrics Parser                  │
+└───────────────────────────────────▲────────────────────────────────────┘
+                                    │ REST API & Audio Streaming (/api/stream)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                  Backend Service (Node.js + Express)                   │
+│   • Local Directory Scanner & File Watcher                             │
+│   • Discord RPC Client (discord_presence.js)                           │
+│   • High-Res Artwork Resolver (Deezer, iTunes, Last.fm)                │
+│   • Persistent Settings (music_folders.json, cover_cache.json)         │
+└────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## <a id="how-to-use-rus"></a>▶️ Как использовать
+## <a id="installation-en" name="installation-en"></a>🚀 Quick Start & Installation
 
-1. Поместите папки с музыкой в любое место на ПК.
-2. Запустите `MoonPlayer` (или `MoonPlayer.exe` в Windows).
-3. Нажмите на иконку шестеренки (**SETTINGS**) в правом верхнем углу.
-4. Введите абсолютный путь к папке с музыкой в поле **Server Music Folders** и нажмите **ADD**.
-5. Закройте настройки и наслаждайтесь прослушиванием!
+### Option 1: Standalone Portable Binary (Recommended for Users)
+No runtime dependencies, Node.js, or complex compilation required:
+1. Download **`MoonPlayer.exe`** from [Releases](https://github.com/akvarium11/MoonPlayer/releases).
+2. Launch `MoonPlayer.exe` and enjoy your music right away!
 
 ---
 
-## <a id="license-rus"></a>📄 Лицензия
+### Option 2: Running from Source (Developers)
 
-Этот проект распространяется под лицензией GPL-3.0.
+#### Prerequisites
+- [Node.js](https://nodejs.org/) (version 18 or higher recommended)
+- [npm](https://www.npmjs.com/)
+
+#### Setup
+```bash
+# 1. Clone the repository
+git clone https://github.com/akvarium11/MoonPlayer.git
+
+# 2. Navigate to project root
+cd MoonPlayer
+
+# 3. Install dependencies
+npm install
+
+# 4. Start the application
+npm start
+```
+
+#### Build Standalone Executables
+```bash
+# Build standalone portable Windows x64 binary (dist/MoonPlayer.exe)
+npm run build
+
+# Build NSIS Windows installer
+npm run build:installer
+```
+
+---
+
+### Option 3: Lightweight Native C++ Launcher (WebView2 / WebKitGTK)
+
+<details>
+<summary><b>Click to expand C++ compilation instructions</b></summary>
+
+#### 🪟 Windows (MinGW / GCC)
+Make sure you have MinGW with `g++` and `windres` installed:
+```cmd
+# 1. Compile Windows resource icon
+windres resources.rc -o resources.o
+
+# 2. Compile launcher binary
+g++ -std=c++17 launcher.cpp resources.o -o MoonPlayer.exe -Iwebview2_sdk/build/native/include -lws2_32 -lole32 -lversion -lshlwapi -luuid -luser32 -lgdi32 -ldwmapi -mwindows -municode
+
+# 3. Clean up object file
+del resources.o
+```
+
+#### 🐧 Linux (GTK3 / WebKit2GTK)
+Install developer headers:
+- **Ubuntu/Debian**: `sudo apt install build-essential libgtk-3-dev libwebkit2gtk-4.0-dev`
+- **Fedora**: `sudo dnf install gcc-c++ gtk3-devel webkit2gtk3-devel`
+- **Arch Linux**: `sudo pacman -S gcc gtk3 webkit2gtk`
+
+Compile launcher:
+```bash
+chmod +x build_linux.sh
+./build_linux.sh
+```
+</details>
+
+---
+
+## <a id="usage-en" name="usage-en"></a>📖 How to Use
+
+1. **Launch MoonPlayer** via the executable.
+2. Click the **Settings** icon (⚙️) in the top-right corner.
+3. In **Server Music Folders**, enter the absolute path to your local music directory (e.g. `D:\Music` or `/home/user/Music`) and click **ADD**.
+4. Close settings. MoonPlayer will automatically index your songs, fetch artwork, and populate your library.
+5. Click on any track or album to start playing. Click the **Dynamic Island** at the top to expand the player, switch lyrics, adjust the equalizer, or view your queue!
+
+---
+
+## ⌨️ Keyboard Shortcuts & Controls
+
+| Action | Control / Shortcut |
+| :--- | :--- |
+| **Play / Pause** | `Space` / Island Play Button |
+| **Next Track** | `Ctrl + Right` / Next Button |
+| **Previous Track** | `Ctrl + Left` / Prev Button |
+| **Expand / Collapse Island** | Click top capsule / Island header |
+| **Volume Control** | `Mouse Wheel` over volume slider or player |
+| **Pin Island Open** | Click Pin icon (📌) in expanded island |
+| **Toggle Lyrics** | Click Music Note icon (🎵) in expanded island |
+| **Toggle Queue** | Click Queue icon (📑) in expanded island |
+
+---
+
+## <a id="license-en" name="license-en"></a>📄 License
+
+This project is licensed under the **GPL-3.0 License** — see the [LICENSE](LICENSE) file for details.
+
+<div align="right">
+
+[ ↑ Back to Top ](#readme-top) &nbsp;•&nbsp; [ 🇷🇺 Читать на русском ](#russian)
+
+</div>
+
+---
+<br/>
+
+# <a id="russian" name="russian"></a><a id="header-rus" name="header-rus"></a>🇷🇺 Русский
+
+> **Быстрая навигация:**  
+> [ 📸 Скриншоты ](#screenshots-ru) &nbsp;•&nbsp; [ 🌟 Возможности ](#features-ru) &nbsp;•&nbsp; [ 🏗️ Архитектура ](#architecture-ru) &nbsp;•&nbsp; [ 🚀 Установка ](#installation-ru) &nbsp;•&nbsp; [ 📖 Как пользоваться ](#usage-ru) &nbsp;•&nbsp; [ 🌐 Switch to English ](#english)
+
+---
+
+## <a id="screenshots-ru" name="screenshots-ru"></a>📸 Галерея скриншотов
+
+<div align="center">
+
+### 🌌 Главная библиотека и альбомный навигатор
+*Темная нео-глассморфик тема, список исполнителей, умный нечеткий поиск и бейджи FLAC без потерь.*
+<br/>
+<img src="https://files.catbox.moe/n8mnpw.png" alt="Главный интерфейс MoonPlayer" width="95%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);" />
+
+<br/><br/>
+
+### 🏝️ Интерактивный Dynamic Island (Раскрытый режим)
+*Плавающий остров с анимацией вращающейся виниловой пластинки, живым спектральным визуализатором, синхронизированными текстами и очередью.*
+<br/>
+<img src="https://files.catbox.moe/b8wvng.png" alt="Dynamic Island MoonPlayer" width="95%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);" />
+
+</div>
+
+<br/>
+
+---
+
+## <a id="features-ru" name="features-ru"></a>🌟 Ключевые возможности
+
+| Возможность | Описание |
+| :--- | :--- |
+| 🏝️ **Интерактивный Dynamic Island** | Плавающий «остров» в верхней части экрана. Плавно разворачивается в полноценный аудиоплеер с анимированным винилом, спектрограммой, таймлайном, текстами песен и очередью воспроизведения. В компактном виде отображает мини-волну и текущий трек. |
+| 🎚️ **10-полосный ISO эквалайзер** | Студийный эквалайзер на Web Audio API по стандарту ISO (`32 Гц` — `16 кГц`). Регулировка предусиления Preamp (`от -12 дБ до +12 дБ`), живой график АЧХ (частотной характеристики), 10 готовых пресетов и сохранение собственных настроек. |
+| 💎 **Lossless и все форматы** | Полноценная поддержка **FLAC** с аккуратным векторным бейджем `[F]`, а также `.mp3`, `.wav`, `.ogg`, `.m4a`, `.aac`, `.opus` и `.webm`. |
+| 🎮 **Discord Rich Presence** | Отображение статуса в Discord: название трека, исполнитель, альбом, прогресс воспроизведения, статус паузы и автоматическая подгрузка HD-обложек через Deezer, iTunes и Last.fm. |
+| 🔍 **Умный нечеткий поиск** | Мгновенный поиск на базе **Fuse.js**, устойчивый к опечаткам. Ищите треки, исполнителей и альбомы на лету. |
+| ⚡ **Кэширование метаданных в IndexedDB** | Мгновенный запуск и сканирование огромных коллекций. Вся информация об аудио и обложки сохраняются в IndexedDB браузера без повторных задержек. |
+| 🎨 **Глубокая кастомизация** | Готовые неоновые цветовые темы (зеленый, розовый, голубой, фиолетовый, оранжевый, белый) и палитра для любого цвета. Возможность загрузки своего фонового изображения с регулировкой блюра и прозрачности. |
+| 📜 **Синхронизация текстов (.lrc)** | Построчное отображение караоке-текстов песен в реальном времени прямо внутри Dynamic Island. |
+| ⏱️ **Таймер сна** | Встроенный таймер автоотключения на 15, 30, 45 или 60 минут. |
+| 🪟 **Двойной движок** | Работает как полностью автономный переносимый файл (Electron), так и через нативный легковесный C++ лаунчер (`launcher.cpp` на WebView2 / WebKitGTK). |
+
+---
+
+## <a id="architecture-ru" name="architecture-ru"></a>🏗️ Архитектура
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                     Десктопная оболочка / Лаунчер                      │
+│   • Автономный Electron (dist/MoonPlayer.exe)                          │
+│   • ИЛИ Нативный C++ лаунчер (launcher.cpp + WebView2 / WebKitGTK)     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Встраивает WebView
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                   Клиентский UI (HTML5 / CSS3 / ES6+)                  │
+│   • Dynamic Island (Компактная капсула и раскрытый виниловый плеер)   │
+│   • 10-полосный эквалайзер Web Audio API & Canvas визуализатор        │
+│   • Кэширование тегов и обложек в IndexedDB                            │
+│   • Нечеткий поиск Fuse.js & парсер синхронизированных .LRC текстов    │
+└───────────────────────────────────▲────────────────────────────────────┘
+                                    │ REST API и аудио-стриминг (/api/stream)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                   Бэкенд сервис (Node.js + Express)                    │
+│   • Сканирование файловой системы и отслеживание изменений            │
+│   • Клиент Discord RPC (discord_presence.js)                           │
+│   • Резолвер обложек высокого разрешения (Deezer, iTunes, Last.fm)     │
+│   • Хранение конфигурации (music_folders.json, cover_cache.json)       │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## <a id="installation-ru" name="installation-ru"></a>🚀 Быстрый старт и установка
+
+### Вариант 1: Автономный переносимый EXE (Для пользователей)
+Не требует установки Node.js, Python или дополнительных программ:
+1. Скачайте **`MoonPlayer.exe`** из раздела [Releases](https://github.com/akvarium11/MoonPlayer/releases).
+2. Запустите файл и сразу слушайте музыку!
+
+---
+
+### Вариант 2: Запуск из исходного кода (Для разработчиков)
+
+#### Требования
+- Установленный [Node.js](https://nodejs.org/) (версия 18 или новее)
+- Менеджер пакетов [npm](https://www.npmjs.com/)
+
+#### Инструкция
+```bash
+# 1. Клонируйте репозиторий
+git clone https://github.com/akvarium11/MoonPlayer.git
+
+# 2. Перейдите в папку проекта
+cd MoonPlayer
+
+# 3. Установите зависимости
+npm install
+
+# 4. Запустите приложение
+npm start
+```
+
+#### Сборка автономного бинарника
+```bash
+# Сборка portable-версии для Windows (dist/MoonPlayer.exe)
+npm run build
+
+# Сборка установочного пакета Windows (NSIS Installer)
+npm run build:installer
+```
+
+---
+
+### Вариант 3: Сборка нативного C++ лаунчера (WebView2 / WebKitGTK)
+
+<details>
+<summary><b>Нажмите, чтобы развернуть инструкции по компиляции C++</b></summary>
+
+#### 🪟 Windows (MinGW / GCC)
+Убедитесь, что у вас установлен MinGW с утилитами `g++` и `windres`:
+```cmd
+# 1. Компиляция файла ресурсов и иконки
+windres resources.rc -o resources.o
+
+# 2. Сборка исполняемого файла
+g++ -std=c++17 launcher.cpp resources.o -o MoonPlayer.exe -Iwebview2_sdk/build/native/include -lws2_32 -lole32 -lversion -lshlwapi -luuid -luser32 -lgdi32 -ldwmapi -mwindows -municode
+
+# 3. Удаление временного файла объекта
+del resources.o
+```
+
+#### 🐧 Linux (GTK3 / WebKit2GTK)
+Установите библиотеки для разработки:
+- **Ubuntu/Debian**: `sudo apt install build-essential libgtk-3-dev libwebkit2gtk-4.0-dev`
+- **Fedora**: `sudo dnf install gcc-c++ gtk3-devel webkit2gtk3-devel`
+- **Arch Linux**: `sudo pacman -S gcc gtk3 webkit2gtk`
+
+Сборка через скрипт:
+```bash
+chmod +x build_linux.sh
+./build_linux.sh
+```
+</details>
+
+---
+
+## <a id="usage-ru" name="usage-ru"></a>📖 Как пользоваться
+
+1. **Запустите MoonPlayer** (через `.exe` или `npm start`).
+2. Нажмите на иконку настроек (⚙️) в правом верхнем углу.
+3. В поле **Server Music Folders** укажите абсолютный путь к папке с музыкой (например, `D:\Music` или `/home/user/Music`) и нажмите **ADD**.
+4. Закройте настройки. Плеер автоматически проиндексирует треки, подтянет метаданные и обложки.
+5. Нажмите на любой трек для воспроизведения. Нажмите на **Dynamic Island** вверху экрана, чтобы открыть расширенную панель, включить текст песни, настроить эквалайзер или изменить очередь!
+
+---
+
+## ⌨️ Управление и горячие клавиши
+
+| Действие | Клавиша / Элемент управления |
+| :--- | :--- |
+| **Пауза / Воспроизведение** | `Пробел` / Кнопка Play в Dynamic Island |
+| **Следующий трек** | `Ctrl + Вправо` / Кнопка Next |
+| **Предыдущий трек** | `Ctrl + Влево` / Кнопка Prev |
+| **Открыть / Закрыть Dynamic Island** | Клик по верхней капсуле |
+| **Регулировка громкости** | `Колесико мыши` над слайдером громкости |
+| **Закрепить остров открытым** | Кнопка закрепления (📌) в Dynamic Island |
+| **Текст песни (Lyrics)** | Кнопка с нотой (🎵) в Dynamic Island |
+| **Очередь воспроизведения** | Кнопка списка (📑) в Dynamic Island |
+
+---
+
+## <a id="license-ru" name="license-ru"></a>📄 Лицензия
+
+Проект распространяется под свободной лицензией **GPL-3.0 License** — подробности в файле [LICENSE](LICENSE).
+
+<div align="right">
+
+[ ↑ Наверх ](#readme-top) &nbsp;•&nbsp; [ 🌐 Switch to English ](#english)
+
+</div>
+
+<div align="center">
+
+---
+
+**Made with 💜 by [akvarium11](https://github.com/akvarium11)**  
+*MoonPlayer — слушайте любимую музыку красиво.*
+
+</div>
