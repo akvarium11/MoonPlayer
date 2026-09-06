@@ -774,43 +774,23 @@ body {
     font-size: 0.8rem;
     line-height: 1.45;
     color: rgba(255, 255, 255, 0.75);
-    max-height: 4.2em;
-    overflow-y: auto;
-    transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     position: relative;
-    padding-right: 4px;
-}
-
-.detail-description:hover,
-.detail-description.expanded {
-    max-height: 12em;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: visible;
 }
 
 .detail-description.hidden {
     display: none !important;
 }
 
-.detail-desc-text {
-    word-break: break-word;
-}
-
-.detail-description a {
-    color: var(--accent);
-    text-decoration: none;
-    transition: color 0.2s;
-}
-
-.detail-description a:hover {
-    text-decoration: underline;
-    color: #fff;
-}
-
+/* Always-visible tags & stats row */
 .detail-tags-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    margin-top: 6px;
 }
 
 .detail-tag-badge {
@@ -833,6 +813,88 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+}
+
+/* Description text wrapper with 1-line clamp when collapsed */
+.detail-desc-wrapper {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 6px 10px;
+    transition: background 0.2s ease, border-color 0.2s ease;
+    user-select: text;
+}
+
+.detail-desc-wrapper:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.detail-desc-text {
+    flex: 1;
+    word-break: break-word;
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.45;
+}
+
+/* Collapsed: exactly 1 line with ellipsis - NO scrollbar */
+.detail-desc-wrapper.collapsed .detail-desc-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Expanded: full text with custom slim scrollbar only if exceeding max height */
+.detail-desc-wrapper.expanded .detail-desc-text {
+    display: block;
+    max-height: 160px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.detail-desc-wrapper.expanded .detail-desc-text::-webkit-scrollbar {
+    width: 4px;
+}
+
+.detail-desc-wrapper.expanded .detail-desc-text::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.detail-desc-wrapper.expanded .detail-desc-text::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+}
+
+.detail-desc-wrapper.expanded .detail-desc-text::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}
+
+.detail-desc-toggle-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.75rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease;
+    flex-shrink: 0;
+    margin-top: 3px;
+}
+
+.detail-desc-wrapper:hover .detail-desc-toggle-btn {
+    color: var(--accent);
 }
 
 .detail-loading {

@@ -503,6 +503,16 @@ function saveLastFmInfoCache() {
     } catch (e) {}
 }
 
+function cleanLastFmText(text) {
+    if (!text || typeof text !== 'string') return '';
+    return text
+        .replace(/<a\b[^>]*>.*?read more.*?<\/a>\.?/gi, '')
+        .replace(/\.?\s*read more on last\.?fm\.?/gi, '')
+        .replace(/\.?\s*read more\.?$/gi, '')
+        .replace(/User-contributed text is available under.*?$/gi, '')
+        .trim();
+}
+
 // API: Last.fm Artist Info (bio, tags, listeners, playcount)
 app.get('/api/artist-info', async (req, res) => {
     const { artist } = req.query;
@@ -527,7 +537,7 @@ app.get('/api/artist-info', async (req, res) => {
             return res.json({ success: false, message: data.message || 'Artist not found' });
         }
 
-        const rawBio = data.artist.bio?.summary || '';
+        const rawBio = cleanLastFmText(data.artist.bio?.summary || '');
         const tags = (data.artist.tags?.tag || []).map(t => typeof t === 'string' ? t : t.name).filter(Boolean);
         const listeners = data.artist.stats?.listeners || null;
         const playcount = data.artist.stats?.playcount || null;
@@ -574,7 +584,7 @@ app.get('/api/album-info', async (req, res) => {
             return res.json({ success: false, message: data.message || 'Album not found' });
         }
 
-        const rawWiki = data.album.wiki?.summary || '';
+        const rawWiki = cleanLastFmText(data.album.wiki?.summary || '');
         const tags = (data.album.tags?.tag || []).map(t => typeof t === 'string' ? t : t.name).filter(Boolean);
         const listeners = data.album.listeners || null;
         const playcount = data.album.playcount || null;

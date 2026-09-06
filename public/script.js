@@ -3259,28 +3259,50 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function cleanLastFmText(text) {
+        if (!text || typeof text !== 'string') return '';
+        return text
+            .replace(/<a\b[^>]*>.*?read more.*?<\/a>\.?/gi, '')
+            .replace(/\.?\s*read more on last\.?fm\.?/gi, '')
+            .replace(/\.?\s*read more\.?$/gi, '')
+            .replace(/User-contributed text is available under.*?$/gi, '')
+            .trim();
+    }
+
     function renderDescriptionContent(text, tags, listeners, playcount, url) {
         if (!detailDescription) return;
+
+        const cleanText = cleanLastFmText(text);
         let html = '';
-        if (text && text.trim()) {
-            html += `<div class="detail-desc-text">${text.trim()}</div>`;
-        }
-        
-        let metaItems = [];
+
+        // 1. Tags & stats row (ALWAYS VISIBLE whether collapsed or expanded)
+        const metaBadges = [];
         if (tags && tags.length > 0) {
             const tagsHtml = tags.map(t => `<span class="detail-tag-badge">#${escapeHtml(t)}</span>`).join(' ');
-            metaItems.push(tagsHtml);
+            metaBadges.push(tagsHtml);
         }
         if (listeners || playcount) {
             let statsHtml = '<span class="detail-stats-badge">';
             if (listeners) statsHtml += `<i class="fa-solid fa-users"></i> ${listeners} listeners `;
             if (playcount) statsHtml += `• <i class="fa-solid fa-play"></i> ${playcount} plays`;
             statsHtml += '</span>';
-            metaItems.push(statsHtml);
+            metaBadges.push(statsHtml);
         }
 
-        if (metaItems.length > 0) {
-            html += `<div class="detail-tags-row">${metaItems.join(' ')}</div>`;
+        if (metaBadges.length > 0) {
+            html += `<div class="detail-tags-row">${metaBadges.join(' ')}</div>`;
+        }
+
+        // 2. Text row: 1 line ending with ellipsis when collapsed, full text when expanded
+        if (cleanText) {
+            html += `
+                <div class="detail-desc-wrapper collapsed" id="detail-desc-wrapper" title="Click to expand / collapse">
+                    <div class="detail-desc-text" id="detail-desc-text">${cleanText}</div>
+                    <button class="detail-desc-toggle-btn" id="detail-desc-toggle-btn" title="Show more">
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                </div>
+            `;
         }
 
         if (!html) {
@@ -3292,7 +3314,27 @@ document.addEventListener('DOMContentLoaded', () => {
         detailDescription.innerHTML = html;
         detailDescription.classList.remove('hidden');
 
-        // Ensure links open with target="_blank"
+        // Bind expand/collapse toggle click
+        const descWrapper = detailDescription.querySelector('#detail-desc-wrapper');
+        if (descWrapper) {
+            descWrapper.addEventListener('click', (e) => {
+                // If a link was clicked, don't toggle
+                if (e.target.closest('a')) return;
+                
+                const isCollapsed = descWrapper.classList.toggle('collapsed');
+                descWrapper.classList.toggle('expanded', !isCollapsed);
+
+                const toggleBtn = descWrapper.querySelector('#detail-desc-toggle-btn');
+                if (toggleBtn) {
+                    toggleBtn.innerHTML = isCollapsed 
+                        ? '<i class="fa-solid fa-chevron-down"></i>' 
+                        : '<i class="fa-solid fa-chevron-up"></i>';
+                    toggleBtn.title = isCollapsed ? 'Show more' : 'Show less';
+                }
+            });
+        }
+
+        // Ensure any remaining external links open with target="_blank"
         detailDescription.querySelectorAll('a').forEach(a => {
             a.setAttribute('target', '_blank');
             a.setAttribute('rel', 'noopener noreferrer');
