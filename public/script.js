@@ -1065,7 +1065,79 @@ document.addEventListener('DOMContentLoaded', () => {
         return song.album.toLowerCase();
     }
 
+    const GENERIC_TITLES = new Set([
+        'intro', 'outro', 'interlude', 'skit', 'untitled', 'bonus track', 
+        'track', 'audio', 'instrumental', 'prelude', 'intermission', 'track 1', 'track 2'
+    ]);
+
+    function detectAndFixInvertedSongs(songs) {
+        if (!Array.isArray(songs) || songs.length < 2) return { songs, fixedCount: 0, fixedSongs: [] };
+
+        const folderGroups = new Map();
+        songs.forEach(song => {
+            const dir = getSongAlbumKey(song) || 'default';
+            if (!folderGroups.has(dir)) folderGroups.set(dir, []);
+            folderGroups.get(dir).push(song);
+        });
+
+        let fixedCount = 0;
+        const fixedSongs = [];
+
+        folderGroups.forEach((groupSongs) => {
+            if (groupSongs.length < 2) return;
+
+            const titleMap = new Map();
+            groupSongs.forEach(song => {
+                const rawTitle = (song.title || '').trim();
+                const normTitle = rawTitle.toLowerCase();
+                if (normTitle && !GENERIC_TITLES.has(normTitle)) {
+                    if (!titleMap.has(normTitle)) titleMap.set(normTitle, []);
+                    titleMap.get(normTitle).push(song);
+                }
+            });
+
+            titleMap.forEach((matchingSongs) => {
+                if (matchingSongs.length >= 2) {
+                    const artistsList = matchingSongs.map(s => (s.artist || '').trim()).filter(a => {
+                        const l = a.toLowerCase();
+                        return l && l !== 'unknown artist' && l !== 'unknown';
+                    });
+                    const distinctArtists = new Set(artistsList.map(a => a.toLowerCase()));
+
+                    const isSwapped = (distinctArtists.size >= 2 && distinctArtists.size >= matchingSongs.length * 0.7) ||
+                                      (distinctArtists.size >= 2 && matchingSongs.length === groupSongs.length) ||
+                                      (matchingSongs.length >= 3 && distinctArtists.size >= 2);
+
+                    if (isSwapped) {
+                        matchingSongs.forEach(song => {
+                            const oldTitle = song.title;
+                            const oldArtist = song.artist;
+                            if (oldArtist && oldArtist.toLowerCase() !== 'unknown artist') {
+                                song.title = oldArtist;
+                                song.artist = oldTitle;
+                                song._invertedFixed = true;
+                                fixedSongs.push(song);
+                                fixedCount++;
+                            }
+                        });
+                    }
+                }
+            });
+        });
+
+        return { songs, fixedCount, fixedSongs };
+    }
+
     function buildLibraries() {
+        const fixResult = detectAndFixInvertedSongs(allSongs);
+        if (fixResult.fixedSongs && fixResult.fixedSongs.length > 0) {
+            fixResult.fixedSongs.forEach(song => {
+                if (song.path) {
+                    cacheMetadata(song.path, song).catch(() => {});
+                }
+            });
+        }
+
         const albumsMap = {};
         const artistsMap = {};
 
@@ -1468,6 +1540,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (songListContainer) {
             songListContainer.classList.remove('hidden');
             songListContainer.style.display = '';
+        }
+
+        const detailDescEl = document.getElementById('detail-description');
+        if (detailDescEl) {
+            detailDescEl.classList.add('hidden');
+            detailDescEl.innerHTML = '';
         }
 
         const savedPaths = playlists[playlistName] || [];
@@ -3032,6 +3110,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         currentPlaylist = [...album.tracks];
         renderPlaylistView(album.title, album.artist, album.year, album.cover);
+        loadAlbumDescription(album.artist, album.title);
     }
 
     function selectArtist(artistKey) {
@@ -3075,6 +3154,8 @@ document.addEventListener('DOMContentLoaded', () => {
         detailCover.src = artistCover;
         detailCover.style.borderRadius = '50%'; // circular cover for artist profiles
 
+        loadArtistDescription(artist.name);
+
         // Toggle visibility
         // wait, in other places we used hidden class, let's keep consistency:
         if (songListContainer) songListContainer.classList.add('hidden');
@@ -3112,8 +3193,129 @@ document.addEventListener('DOMContentLoaded', () => {
     const detailTitle = document.getElementById('detail-title');
     const detailArtist = document.getElementById('detail-artist');
     const detailMeta = document.getElementById('detail-meta');
+    const detailDescription = document.getElementById('detail-description');
     const songListContainer = document.getElementById('song-list');
     const albumsGridContainer = document.getElementById('albums-grid');
+
+    let currentDescriptionAbortController = null;
+
+    async function loadArtistDescription(artistName) {
+        if (!detailDescription) return;
+        if (currentDescriptionAbortController) {
+            currentDescriptionAbortController.abort();
+        }
+        currentDescriptionAbortController = new AbortController();
+
+        detailDescription.innerHTML = '<span class="detail-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading Last.fm bio...</span>';
+        detailDescription.classList.remove('hidden');
+
+        try {
+            const res = await fetch(`/api/artist-info?artist=${encodeURIComponent(artistName)}`, {
+                signal: currentDescriptionAbortController.signal
+            });
+            const data = await res.json();
+            if (!data.success) {
+                detailDescription.classList.add('hidden');
+                detailDescription.innerHTML = '';
+                return;
+            }
+
+            renderDescriptionContent(data.bio, data.tags, data.listeners, data.playcount, data.url);
+        } catch (e) {
+            if (e.name !== 'AbortError') {
+                detailDescription.classList.add('hidden');
+                detailDescription.innerHTML = '';
+            }
+        }
+    }
+
+    async function loadAlbumDescription(artistName, albumName) {
+        if (!detailDescription) return;
+        if (currentDescriptionAbortController) {
+            currentDescriptionAbortController.abort();
+        }
+        currentDescriptionAbortController = new AbortController();
+
+        detailDescription.innerHTML = '<span class="detail-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading Last.fm info...</span>';
+        detailDescription.classList.remove('hidden');
+
+        try {
+            const res = await fetch(`/api/album-info?artist=${encodeURIComponent(artistName || '')}&album=${encodeURIComponent(albumName || '')}`, {
+                signal: currentDescriptionAbortController.signal
+            });
+            const data = await res.json();
+            if (!data.success) {
+                detailDescription.classList.add('hidden');
+                detailDescription.innerHTML = '';
+                return;
+            }
+
+            renderDescriptionContent(data.wiki, data.tags, data.listeners, data.playcount, data.url);
+        } catch (e) {
+            if (e.name !== 'AbortError') {
+                detailDescription.classList.add('hidden');
+                detailDescription.innerHTML = '';
+            }
+        }
+    }
+
+    function renderDescriptionContent(text, tags, listeners, playcount, url) {
+        if (!detailDescription) return;
+        let html = '';
+        if (text && text.trim()) {
+            html += `<div class="detail-desc-text">${text.trim()}</div>`;
+        }
+        
+        let metaItems = [];
+        if (tags && tags.length > 0) {
+            const tagsHtml = tags.map(t => `<span class="detail-tag-badge">#${escapeHtml(t)}</span>`).join(' ');
+            metaItems.push(tagsHtml);
+        }
+        if (listeners || playcount) {
+            let statsHtml = '<span class="detail-stats-badge">';
+            if (listeners) statsHtml += `<i class="fa-solid fa-users"></i> ${listeners} listeners `;
+            if (playcount) statsHtml += `• <i class="fa-solid fa-play"></i> ${playcount} plays`;
+            statsHtml += '</span>';
+            metaItems.push(statsHtml);
+        }
+
+        if (metaItems.length > 0) {
+            html += `<div class="detail-tags-row">${metaItems.join(' ')}</div>`;
+        }
+
+        if (!html) {
+            detailDescription.classList.add('hidden');
+            detailDescription.innerHTML = '';
+            return;
+        }
+
+        detailDescription.innerHTML = html;
+        detailDescription.classList.remove('hidden');
+
+        // Ensure links open with target="_blank"
+        detailDescription.querySelectorAll('a').forEach(a => {
+            a.setAttribute('target', '_blank');
+            a.setAttribute('rel', 'noopener noreferrer');
+        });
+    }
+
+    if (detailDescription) {
+        detailDescription.addEventListener('click', (e) => {
+            const a = e.target.closest('a');
+            if (a && a.href) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (window.require) {
+                    try {
+                        const { shell } = window.require('electron');
+                        shell.openExternal(a.href);
+                        return;
+                    } catch (err) {}
+                }
+                window.open(a.href, '_blank');
+            }
+        });
+    }
 
     function renderPlaylistView(title, artist, metaText, coverUrl) {
         const selectedDetailsView = document.getElementById('selected-details-view');
@@ -5457,6 +5659,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function parseServerSongMetadata(song) {
+        // If song already has metadata parsed by server (e.g. native FLAC Vorbis comments) or is FLAC:
+        if ((song.title && song.artist) || song.format === 'flac') {
+            return Promise.resolve(generateServerFallbackMetadata(song));
+        }
+
         return new Promise((resolve) => {
             const timeoutId = setTimeout(() => {
                 resolve(generateServerFallbackMetadata(song));
@@ -5472,7 +5679,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     let artist = tags.artist ? tags.artist.trim() : "";
                     let album = tags.album ? tags.album.trim() : "";
                     let year = tags.year ? String(tags.year).trim() : "";
-                    let cover = DEFAULT_COVER;
+                    let cover = song.folderCoverUrl || DEFAULT_COVER;
 
                     if (!title) {
                         const filenameInfo = parseFilename(song.name);
@@ -5536,11 +5743,11 @@ document.addEventListener('DOMContentLoaded', () => {
             path: song.path,
             src: song.url,
             format: song.format || ext,
-            title: fileInfo.title || song.name,
-            artist: fileInfo.artist || pathInfo.artist || "Unknown Artist",
-            album: pathInfo.album || "Unknown Album",
-            year: "",
-            cover: DEFAULT_COVER
+            title: song.title || fileInfo.title || song.name,
+            artist: song.artist || fileInfo.artist || pathInfo.artist || "Unknown Artist",
+            album: song.album || pathInfo.album || "Unknown Album",
+            year: song.year || "",
+            cover: song.folderCoverUrl || song.cover || DEFAULT_COVER
         };
     }
 
@@ -5591,6 +5798,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // so all tracks are immediately accessible for search, playlists, and M3U import
             allSongs = songs.map(generateServerFallbackMetadata);
             window.allSongs = allSongs;
+            detectAndFixInvertedSongs(allSongs);
             buildLibraries();
             setupFuseSearch();
             renderLibraryPanel();
@@ -5616,6 +5824,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // so searching, library browsing, and M3U playlist import are fully responsive without waiting
             const instantFallbacks = uncachedSongs.map(generateServerFallbackMetadata);
             allSongs = [...processedSongs, ...instantFallbacks];
+            detectAndFixInvertedSongs(allSongs);
             buildLibraries();
             setupFuseSearch();
             renderLibraryPanel();
@@ -5658,6 +5867,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             allSongs = processedSongs;
+            detectAndFixInvertedSongs(allSongs);
             buildLibraries();
             setupFuseSearch();
             renderLibraryPanel();

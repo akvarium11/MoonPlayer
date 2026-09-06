@@ -1,5 +1,8 @@
 node_modules/
 music_folders.json
+discord_config.json
+cover_cache.json
+lastfm_info_cache.json
 .DS_Store
 .gemini/
 .idea/
