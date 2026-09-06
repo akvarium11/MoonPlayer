@@ -22,6 +22,49 @@ const CONFIG_FILE = path.join(DATA_DIR, 'discord_config.json');
 const CACHE_FILE = path.join(DATA_DIR, 'cover_cache.json');
 const DEFAULT_CLIENT_ID = '1543154845958275114';
 const DEFAULT_ICON_URL = 'https://raw.githubusercontent.com/akvarium11/MoonPlayer/main/assets/icon.png';
+const DEFAULT_LASTFM_API_KEY = 'b25b959554ed76058ac220b7b2e0a026';
+
+function normalizeForComparison(str) {
+    if (!str || typeof str !== 'string') return '';
+    return str
+        .toLowerCase()
+        .replace(/\.[a-zA-Z0-9]+$/, '')
+        .replace(/\[.*?\]|\(.*?\)/g, '')
+        .replace(/[^a-z0-9\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]/gi, '')
+        .trim();
+}
+
+function stringsFuzzyMatch(a, b) {
+    const normA = normalizeForComparison(a);
+    const normB = normalizeForComparison(b);
+    if (!normA || !normB) return false;
+    if (normA === normB) return true;
+    if (normA.includes(normB) || normB.includes(normA)) return true;
+    return false;
+}
+
+function isValidCoverUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    url = url.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return false;
+    if (url.includes('2a96cbd8b46e442fc41c2b86b821562f')) return false;
+    if (url.includes('default_album')) return false;
+    return true;
+}
+
+function extractLastFmImage(images) {
+    if (!Array.isArray(images) || images.length === 0) return null;
+    for (const size of ['mega', 'extralarge', 'large', 'medium', 'small']) {
+        const found = images.find(img => img.size === size);
+        if (found && isValidCoverUrl(found['#text'])) {
+            let imgUrl = found['#text'].trim();
+            imgUrl = imgUrl.replace(/\/300x300\//, '/770x0/').replace(/\/174s\//, '/770x0/');
+            return imgUrl;
+        }
+    }
+    const any = images.find(img => isValidCoverUrl(img['#text']));
+    return any ? any['#text'].trim() : null;
+}
 
 function cleanRpcString(str, fallback, maxLength = 60) {
     if (!str || typeof str !== 'string') str = fallback || 'MoonPlayer';
@@ -144,82 +187,213 @@ class DiscordPresenceManager {
         // Clean query terms
         const cleanTitle = (title || '').replace(/\.[a-zA-Z0-9]+$/, '').replace(/\(.*?offici.*?\)/gi, '').trim();
         const cleanArtist = (artist || '').replace(/\(.*?offici.*?\)/gi, '').trim();
-        const cleanAlbum = (album || '').trim();
+        const cleanAlbum = (album || '').replace(/\[.*?\]/g, '').trim();
 
-        const cacheKey = `${cleanArtist} - ${cleanTitle || cleanAlbum}`.toLowerCase().trim();
+        // 3) Rule 3: If only title matches, or artist is unknown/missing -> DO NOT SHOW COVER
+        const isArtistUnknown = !cleanArtist || 
+            cleanArtist.toLowerCase() === 'unknown artist' || 
+            cleanArtist.toLowerCase() === 'unknown' || 
+            cleanArtist.toLowerCase() === 'various artists' ||
+            cleanArtist.toLowerCase() === 'various';
+
+        if (isArtistUnknown || !cleanTitle) {
+            return DEFAULT_ICON_URL;
+        }
+
+        const isAlbumMeaningful = cleanAlbum && 
+            cleanAlbum.toLowerCase() !== 'unknown album' && 
+            cleanAlbum.toLowerCase() !== 'unknown' && 
+            cleanAlbum.toLowerCase() !== 'various' &&
+            cleanAlbum.toLowerCase() !== cleanTitle.toLowerCase();
+
+        const cacheKey = `${cleanArtist} - ${isAlbumMeaningful ? cleanAlbum + ' - ' : ''}${cleanTitle}`.toLowerCase().trim();
         if (this.coverCache[cacheKey]) {
             return this.coverCache[cacheKey];
         }
 
-        const searchQueries = [];
-        if (cleanArtist && cleanTitle) searchQueries.push(`${cleanArtist} ${cleanTitle}`);
-        if (cleanArtist && cleanAlbum && cleanAlbum !== cleanTitle) searchQueries.push(`${cleanArtist} ${cleanAlbum}`);
-        if (cleanTitle) searchQueries.push(cleanTitle);
+        const lastFmKey = (this.config.lastFmApiKey && this.config.lastFmApiKey.trim()) || DEFAULT_LASTFM_API_KEY;
 
-        for (const query of searchQueries) {
-            // 1. Try Deezer Search API
+        // =========================================================================
+        // PRIORITY 1: Match Title AND Artist AND Album
+        // =========================================================================
+        if (isAlbumMeaningful) {
+            // 1.1 Last.fm (Priority 1)
+            if (lastFmKey) {
+                // A) Last.fm track.getInfo (checks if track's album matches cleanAlbum)
+                try {
+                    const lfmUrl = `https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key=${encodeURIComponent(lastFmKey)}&artist=${encodeURIComponent(cleanArtist)}&track=${encodeURIComponent(cleanTitle)}&format=json`;
+                    const lfmRes = await fetch(lfmUrl, { signal: AbortSignal.timeout(3500) });
+                    if (lfmRes.ok) {
+                        const data = await lfmRes.json();
+                        if (data.track && stringsFuzzyMatch(data.track.name, cleanTitle) && stringsFuzzyMatch(data.track.artist?.name, cleanArtist)) {
+                            if (data.track.album && stringsFuzzyMatch(data.track.album.title, cleanAlbum)) {
+                                const cover = extractLastFmImage(data.track.album.image);
+                                if (cover) {
+                                    this.coverCache[cacheKey] = cover;
+                                    this.saveCoverCache();
+                                    return cover;
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {}
+
+                // B) Last.fm album.getInfo (checks if album has cleanTitle among its tracks)
+                try {
+                    const lfmAlbumUrl = `https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key=${encodeURIComponent(lastFmKey)}&artist=${encodeURIComponent(cleanArtist)}&album=${encodeURIComponent(cleanAlbum)}&format=json`;
+                    const lfmRes = await fetch(lfmAlbumUrl, { signal: AbortSignal.timeout(3500) });
+                    if (lfmRes.ok) {
+                        const data = await lfmRes.json();
+                        if (data.album && stringsFuzzyMatch(data.album.artist, cleanArtist) && stringsFuzzyMatch(data.album.name, cleanAlbum)) {
+                            const tracks = data.album.tracks?.track || [];
+                            const trackList = Array.isArray(tracks) ? tracks : [tracks];
+                            const hasTrack = trackList.some(t => stringsFuzzyMatch(t.name, cleanTitle));
+                            if (hasTrack) {
+                                const cover = extractLastFmImage(data.album.image);
+                                if (cover) {
+                                    this.coverCache[cacheKey] = cover;
+                                    this.saveCoverCache();
+                                    return cover;
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            // 1.2 Deezer (Priority 1 Fallback)
             try {
-                const deezerRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=1`, {
+                const deezerQuery = `${cleanArtist} ${cleanAlbum}`;
+                const deezerRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(deezerQuery)}&limit=5`, {
                     headers: { 'User-Agent': 'MoonPlayer/1.0' },
                     signal: AbortSignal.timeout(3000)
                 });
                 if (deezerRes.ok) {
                     const data = await deezerRes.json();
-                    if (data.data && data.data.length > 0 && data.data[0].album) {
-                        const cover = data.data[0].album.cover_xl || data.data[0].album.cover_big || data.data[0].album.cover_medium;
-                        if (cover) {
-                            this.coverCache[cacheKey] = cover;
-                            this.saveCoverCache();
-                            return cover;
-                        }
-                    }
-                }
-            } catch (e) {
-                // Silently try next fallback
-            }
-
-            // 2. Try iTunes Search API
-            try {
-                const itunesRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=1`, {
-                    headers: { 'User-Agent': 'MoonPlayer/1.0' },
-                    signal: AbortSignal.timeout(3000)
-                });
-                if (itunesRes.ok) {
-                    const data = await itunesRes.json();
-                    if (data.results && data.results.length > 0 && data.results[0].artworkUrl100) {
-                        const cover = data.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
-                        this.coverCache[cacheKey] = cover;
-                        this.saveCoverCache();
-                        return cover;
-                    }
-                }
-            } catch (e) {
-                // Silently try next fallback
-            }
-
-            // 3. Try Last.fm API if API key configured
-            if (this.config.lastFmApiKey && cleanArtist && cleanTitle) {
-                try {
-                    const lfmUrl = `https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key=${encodeURIComponent(this.config.lastFmApiKey)}&artist=${encodeURIComponent(cleanArtist)}&track=${encodeURIComponent(cleanTitle)}&format=json`;
-                    const lfmRes = await fetch(lfmUrl, { signal: AbortSignal.timeout(3000) });
-                    if (lfmRes.ok) {
-                        const data = await lfmRes.json();
-                        if (data.track && data.track.album && data.track.album.image) {
-                            const images = data.track.album.image;
-                            const extImg = images.find(img => img.size === 'extralarge' || img.size === 'large');
-                            if (extImg && extImg['#text']) {
-                                const cover = extImg['#text'];
+                    if (data.data && data.data.length > 0) {
+                        const match = data.data.find(item => 
+                            stringsFuzzyMatch(item.artist?.name, cleanArtist) &&
+                            stringsFuzzyMatch(item.title, cleanTitle) &&
+                            stringsFuzzyMatch(item.album?.title, cleanAlbum)
+                        );
+                        if (match && match.album) {
+                            const cover = match.album.cover_xl || match.album.cover_big || match.album.cover_medium;
+                            if (cover && isValidCoverUrl(cover)) {
                                 this.coverCache[cacheKey] = cover;
                                 this.saveCoverCache();
                                 return cover;
                             }
                         }
                     }
-                } catch (e) {}
-            }
+                }
+            } catch (e) {}
+
+            // 1.3 iTunes (Priority 1 Fallback)
+            try {
+                const itunesQuery = `${cleanArtist} ${cleanAlbum} ${cleanTitle}`;
+                const itunesRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(itunesQuery)}&entity=song&limit=5`, {
+                    headers: { 'User-Agent': 'MoonPlayer/1.0' },
+                    signal: AbortSignal.timeout(3000)
+                });
+                if (itunesRes.ok) {
+                    const data = await itunesRes.json();
+                    if (data.results && data.results.length > 0) {
+                        const match = data.results.find(item =>
+                            stringsFuzzyMatch(item.artistName, cleanArtist) &&
+                            stringsFuzzyMatch(item.trackName, cleanTitle) &&
+                            stringsFuzzyMatch(item.collectionName, cleanAlbum)
+                        );
+                        if (match && match.artworkUrl100) {
+                            const cover = match.artworkUrl100.replace('100x100bb', '600x600bb');
+                            this.coverCache[cacheKey] = cover;
+                            this.saveCoverCache();
+                            return cover;
+                        }
+                    }
+                }
+            } catch (e) {}
         }
 
-        // Cache fallback so we don't spam APIs on every update
+        // =========================================================================
+        // PRIORITY 2: Match Title AND Artist
+        // =========================================================================
+
+        // 2.1 Last.fm (Priority 2)
+        if (lastFmKey) {
+            try {
+                const lfmUrl = `https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key=${encodeURIComponent(lastFmKey)}&artist=${encodeURIComponent(cleanArtist)}&track=${encodeURIComponent(cleanTitle)}&format=json`;
+                const lfmRes = await fetch(lfmUrl, { signal: AbortSignal.timeout(3500) });
+                if (lfmRes.ok) {
+                    const data = await lfmRes.json();
+                    if (data.track && stringsFuzzyMatch(data.track.name, cleanTitle) && stringsFuzzyMatch(data.track.artist?.name, cleanArtist)) {
+                        if (data.track.album) {
+                            const cover = extractLastFmImage(data.track.album.image);
+                            if (cover) {
+                                this.coverCache[cacheKey] = cover;
+                                this.saveCoverCache();
+                                return cover;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // 2.2 Deezer (Priority 2 Fallback)
+        try {
+            const deezerQuery = `${cleanArtist} ${cleanTitle}`;
+            const deezerRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(deezerQuery)}&limit=5`, {
+                headers: { 'User-Agent': 'MoonPlayer/1.0' },
+                signal: AbortSignal.timeout(3000)
+            });
+            if (deezerRes.ok) {
+                const data = await deezerRes.json();
+                if (data.data && data.data.length > 0) {
+                    // MUST match BOTH artist and title (Rule 3: never match title alone)
+                    const match = data.data.find(item =>
+                        stringsFuzzyMatch(item.artist?.name, cleanArtist) &&
+                        stringsFuzzyMatch(item.title, cleanTitle)
+                    );
+                    if (match && match.album) {
+                        const cover = match.album.cover_xl || match.album.cover_big || match.album.cover_medium;
+                        if (cover && isValidCoverUrl(cover)) {
+                            this.coverCache[cacheKey] = cover;
+                            this.saveCoverCache();
+                            return cover;
+                        }
+                    }
+                }
+            }
+        } catch (e) {}
+
+        // 2.3 iTunes (Priority 2 Fallback)
+        try {
+            const itunesQuery = `${cleanArtist} ${cleanTitle}`;
+            const itunesRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(itunesQuery)}&entity=song&limit=5`, {
+                headers: { 'User-Agent': 'MoonPlayer/1.0' },
+                signal: AbortSignal.timeout(3000)
+            });
+            if (itunesRes.ok) {
+                const data = await itunesRes.json();
+                if (data.results && data.results.length > 0) {
+                    // MUST match BOTH artist and title (Rule 3: never match title alone)
+                    const match = data.results.find(item =>
+                        stringsFuzzyMatch(item.artistName, cleanArtist) &&
+                        stringsFuzzyMatch(item.trackName, cleanTitle)
+                    );
+                    if (match && match.artworkUrl100) {
+                        const cover = match.artworkUrl100.replace('100x100bb', '600x600bb');
+                        this.coverCache[cacheKey] = cover;
+                        this.saveCoverCache();
+                        return cover;
+                    }
+                }
+            }
+        } catch (e) {}
+
+        // =========================================================================
+        // 3) RULE 3: If only title matches (or nothing matched) -> DO NOT SHOW COVER
+        // =========================================================================
         this.coverCache[cacheKey] = DEFAULT_ICON_URL;
         this.saveCoverCache();
         return DEFAULT_ICON_URL;

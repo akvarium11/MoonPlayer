@@ -310,7 +310,7 @@
                                     <span class="discord-status-dot" id="discord-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #eab308; display: inline-block;"></span>
                                     <span id="discord-status-msg">Checking Discord...</span>
                                 </div>
-                                <button id="discord-rpc-refresh-btn" class="settings-action-btn" style="padding: 3px 8px; font-size: 0.7rem; margin-top: 0;" title="Refresh Discord connection">
+                                <button id="discord-rpc-refresh-btn" class="settings-action-btn" style="padding: 4px 8px; font-size: 0.7rem; margin-top: 0; flex: 0; min-width: auto;" title="Refresh Discord connection">
                                     <i class="fa-solid fa-rotate"></i>
                                 </button>
                             </div>
@@ -321,11 +321,12 @@
                                         <input type="checkbox" id="toggle-discord-show-paused" checked>
                                         <span class="switch-slider"></span>
                                     </label>
+                                </div>
                                 <div class="setting-item flex-column" style="margin-bottom: 0; width: 100%; align-items: flex-start; gap: 4px;">
                                     <label for="lastfm-api-key-input" style="font-size: 0.75rem;">Last.fm API Key (Optional)</label>
                                     <div style="display: flex; gap: 6px; width: 100%;">
                                         <input type="password" id="lastfm-api-key-input" placeholder="Last.fm API Key for covers" autocomplete="off" style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); border-radius: 8px; padding: 6px 10px; color: #ffffff; font-family: inherit; font-size: 0.75rem; outline: none;">
-                                        <button id="lastfm-api-key-save-btn" class="settings-action-btn" style="padding: 6px 10px; font-size: 0.72rem; margin-top: 0;">SAVE</button>
+                                        <button id="lastfm-api-key-save-btn" class="settings-action-btn" style="padding: 6px 10px; font-size: 0.72rem; margin-top: 0; flex: 0; min-width: 60px;">SAVE</button>
                                     </div>
                                 </div>
                             </div>
@@ -506,9 +507,15 @@
                     <input type="text" id="playlist-prompt-input" placeholder="My Playlist" autocomplete="off" style="width: 100%; background-color: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); padding: 10px 12px; border-radius: 8px; color: white; font-family: var(--font-body); outline: none;">
                 </div>
             </div>
-            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px; border-top: 1px solid var(--card-border); padding-top: 15px;">
-                <button id="playlist-prompt-cancel" class="settings-btn" style="background: none; border: 1px solid var(--card-border); color: white; padding: 8px 16px; border-radius: 10px; cursor: pointer; font-family: var(--font-body); font-size: 0.75rem;">Cancel</button>
-                <button id="playlist-prompt-submit" class="settings-btn" style="background: var(--accent); color: #000000; font-weight: 700; border: none; padding: 8px 16px; border-radius: 10px; cursor: pointer; font-family: var(--font-body); font-size: 0.75rem;">Create</button>
+            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; margin-top: 25px; border-top: 1px solid var(--card-border); padding-top: 15px;">
+                <div>
+                    <input type="file" id="modal-playlist-file-input" accept=".m3u,.m3u8" style="display: none;">
+                    <button id="playlist-prompt-import-btn" class="settings-btn" type="button" style="background: rgba(255, 255, 255, 0.06); border: 1px solid var(--card-border); color: var(--text-secondary); padding: 8px 12px; border-radius: 10px; cursor: pointer; font-family: var(--font-body); font-size: 0.75rem; display: flex; align-items: center; gap: 6px;"><i class="fa-solid fa-file-import"></i> Import .m3u</button>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button id="playlist-prompt-cancel" class="settings-btn" style="background: none; border: 1px solid var(--card-border); color: white; padding: 8px 16px; border-radius: 10px; cursor: pointer; font-family: var(--font-body); font-size: 0.75rem;">Cancel</button>
+                    <button id="playlist-prompt-submit" class="settings-btn" style="background: var(--accent); color: #000000; font-weight: 700; border: none; padding: 8px 16px; border-radius: 10px; cursor: pointer; font-family: var(--font-body); font-size: 0.75rem;">Create</button>
+                </div>
             </div>
         </div>
     </div>

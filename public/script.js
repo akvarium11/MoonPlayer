@@ -1349,6 +1349,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const closeBtn = document.getElementById('close-playlist-prompt-btn');
             const cancelBtn = document.getElementById('playlist-prompt-cancel');
             const submitBtn = document.getElementById('playlist-prompt-submit');
+            const importBtn = document.getElementById('playlist-prompt-import-btn');
+            const fileInput = document.getElementById('modal-playlist-file-input');
             
             if (!modal || !input) {
                 resolve(prompt(title, defaultValue));
@@ -1359,6 +1361,11 @@ document.addEventListener('DOMContentLoaded', () => {
             input.placeholder = placeholder;
             input.value = defaultValue;
             
+            if (importBtn) {
+                const isRename = title.toUpperCase().includes('RENAME');
+                importBtn.style.display = isRename ? 'none' : 'inline-flex';
+            }
+
             modal.classList.add('visible');
             input.focus();
             
@@ -1368,6 +1375,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 cancelBtn.removeEventListener('click', handleCancel);
                 submitBtn.removeEventListener('click', handleSubmit);
                 input.removeEventListener('keydown', handleKeydown);
+                if (importBtn) importBtn.removeEventListener('click', handleImportClick);
+                if (fileInput) fileInput.removeEventListener('change', handleFileChange);
             };
             
             const handleCancel = () => {
@@ -1379,6 +1388,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 const val = input.value.trim();
                 cleanup();
                 resolve(val);
+            };
+
+            const handleImportClick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (fileInput) {
+                    fileInput.value = '';
+                    fileInput.click();
+                }
+            };
+
+            const handleFileChange = async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                const targetName = input.value.trim() || null;
+                cleanup();
+                resolve(null);
+                await importM3UFile(file, targetName);
             };
             
             const handleKeydown = (e) => {
@@ -1393,6 +1420,8 @@ document.addEventListener('DOMContentLoaded', () => {
             cancelBtn.addEventListener('click', handleCancel);
             submitBtn.addEventListener('click', handleSubmit);
             input.addEventListener('keydown', handleKeydown);
+            if (importBtn) importBtn.addEventListener('click', handleImportClick);
+            if (fileInput) fileInput.addEventListener('change', handleFileChange);
         });
     }
 
@@ -1442,7 +1471,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const savedPaths = playlists[playlistName] || [];
-        const playlistSongs = savedPaths.map(p => allSongs.find(s => s.path === p)).filter(Boolean);
+        const songPool = (allSongs && allSongs.length > 0) ? allSongs : (window.serverRawSongs ? window.serverRawSongs.map(generateServerFallbackMetadata) : []);
+        const playlistSongs = savedPaths.map(p => songPool.find(s => s.path === p)).filter(Boolean);
         
         currentPlaylist = playlistSongs;
 
@@ -1474,33 +1504,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 impBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    fileInput.value = '';
                     fileInput.click();
                 });
 
-                fileInput.addEventListener('change', (e) => {
+                fileInput.addEventListener('change', async (e) => {
                     const file = e.target.files[0];
                     if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        const text = event.target.result;
-                        const pathsOrNames = parseM3U(text);
-                        const songs = resolveM3USongs(pathsOrNames);
-                        if (songs.length === 0) {
-                            alert("No matching songs found in library for import.");
-                            return;
-                        }
-                        const currentPaths = playlists[playlistName] || [];
-                        for (const song of songs) {
-                            if (!currentPaths.includes(song.path)) {
-                                currentPaths.push(song.path);
-                            }
-                        }
-                        playlists[playlistName] = currentPaths;
-                        savePlaylists();
-                        selectPlaylist(playlistName); // reload
-                        renderLibraryPanel(); // update count in left panel
-                    };
-                    reader.readAsText(file);
+                    await importM3UFile(file, playlistName);
                 });
             }
         }, 50);
@@ -2476,29 +2487,158 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function parseM3U(content) {
         const lines = content.split(/\r?\n/);
-        const pathsOrNames = [];
+        const entries = [];
+        let currentExtInf = null;
         for (let line of lines) {
             line = line.trim();
-            if (!line || line.startsWith('#')) continue;
-            pathsOrNames.push(line);
+            if (!line) continue;
+            if (line.startsWith('#EXTINF:')) {
+                currentExtInf = line.substring(8).trim();
+            } else if (!line.startsWith('#')) {
+                entries.push({
+                    rawPath: line,
+                    extinf: currentExtInf
+                });
+                currentExtInf = null;
+            }
         }
-        return pathsOrNames;
+        return entries;
     }
 
-    function resolveM3USongs(pathsOrNames) {
-        const matchedSongs = [];
-        for (const item of pathsOrNames) {
-            let song = allSongs.find(s => s.path.toLowerCase() === item.toLowerCase());
-            if (!song) {
-                const filename = item.split(/[/\\]/).pop();
-                song = allSongs.find(s => s.name.toLowerCase() === filename.toLowerCase());
+    function resolveM3USongs(entries) {
+        const songPool = (allSongs && allSongs.length > 0) ? allSongs : (window.serverRawSongs || []);
+        if (!entries || entries.length === 0 || songPool.length === 0) return [];
+
+        const pathMap = new Map();
+        const filenameMap = new Map();
+        const baseNameMap = new Map();
+
+        for (const s of songPool) {
+            const normPath = (s.path || '').replace(/\\/g, '/').toLowerCase();
+            if (normPath) pathMap.set(normPath, s);
+
+            const fname = (s.path ? s.path.split(/[/\\]/).pop() : (s.file ? s.file.name : (s.name || ''))) || '';
+            if (fname) {
+                const fnameLower = fname.toLowerCase();
+                if (!filenameMap.has(fnameLower)) filenameMap.set(fnameLower, s);
+
+                const bname = fnameLower.replace(/\.[^/.]+$/, '');
+                if (!baseNameMap.has(bname)) baseNameMap.set(bname, s);
             }
+        }
+
+        const matchedSongs = [];
+        for (const entry of entries) {
+            const rawPath = typeof entry === 'string' ? entry : (entry.rawPath || '');
+            if (!rawPath) continue;
+
+            let decodedPath = rawPath;
+            try {
+                decodedPath = decodeURIComponent(rawPath);
+            } catch (e) {}
+            decodedPath = decodedPath.replace(/\\/g, '/');
+            const normDecoded = decodedPath.toLowerCase();
+            const entryFilename = (decodedPath.split('/').pop() || '').toLowerCase();
+            const entryExtInf = typeof entry === 'object' ? entry.extinf : null;
+
+            // 1. Direct full path match
+            let song = pathMap.get(normDecoded);
+
+            // 2. Subpath suffix match (e.g. "Album/track.flac" or "Artist/Album/track.flac")
+            if (!song) {
+                const parts = decodedPath.split('/').filter(Boolean);
+                if (parts.length >= 2) {
+                    const subpath = (parts[parts.length - 2] + '/' + parts[parts.length - 1]).toLowerCase();
+                    for (const [p, s] of pathMap.entries()) {
+                        if (p.endsWith(subpath)) {
+                            song = s;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 3. Filename exact match
+            if (!song && entryFilename) {
+                song = filenameMap.get(entryFilename);
+            }
+
+            // 4. Filename without extension match
+            if (!song && entryFilename) {
+                const baseName = entryFilename.replace(/\.[^/.]+$/, '');
+                song = baseNameMap.get(baseName);
+            }
+
+            // 5. EXTINF metadata match (Artist - Title)
+            if (!song && entryExtInf) {
+                const commaIdx = entryExtInf.indexOf(',');
+                const info = (commaIdx !== -1 ? entryExtInf.substring(commaIdx + 1) : entryExtInf).trim().toLowerCase();
+                if (info) {
+                    song = songPool.find(s => {
+                        const sTitle = (s.title || '').toLowerCase();
+                        const sArtist = (s.artist || '').toLowerCase();
+                        const fullArtistTitle = `${sArtist} - ${sTitle}`;
+                        const fullTitleArtist = `${sTitle} - ${sArtist}`;
+                        return info === fullArtistTitle || info === fullTitleArtist || info === sTitle ||
+                               (sTitle && info.includes(sTitle) && sArtist && info.includes(sArtist));
+                    });
+                }
+            }
+
             if (song) {
                 matchedSongs.push(song);
             }
         }
         return matchedSongs;
     }
+
+    async function importM3UFile(file, targetPlaylistName = null) {
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const entries = parseM3U(text);
+            if (entries.length === 0) {
+                showToast("The M3U file is empty or contains no valid tracks.");
+                return;
+            }
+
+            const songs = resolveM3USongs(entries);
+            if (songs.length === 0) {
+                showToast(`0 / ${entries.length} matching songs found in library for import.`);
+                return;
+            }
+
+            let playlistName = targetPlaylistName;
+            if (!playlistName) {
+                const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
+                playlistName = baseName || "Imported Playlist";
+            }
+
+            const currentPaths = playlists[playlistName] || [];
+            let addedCount = 0;
+            for (const song of songs) {
+                if (song.path && !currentPaths.includes(song.path)) {
+                    currentPaths.push(song.path);
+                    addedCount++;
+                }
+            }
+
+            playlists[playlistName] = currentPaths;
+            savePlaylists();
+            renderLibraryPanel();
+            selectPlaylist(playlistName);
+
+            if (addedCount === songs.length && songs.length === entries.length) {
+                showToast(`Imported all ${songs.length} tracks into "${playlistName}"`);
+            } else {
+                showToast(`Imported ${songs.length} / ${entries.length} tracks (${addedCount} new) into "${playlistName}"`);
+            }
+        } catch (err) {
+            console.error("Error importing M3U playlist:", err);
+            showToast("Error importing playlist: " + err.message);
+        }
+    }
+    window.importM3UFile = importM3UFile;
 
     function exportToM3U(playlistName, playlistSongs) {
         let content = "#EXTM3U\n";
@@ -2617,22 +2757,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 createRow.innerHTML = `
                     <input type="text" id="new-playlist-name" placeholder="New playlist name..." autocomplete="off">
                     <button id="create-playlist-btn" title="Create Playlist"><i class="fa-solid fa-plus"></i></button>
+                    <button id="import-playlist-btn" title="Import M3U / M3U8 Playlist" style="background: rgba(255, 255, 255, 0.08); color: #ffffff; margin-left: 2px;"><i class="fa-solid fa-file-import"></i></button>
+                    <input type="file" id="library-playlist-file-input" accept=".m3u,.m3u8" style="display: none;">
                 `;
                 searchResults.appendChild(createRow);
                 
                 const input = createRow.querySelector('#new-playlist-name');
                 const btn = createRow.querySelector('#create-playlist-btn');
+                const importBtn = createRow.querySelector('#import-playlist-btn');
+                const fileInput = createRow.querySelector('#library-playlist-file-input');
                 
                 const createPlaylistFn = () => {
                     const name = input.value.trim();
                     if (!name) return;
                     if (playlists[name]) {
-                        alert("Playlist already exists!");
+                        showToast("Playlist already exists!");
                         return;
                     }
                     playlists[name] = [];
                     savePlaylists();
                     renderLibraryPanel();
+                    selectPlaylist(name);
                 };
                 
                 btn.addEventListener('click', (e) => {
@@ -2645,6 +2790,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         createPlaylistFn();
                     }
                 });
+
+                if (importBtn && fileInput) {
+                    importBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        fileInput.value = '';
+                        fileInput.click();
+                    });
+
+                    fileInput.addEventListener('change', async (e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const typedName = input ? input.value.trim() : '';
+                        await importM3UFile(file, typedName || null);
+                    });
+                }
             }
 
             if (activeResults.length === 0) {
@@ -3397,6 +3558,26 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Update Media Session Metadata
         updateMediaSessionMetadata(song);
+
+        // Fetch cover from server / Last.fm if track has no embedded picture
+        if (!song.cover || song.cover === DEFAULT_COVER) {
+            fetch(`/api/cover-art?title=${encodeURIComponent(song.title || '')}&artist=${encodeURIComponent(song.artist || '')}&album=${encodeURIComponent(song.album || '')}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && data.coverUrl && data.coverUrl !== DEFAULT_COVER && !data.coverUrl.includes('assets/icon.png')) {
+                        song.cover = data.coverUrl;
+                        if (currentlyPlayingIndex === globalIdx) {
+                            const miniCover = document.getElementById('mini-cover');
+                            if (miniCover) miniCover.src = data.coverUrl;
+                            const trackCover = document.getElementById('track-cover');
+                            if (trackCover) trackCover.src = data.coverUrl;
+                            updateMediaSessionMetadata(song);
+                            sendDiscordRpcActivity(song, isPlaying);
+                        }
+                    }
+                })
+                .catch(() => {});
+        }
 
         // Load lyrics
         loadLyrics(song);
@@ -5375,6 +5556,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const res = await fetch('/api/songs');
             const songs = await res.json();
+            window.serverRawSongs = songs;
 
             if (songs.length === 0) {
                 allSongs = [];
@@ -5405,6 +5587,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Immediately populate allSongs with server fallbacks BEFORE any IndexedDB or tag parsing
+            // so all tracks are immediately accessible for search, playlists, and M3U import
+            allSongs = songs.map(generateServerFallbackMetadata);
+            window.allSongs = allSongs;
+            buildLibraries();
+            setupFuseSearch();
+            renderLibraryPanel();
+
             // Fetch cached metadata in bulk
             const cachedResults = await getAllCachedMetadata(songs.map(s => s.path));
             const uncachedSongs = [];
@@ -5421,6 +5611,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     uncachedSongs.push(song);
                 }
             });
+
+            // Immediately populate allSongs with cached songs + instant fallback metadata for uncached songs
+            // so searching, library browsing, and M3U playlist import are fully responsive without waiting
+            const instantFallbacks = uncachedSongs.map(generateServerFallbackMetadata);
+            allSongs = [...processedSongs, ...instantFallbacks];
+            buildLibraries();
+            setupFuseSearch();
+            renderLibraryPanel();
 
             // If there are uncached songs, process them with a loading screen
             if (uncachedSongs.length > 0) {
@@ -5464,11 +5662,15 @@ document.addEventListener('DOMContentLoaded', () => {
             setupFuseSearch();
             renderLibraryPanel();
 
-            if (albums.length > 0) {
-                selectAlbum(albums[0].albumKey);
-            } else if (allSongs.length > 0) {
-                currentPlaylist = [...allSongs];
-                renderPlaylistView("All Tracks", "Indexed Server Audio", "Various", null);
+            if (currentSelectedPlaylistName) {
+                selectPlaylist(currentSelectedPlaylistName);
+            } else if (!currentPlaylist || currentPlaylist.length === 0) {
+                if (albums.length > 0) {
+                    selectAlbum(albums[0].albumKey);
+                } else if (allSongs.length > 0) {
+                    currentPlaylist = [...allSongs];
+                    renderPlaylistView("All Tracks", "Indexed Server Audio", "Various", null);
+                }
             }
         } catch (e) {
             console.error("Failed to load library from server:", e);
@@ -5850,14 +6052,42 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && dashboardLayout && dashboardLayout.classList.contains('maximized-view')) {
-                const activeModal = document.querySelector('.modal-overlay.active');
-                if (!activeModal) {
+            if (e.key === 'Escape') {
+                const visibleModal = document.querySelector('.modal-overlay.visible');
+                if (visibleModal) {
+                    if (visibleModal.id === 'settings-modal' || visibleModal.id === 'equalizer-modal') {
+                        visibleModal.classList.remove('visible');
+                    }
+                    return;
+                }
+                if (dashboardLayout && dashboardLayout.classList.contains('maximized-view')) {
                     toggleMaximizeView();
                 }
             }
         });
         
+        // Global Drag & Drop support for M3U / M3U8 playlists
+        window.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.dataTransfer) {
+                e.dataTransfer.dropEffect = 'copy';
+            }
+        });
+
+        window.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                for (const file of e.dataTransfer.files) {
+                    const ext = (file.name || '').split('.').pop().toLowerCase();
+                    if (ext === 'm3u' || ext === 'm3u8') {
+                        await importM3UFile(file, null);
+                    }
+                }
+            }
+        });
+
         // Initialize history stack with current/initial home state
         pushToHistory({ type: 'home' });
 

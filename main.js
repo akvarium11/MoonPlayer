@@ -45,6 +45,13 @@ function createMainWindow() {
         return { action: 'deny' };
     });
 
+    // Prevent navigating away if files are dragged into the window
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+        if (!url.startsWith(SERVER_URL)) {
+            event.preventDefault();
+        }
+    });
+
     // Load the internal server URL once
     let hasLoaded = false;
     function loadApp() {
