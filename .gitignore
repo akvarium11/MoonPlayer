@@ -3,6 +3,11 @@ music_folders.json
 discord_config.json
 cover_cache.json
 lastfm_info_cache.json
+soundcloud_config.json
+soundcloud_cache.json
+soundcloud_downloads.json
+soundcloud_*.json
+SoundCloud/
 .DS_Store
 .gemini/
 .idea/

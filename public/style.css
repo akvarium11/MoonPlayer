@@ -17,6 +17,8 @@
     padding: 0;
     box-sizing: border-box;
     user-select: none;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
 html {
@@ -416,22 +418,26 @@ body {
 }
 
 /* Scrollbars */
-.custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
+.custom-scrollbar::-webkit-scrollbar,
+*::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.01);
-    border-radius: 2px;
+.custom-scrollbar::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
+    background: transparent;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
+.custom-scrollbar::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.15);
-    border-radius: 2px;
+    border-radius: 4px;
     transition: background 0.3s;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.35);
 }
 
@@ -455,7 +461,8 @@ body {
 /* Dropdown styling */
 .search-filter-wrapper {
     position: relative;
-    width: 130px;
+    width: auto;
+    min-width: 140px;
     flex-shrink: 0;
 }
 
@@ -463,10 +470,10 @@ body {
     width: 100%;
     background-color: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--card-border);
-    padding: 12px 15px;
+    padding: 10px 14px;
     border-radius: 12px;
     font-family: var(--font-header);
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     font-weight: 600;
     color: #ffffff;
     cursor: pointer;
@@ -475,6 +482,40 @@ body {
     align-items: center;
     position: relative;
     transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    white-space: nowrap;
+    gap: 8px;
+    user-select: none;
+}
+
+#selected-type-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1;
+}
+
+#selected-type-text i {
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+
+.dropdown-arrow {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    transition: transform 0.25s ease, color 0.2s ease;
+    flex-shrink: 0;
+}
+
+.dropdown-select:hover .dropdown-arrow {
+    color: #ffffff;
+}
+
+.dropdown-select.open .dropdown-arrow {
+    transform: rotate(180deg);
+    color: var(--accent);
 }
 
 .dropdown-select:hover {
@@ -487,6 +528,7 @@ body {
     top: calc(100% + 5px);
     left: 0;
     width: 100%;
+    min-width: 140px;
     background-color: #0c0c0e;
     border: 1px solid var(--card-border);
     border-radius: 12px;
@@ -506,11 +548,15 @@ body {
 }
 
 .dropdown-option {
-    padding: 10px 15px;
+    padding: 10px 14px;
     font-family: var(--font-body);
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     color: var(--text-secondary);
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
 }
 
 .dropdown-option:hover {
@@ -571,12 +617,15 @@ body {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 15px;
+    padding: 10px 14px;
     border-radius: 14px;
     background-color: rgba(255, 255, 255, 0.015);
     border: 1px solid rgba(255, 255, 255, 0.03);
     cursor: pointer;
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    flex-shrink: 0;
+    min-height: 56px;
+    user-select: none;
 }
 
 .result-item:hover {
@@ -590,6 +639,16 @@ body {
     border-color: rgba(255, 255, 255, 0.15);
 }
 
+.result-item.playing {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.result-item.playing .result-title-text {
+    color: var(--accent);
+    font-weight: 700;
+}
+
 .result-img-wrapper {
     width: 44px;
     height: 44px;
@@ -597,6 +656,33 @@ body {
     overflow: hidden;
     flex-shrink: 0;
     border: 1px solid rgba(255, 255, 255, 0.05);
+    position: relative;
+}
+
+.result-play-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 0.85rem;
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+}
+
+.result-item:hover .result-play-overlay {
+    opacity: 1;
+}
+
+.result-item.playing .result-play-overlay {
+    opacity: 1;
+    color: var(--accent);
+    background: rgba(0, 0, 0, 0.45);
 }
 
 .result-img {
@@ -1573,32 +1659,52 @@ body {
 /* ==========================================
    MOBILE & RESPONSIVE STYLES
    ========================================== */
-@media (max-width: 900px) {
+@media (max-width: 900px), (orientation: portrait) {
     .main-container {
         width: 100vw;
         height: 100vh;
         max-height: none;
-        padding: 80px 15px 15px 15px;
+        padding: 75px 12px 12px 12px;
+        overflow-y: auto;
+    }
+
+    .main-container.has-maximized,
+    .main-container:has(.maximized-view) {
+        overflow: hidden !important;
     }
 
     .bio-card {
-        height: 100%;
-        padding: 20px;
+        height: auto;
+        min-height: 100%;
+        padding: 15px;
+    }
+
+    .bio-card.has-maximized,
+    .bio-card:has(.maximized-view) {
+        height: 100% !important;
+        max-height: 100% !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
     }
 
     .dashboard-layout {
         flex-direction: column;
         gap: 15px;
-        overflow: hidden;
+        overflow-y: visible;
+        overflow-x: hidden;
+        min-height: auto;
     }
 
     .panel-left {
-        flex: 4;
-        max-height: 450px;
+        flex: none;
+        width: 100%;
         max-width: 100%;
+        height: 480px;
+        min-height: 380px;
+        max-height: 520px;
         display: flex;
         flex-direction: column;
-        min-height: 0;
         overflow: hidden;
         transition: flex 0.45s cubic-bezier(0.16, 1, 0.3, 1),
                     max-height 0.45s cubic-bezier(0.16, 1, 0.3, 1),
@@ -1607,13 +1713,17 @@ body {
     }
 
     .dashboard-layout.maximized-view .panel-left {
+        display: none !important;
         flex: 0 0 0px !important;
+        min-height: 0px !important;
         max-height: 0px !important;
         height: 0px !important;
+        width: 0px !important;
         opacity: 0 !important;
         transform: translateY(-30px) scale(0.95);
         margin: 0 !important;
         padding: 0 !important;
+        border: none !important;
         pointer-events: none !important;
     }
 
@@ -1621,26 +1731,70 @@ body {
         flex: 1;
         max-height: none;
         overflow-y: auto;
+        min-height: 0;
     }
 
     .panel-right {
-        flex: 6;
+        flex: none;
+        width: 100%;
+        min-height: 480px;
         display: flex;
         flex-direction: column;
-        min-height: 0;
-        transition: flex 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+        overflow: hidden;
+        transition: flex 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                    height 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                    min-height 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .dashboard-layout.maximized-view {
+        flex: 1 1 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        max-height: 100% !important;
+        overflow: hidden !important;
+        gap: 0 !important;
+    }
+
+    .dashboard-layout.maximized-view .panel-right {
+        flex: 1 1 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        max-height: 100% !important;
+        max-width: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+    }
+
+    .dashboard-layout.maximized-view .panel-right .playlist-section {
+        flex: 1 1 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+    }
+
+    .dashboard-layout.maximized-view .panel-right .song-list-container,
+    .dashboard-layout.maximized-view .panel-right .albums-grid-container {
+        flex: 1 1 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        overflow-y: auto !important;
     }
 
     .song-list-container {
         flex: 1;
         max-height: none;
         overflow-y: auto;
+        min-height: 0;
     }
 
     .albums-grid-container {
         flex: 1;
         max-height: none;
         overflow-y: auto;
+        min-height: 0;
     }
 
     .detail-cover-wrapper {
@@ -1660,7 +1814,7 @@ body {
 
 @media (max-width: 480px) {
     .main-container {
-        padding: 10px;
+        padding: 65px 8px 8px 8px;
     }
 
     .card-header {
@@ -1669,24 +1823,28 @@ body {
     }
 
     .logo {
-        height: 44px;
-        margin-left: 8px;
+        height: 40px;
+        margin-left: 4px;
     }
 
     .add-folder-btn {
-        padding: 8px 12px;
+        padding: 7px 10px;
         font-size: 0.65rem;
     }
 
+    .search-filter-wrapper {
+        min-width: 130px;
+    }
+
     .dropdown-select {
-        width: 105px;
-        padding: 10px 10px;
-        font-size: 0.7rem;
+        width: 100%;
+        padding: 8px 10px;
+        font-size: 0.72rem;
     }
 
     .detail-cover-wrapper {
-        width: 80px;
-        height: 80px;
+        width: 70px;
+        height: 70px;
     }
 
     .detail-title {
@@ -2391,6 +2549,7 @@ body {
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 8px;
+    flex-shrink: 0;
 }
 .playlist-create-row input {
     flex: 1;
@@ -3262,6 +3421,292 @@ body {
     max-width: 12px;
     margin-left: 5px;
 }
+
+/* ==========================================
+   SOUNDCLOUD FORMAT BADGE (Minimalist White Cloud Logo)
+   ========================================== */
+.sc-badge {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.sc-badge svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.song-item:hover .sc-badge,
+.result-item:hover .sc-badge,
+.queue-item:hover .sc-badge {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.sc-badge:hover {
+    color: #ffffff !important;
+}
+
+.song-item.playing .sc-badge {
+    color: #ffffff !important;
+}
+
+/* SoundCloud Status Dot */
+.soundcloud-status-dot.connected {
+    background: #10b981 !important;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.soundcloud-status-dot.error {
+    background: #ef4444 !important;
+}
+
+.soundcloud-status-dot.checking {
+    background: #eab308 !important;
+}
+
+/* SoundCloud Action Buttons */
+.song-action-btn.download-btn,
+.result-action-btn.download-btn {
+    color: var(--text-secondary);
+    transition: color 0.2s, transform 0.2s;
+}
+
+.song-action-btn.download-btn:hover,
+.result-action-btn.download-btn:hover {
+    color: var(--accent);
+    transform: scale(1.1);
+}
+
+.song-action-btn.downloaded-btn,
+.result-action-btn.downloaded-btn {
+    color: #10b981 !important;
+    cursor: default;
+}
+
+/* ==========================================
+   SOUNDCLOUD UNIFIED TAB (Tabs, Cards, Sections)
+   ========================================== */
+.sc-filter-tabs-container {
+    padding: 6px 12px 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+.sc-filter-tabs-container::-webkit-scrollbar {
+    display: none !important;
+    height: 0 !important;
+    width: 0 !important;
+}
+
+.sc-filter-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.sc-filter-tab:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.sc-filter-tab.active {
+    color: #ffffff;
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border-color: var(--accent);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.sc-artist-shelf {
+    flex-shrink: 0;
+}
+
+.sc-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px 6px 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.sc-section-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--accent);
+}
+
+.sc-section-more-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.sc-section-more-btn:hover {
+    color: #ffffff;
+}
+
+.sc-cards-scroll {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 12px 14px 12px;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+    flex-shrink: 0;
+    min-height: 155px;
+}
+
+.sc-cards-scroll::-webkit-scrollbar {
+    display: none !important;
+    height: 0 !important;
+    width: 0 !important;
+}
+
+.sc-card-item {
+    flex: 0 0 115px;
+    width: 115px;
+    min-height: 145px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    cursor: pointer;
+    padding: 8px 6px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.sc-card-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.sc-card-cover {
+    width: 95px;
+    height: 95px;
+    min-width: 95px;
+    min-height: 95px;
+    border-radius: 8px;
+    object-fit: cover;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    margin-bottom: 7px;
+    flex-shrink: 0;
+}
+
+.sc-card-artist-avatar {
+    width: 85px;
+    height: 85px;
+    min-width: 85px;
+    min-height: 85px;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    margin-bottom: 7px;
+    border: 2px solid var(--accent);
+    flex-shrink: 0;
+}
+
+.sc-card-title {
+    width: 100%;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #ffffff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.2;
+}
+
+.sc-card-subtitle {
+    width: 100%;
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+}
+
+.sc-user-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    margin: 4px 12px 10px 12px;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, transparent), rgba(255, 255, 255, 0.02));
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-radius: 12px;
+    flex-shrink: 0;
+}
+
+.sc-user-avatar {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    min-height: 38px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--accent);
+    flex-shrink: 0;
+}
+
+.sc-user-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.sc-user-name {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #ffffff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sc-user-meta {
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    margin-top: 1px;
+}
+
+
 
 
 

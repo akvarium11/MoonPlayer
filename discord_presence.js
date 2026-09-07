@@ -496,7 +496,23 @@ class DiscordPresenceManager {
         }
 
         try {
-            const coverUrl = await this.resolveCover(title, artist, album);
+            let coverUrl = null;
+            if (isValidCoverUrl(activityData.coverUrl)) {
+                let directCover = activityData.coverUrl.trim();
+                // Upgrade SoundCloud artwork to highest resolution t500x500
+                if (directCover.includes('sndcdn.com')) {
+                    directCover = directCover.replace(/-large\./, '-t500x500.').replace(/-t[0-9]+x[0-9]+\./, '-t500x500.');
+                }
+                coverUrl = directCover;
+                const cleanTitle = (title || '').replace(/\.[a-zA-Z0-9]+$/, '').trim();
+                const cleanArtist = (artist || '').trim();
+                if (cleanTitle && cleanArtist) {
+                    const cacheKey = `${cleanArtist} - ${cleanTitle}`.toLowerCase().trim();
+                    this.coverCache[cacheKey] = directCover;
+                }
+            } else {
+                coverUrl = await this.resolveCover(title, artist, album);
+            }
 
             const details = cleanRpcString(title, 'MoonPlayer', 50);
             const state = cleanRpcString(artist, 'Unknown Artist', 50);
@@ -530,6 +546,9 @@ class DiscordPresenceManager {
                 activity.buttons = [
                     { label: 'MoonPlayer App', url: 'https://github.com/akvarium11/MoonPlayer' }
                 ];
+                if (activityData.permalink && typeof activityData.permalink === 'string' && activityData.permalink.startsWith('https://soundcloud.com/')) {
+                    activity.buttons.push({ label: 'SoundCloud Track', url: activityData.permalink });
+                }
             }
 
             if (this.client && this.isConnected) {

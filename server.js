@@ -2,9 +2,19 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const discordPresence = require('./discord_presence');
+const soundcloudService = require('./soundcloud_service');
 
 const app = express();
 const PORT = process.env.PORT || 7644;
+
+// Prevent server termination on unhandled errors/rejections
+process.on('uncaughtException', (err) => {
+    console.error('[Server] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('[Server] Unhandled Rejection:', reason);
+});
 
 // Middleware to parse JSON bodies
 app.use(express.json());
@@ -222,6 +232,10 @@ function scanDirectory(dirPath, fileList = []) {
                         }
                     }
 
+                    const isSoundCloud = soundcloudService.isDownloadedPath(filePath) ||
+                        filePath.toLowerCase().includes(path.sep + 'soundcloud' + path.sep) ||
+                        path.dirname(filePath).toLowerCase().endsWith('soundcloud');
+
                     fileList.push({
                         path: filePath,
                         name: file,
@@ -231,7 +245,9 @@ function scanDirectory(dirPath, fileList = []) {
                         title: title || undefined,
                         artist: artist || undefined,
                         album: album || undefined,
-                        year: year || undefined
+                        year: year || undefined,
+                        isSoundCloud: isSoundCloud || undefined,
+                        source: isSoundCloud ? 'soundcloud' : undefined
                     });
                 }
             }
@@ -379,6 +395,18 @@ app.get('/api/songs', (req, res) => {
         scanDirectory(folder, allSongs);
     }
     
+    // Also scan dedicated SoundCloud folder if present and not already scanned
+    const scDir = path.join(DATA_DIR, 'SoundCloud');
+    if (fs.existsSync(scDir)) {
+        const alreadyScanned = folders.some(f => {
+            const rel = path.relative(path.resolve(f), path.resolve(scDir));
+            return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+        });
+        if (!alreadyScanned) {
+            scanDirectory(scDir, allSongs);
+        }
+    }
+
     // Deduplicate songs by absolute file path
     const uniqueSongs = [];
     const seenPaths = new Set();
@@ -402,13 +430,15 @@ app.get(['/api/stream', '/api/stream/:filename'], (req, res) => {
 
     const resolvedPath = path.resolve(filePath);
     const folders = getFolders();
+    const soundcloudDir = path.resolve(DATA_DIR, 'SoundCloud');
 
-    // Security check: ensure path is within one of the registered folders
+    // Security check: ensure path is within one of the registered folders or soundcloud directory
     const isAllowed = folders.some(folder => {
         const resolvedFolder = path.resolve(folder);
         const relative = path.relative(resolvedFolder, resolvedPath);
         return relative && !relative.startsWith('..') && !path.isAbsolute(relative);
-    });
+    }) || soundcloudService.isDownloadedPath(resolvedPath) ||
+       resolvedPath.toLowerCase().startsWith(soundcloudDir.toLowerCase());
 
     if (!isAllowed) {
         return res.status(403).send('Access denied: File is outside of configured music directories');
@@ -604,6 +634,210 @@ app.get('/api/album-info', async (req, res) => {
         res.json({ success: true, ...info });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ==========================================
+// SOUNDCLOUD API ENDPOINTS
+// ==========================================
+
+// Get SoundCloud configuration status (without leaking token)
+app.get('/api/soundcloud/config', (req, res) => {
+    const cfg = soundcloudService.config;
+    res.json({
+        enabled: !!cfg.enabled,
+        hasToken: !!(cfg.oauthToken && cfg.oauthToken.trim()),
+        user: soundcloudService.currentUser || cfg.user || null
+    });
+});
+
+// Update SoundCloud configuration (enabled flag & oauthToken)
+app.post('/api/soundcloud/config', async (req, res) => {
+    try {
+        const { enabled, oauthToken } = req.body;
+        const update = {};
+        if (typeof enabled === 'boolean') update.enabled = enabled;
+        if (typeof oauthToken === 'string') update.oauthToken = oauthToken.trim();
+
+        if (update.oauthToken) {
+            const user = await soundcloudService.verifyToken(update.oauthToken);
+            update.user = user;
+        }
+
+        const saved = soundcloudService.saveConfig(update);
+        res.json({
+            success: true,
+            config: {
+                enabled: !!saved.enabled,
+                hasToken: !!(saved.oauthToken && saved.oauthToken.trim()),
+                user: soundcloudService.currentUser || saved.user || null
+            }
+        });
+    } catch (e) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+// Get authenticated SoundCloud user profile
+app.get('/api/soundcloud/user', async (req, res) => {
+    try {
+        if (!soundcloudService.config.enabled || !soundcloudService.config.oauthToken) {
+            return res.json({ success: false, message: 'SoundCloud not configured' });
+        }
+        const user = await soundcloudService.verifyToken(soundcloudService.config.oauthToken);
+        res.json({ success: true, user });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Search SoundCloud tracks, albums, playlists, or artists
+app.get('/api/soundcloud/search', async (req, res) => {
+    const { q, limit, type } = req.query;
+    const lim = limit ? parseInt(limit) : 25;
+    const searchType = (type || 'tracks').toLowerCase();
+
+    try {
+        if (searchType === 'all') {
+            const data = await soundcloudService.searchAll(q, lim);
+            res.json({ success: true, ...data });
+        } else if (searchType === 'albums') {
+            const albums = await soundcloudService.searchAlbums(q, lim);
+            res.json({ success: true, albums });
+        } else if (searchType === 'playlists') {
+            const playlists = await soundcloudService.searchPlaylists(q, lim);
+            res.json({ success: true, playlists });
+        } else if (searchType === 'artists' || searchType === 'users') {
+            const artists = await soundcloudService.searchArtists(q, lim);
+            res.json({ success: true, artists });
+        } else {
+            const tracks = await soundcloudService.searchTracks(q, lim);
+            res.json({ success: true, tracks });
+        }
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get SoundCloud playlist or album by ID
+app.get(['/api/soundcloud/playlist/:id', '/api/soundcloud/album/:id'], async (req, res) => {
+    try {
+        const playlist = await soundcloudService.getPlaylist(req.params.id);
+        if (!playlist) return res.status(404).json({ success: false, error: 'Playlist not found' });
+        res.json({ success: true, playlist, album: playlist });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get SoundCloud track station (Wave)
+app.get(['/api/soundcloud/station/:id', '/api/soundcloud/wave/:id'], async (req, res) => {
+    try {
+        const tracks = await soundcloudService.getTrackStation(req.params.id);
+        res.json({ success: true, tracks });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get SoundCloud artist/user by ID (with tracks, albums, playlists)
+app.get('/api/soundcloud/artist/:id', async (req, res) => {
+    try {
+        const artist = await soundcloudService.getArtist(req.params.id);
+        if (!artist) return res.status(404).json({ success: false, error: 'Artist not found' });
+        res.json({
+            success: true,
+            artist,
+            tracks: artist.tracks || [],
+            albums: artist.albums || [],
+            playlists: artist.playlists || []
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get user liked tracks from SoundCloud
+app.get('/api/soundcloud/likes', async (req, res) => {
+    const { limit, offset } = req.query;
+    try {
+        const data = await soundcloudService.getUserLikes(
+            limit ? parseInt(limit) : 50,
+            offset ? parseInt(offset) : 0
+        );
+        res.json({ success: true, ...data });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get user playlists from SoundCloud
+app.get(['/api/soundcloud/playlists', '/api/soundcloud/user/playlists'], async (req, res) => {
+    try {
+        const playlists = await soundcloudService.getUserPlaylists();
+        res.json({ success: true, playlists });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Resolve SoundCloud track or playlist URL
+app.get('/api/soundcloud/resolve', async (req, res) => {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: 'URL is required' });
+    try {
+        const data = await soundcloudService.resolve(url);
+        res.json({ success: true, data });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Stream SoundCloud audio (proxies with full range request and CORS support)
+app.get('/api/soundcloud/stream/:id', async (req, res) => {
+    await soundcloudService.pipeStream(req.params.id, req.headers, res);
+});
+
+// Download SoundCloud track to local MoonPlayer library
+app.post('/api/soundcloud/download-to-library', async (req, res) => {
+    const { trackId } = req.body;
+    if (!trackId) return res.status(400).json({ error: 'Track ID is required' });
+    try {
+        const folders = getFolders();
+        const targetFolder = (folders && folders.length > 0)
+            ? path.join(folders[0], 'SoundCloud')
+            : path.join(DATA_DIR, 'SoundCloud');
+
+        const result = await soundcloudService.downloadTrackToLibrary(trackId, targetFolder);
+        
+        // Auto-register folder if needed
+        if (targetFolder && !folders.some(f => path.resolve(f).toLowerCase() === path.resolve(targetFolder).toLowerCase())) {
+            folders.push(targetFolder);
+            saveFolders(folders);
+        }
+
+        res.json({ success: true, ...result });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Download SoundCloud track as attachment file in browser
+app.get('/api/soundcloud/download-file/:id', async (req, res) => {
+    try {
+        const trackId = req.params.id;
+        const streamUrl = await soundcloudService.getTrackMediaStreamUrl(trackId);
+        const track = soundcloudService.trackCache.get(String(trackId));
+        const filename = soundcloudService.sanitizeFilename(
+            track ? `${track.artist} - ${track.title}.mp3` : `soundcloud_${trackId}.mp3`
+        );
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+        res.setHeader('Content-Type', 'audio/mpeg');
+        const cdnResp = await fetch(streamUrl);
+        const { Readable } = require('stream');
+        Readable.fromWeb(cdnResp.body).pipe(res);
+    } catch (e) {
+        res.status(500).send('Download failed: ' + e.message);
     }
 });
 

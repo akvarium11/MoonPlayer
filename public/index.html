@@ -161,12 +161,17 @@
                     <div class="search-section">
                         <div class="search-filter-wrapper">
                             <div class="dropdown-select" id="search-type-dropdown">
-                                <span id="selected-type-text">▼ Album</span>
+                                <span id="selected-type-text">
+                                    <i class="fa-solid fa-compact-disc dropdown-type-icon"></i>
+                                    <span class="dropdown-type-label">Album</span>
+                                </span>
+                                <i class="fa-solid fa-chevron-down dropdown-arrow"></i>
                                 <div class="dropdown-options" id="dropdown-options-list">
-                                    <div class="dropdown-option" data-value="album">Album</div>
-                                    <div class="dropdown-option" data-value="artist">Artist</div>
-                                    <div class="dropdown-option" data-value="song">Song name</div>
-                                    <div class="dropdown-option" data-value="playlist">Playlist</div>
+                                    <div class="dropdown-option" data-value="album"><i class="fa-solid fa-compact-disc" style="margin-right: 7px;"></i>Album</div>
+                                    <div class="dropdown-option" data-value="artist"><i class="fa-solid fa-user" style="margin-right: 7px;"></i>Artist</div>
+                                    <div class="dropdown-option" data-value="song"><i class="fa-solid fa-music" style="margin-right: 7px;"></i>Song name</div>
+                                    <div class="dropdown-option" data-value="playlist"><i class="fa-solid fa-list-ul" style="margin-right: 7px;"></i>Playlist</div>
+                                    <div class="dropdown-option hidden" data-value="soundcloud" id="dropdown-option-soundcloud"><i class="fa-brands fa-soundcloud" style="color: var(--accent); margin-right: 7px;"></i>SoundCloud</div>
                                 </div>
                             </div>
                         </div>
@@ -174,6 +179,15 @@
                             <input type="text" id="search-input" placeholder="Type to search..." autocomplete="off">
                             <i class="fa-solid fa-magnifying-glass search-icon"></i>
                         </div>
+                    </div>
+
+                    <!-- SoundCloud Sub-Tabs Bar (All, Tracks, Albums, Playlists, Artists) -->
+                    <div class="sc-filter-tabs-container hidden" id="soundcloud-filter-tabs">
+                        <button class="sc-filter-tab active" data-tab="all"><i class="fa-solid fa-border-all"></i> All</button>
+                        <button class="sc-filter-tab" data-tab="tracks"><i class="fa-solid fa-music"></i> Tracks</button>
+                        <button class="sc-filter-tab" data-tab="albums"><i class="fa-solid fa-compact-disc"></i> Albums</button>
+                        <button class="sc-filter-tab" data-tab="playlists"><i class="fa-solid fa-list-ul"></i> Playlists</button>
+                        <button class="sc-filter-tab" data-tab="artists"><i class="fa-solid fa-user"></i> Artists</button>
                     </div>
 
                     <!-- Left side search/list results -->
@@ -328,6 +342,40 @@
                                     <div style="display: flex; gap: 6px; width: 100%;">
                                         <input type="password" id="lastfm-api-key-input" placeholder="Last.fm API Key for covers" autocomplete="off" style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); border-radius: 8px; padding: 6px 10px; color: #ffffff; font-family: inherit; font-size: 0.75rem; outline: none;">
                                         <button id="lastfm-api-key-save-btn" class="settings-action-btn" style="padding: 6px 10px; font-size: 0.72rem; margin-top: 0; flex: 0; min-width: 60px;">SAVE</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SoundCloud Integration Settings -->
+                        <div class="setting-item flex-column" style="margin-top: 15px; border-top: 1px solid var(--card-border); padding-top: 15px; width: 100%;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                                <label for="toggle-soundcloud" style="font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fa-brands fa-soundcloud" style="color: var(--accent); font-size: 1.1rem;"></i> SoundCloud
+                                </label>
+                                <label class="switch">
+                                    <input type="checkbox" id="toggle-soundcloud">
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            <div id="soundcloud-status-container" class="hidden" style="display: flex; align-items: center; justify-content: space-between; width: 100%; font-size: 0.75rem; margin-top: 6px; padding: 6px 10px; background: rgba(255, 255, 255, 0.03); border-radius: 8px; border: 1px solid var(--card-border);">
+                                <div id="soundcloud-status-text" style="display: flex; align-items: center; gap: 6px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    <span class="soundcloud-status-dot" id="soundcloud-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #eab308; display: inline-block; flex-shrink: 0;"></span>
+                                    <span id="soundcloud-status-msg" style="overflow: hidden; text-overflow: ellipsis;">Checking connection...</span>
+                                </div>
+                                <button id="soundcloud-refresh-btn" class="settings-action-btn" style="padding: 4px 8px; font-size: 0.7rem; margin-top: 0; flex: 0; min-width: auto;" title="Refresh SoundCloud profile">
+                                    <i class="fa-solid fa-rotate"></i>
+                                </button>
+                            </div>
+                            <div id="soundcloud-options" class="hidden" style="width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
+                                <div class="setting-item flex-column" style="margin-bottom: 0; width: 100%; align-items: flex-start; gap: 4px;">
+                                    <label for="soundcloud-token-input" style="font-size: 0.75rem;">OAuth Token</label>
+                                    <div style="display: flex; gap: 6px; width: 100%;">
+                                        <input type="password" id="soundcloud-token-input" placeholder="Enter oauth_token (e.g. 2-325...)" autocomplete="off" style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); border-radius: 8px; padding: 6px 10px; color: #ffffff; font-family: inherit; font-size: 0.75rem; outline: none;">
+                                        <button id="soundcloud-token-save-btn" class="settings-action-btn" style="padding: 6px 10px; font-size: 0.72rem; margin-top: 0; flex: 0; min-width: 60px;">SAVE</button>
+                                    </div>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">
+                                        Allows fetching likes, playlists, search, streaming, and downloads.
                                     </div>
                                 </div>
                             </div>

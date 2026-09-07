@@ -255,6 +255,176 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load playlists on startup
     loadPlaylists();
 
+    // ==========================================
+    // 4.1 SOUNDCLOUD CACHE & STATE
+    // ==========================================
+    let isSoundCloudEnabled = false;
+    let soundCloudUser = null;
+    const soundCloudTracksCache = new Map();
+    let soundCloudSearchTimeout = null;
+    let soundCloudSubTab = 'all';
+
+    function initSoundCloudFilterTabs() {
+        const scFilterTabs = document.getElementById('soundcloud-filter-tabs');
+        if (!scFilterTabs) return;
+        enableHorizontalScroll(scFilterTabs);
+        const tabs = scFilterTabs.querySelectorAll('.sc-filter-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const targetTab = tab.getAttribute('data-tab');
+                setSoundCloudSubTab(targetTab);
+            });
+        });
+    }
+
+    function setSoundCloudSubTab(targetTab) {
+        soundCloudSubTab = targetTab || 'all';
+        const scFilterTabs = document.getElementById('soundcloud-filter-tabs');
+        if (scFilterTabs) {
+            scFilterTabs.querySelectorAll('.sc-filter-tab').forEach(btn => {
+                if (btn.getAttribute('data-tab') === soundCloudSubTab) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+        if (searchType === 'soundcloud') {
+            updateSoundCloudPlaceholder();
+            renderSoundCloudPanel(searchInput ? searchInput.value : '');
+        }
+    }
+
+    function updateSoundCloudPlaceholder() {
+        if (!searchInput) return;
+        if (searchType !== 'soundcloud') return;
+        if (soundCloudSubTab === 'tracks') {
+            searchInput.placeholder = 'Search SoundCloud tracks...';
+        } else if (soundCloudSubTab === 'albums') {
+            searchInput.placeholder = 'Search SoundCloud albums...';
+        } else if (soundCloudSubTab === 'playlists') {
+            searchInput.placeholder = 'Search SoundCloud playlists...';
+        } else if (soundCloudSubTab === 'artists') {
+            searchInput.placeholder = 'Search SoundCloud artists...';
+        } else {
+            searchInput.placeholder = 'Search SoundCloud (all, artists, albums, tracks)...';
+        }
+    }
+
+    function loadSoundCloudCache() {
+        try {
+            const stored = localStorage.getItem('moonplayer_sc_cache');
+            if (stored) {
+                const list = JSON.parse(stored);
+                list.forEach(t => {
+                    if (t && t.path) soundCloudTracksCache.set(t.path, t);
+                });
+            }
+        } catch (e) {}
+    }
+
+    function saveSoundCloudCache() {
+        try {
+            const arr = Array.from(soundCloudTracksCache.values()).slice(-500);
+            localStorage.setItem('moonplayer_sc_cache', JSON.stringify(arr));
+        } catch (e) {}
+    }
+
+    function enableHorizontalScroll(el) {
+        if (!el || el._hScrollBound) return;
+        el._hScrollBound = true;
+
+        // Mouse wheel scroll (translates vertical wheel to horizontal)
+        el.addEventListener('wheel', (e) => {
+            if (e.deltaY !== 0) {
+                e.preventDefault();
+                el.scrollLeft += e.deltaY;
+            }
+        }, { passive: false });
+
+        // Drag to scroll
+        let isDown = false;
+        let startX = 0;
+        let scrollLeft = 0;
+        let hasMoved = false;
+
+        el.addEventListener('mousedown', (e) => {
+            if (e.target.closest('button, input, select, a')) return;
+            isDown = true;
+            hasMoved = false;
+            startX = e.pageX - el.offsetLeft;
+            scrollLeft = el.scrollLeft;
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDown = false;
+        });
+
+        el.addEventListener('mousemove', (e) => {
+            if (!isDown) return;
+            e.preventDefault();
+            const x = e.pageX - el.offsetLeft;
+            const walk = (x - startX) * 1.5;
+            if (Math.abs(walk) > 4) hasMoved = true;
+            el.scrollLeft = scrollLeft - walk;
+        });
+
+        el.addEventListener('click', (e) => {
+            if (hasMoved) {
+                e.stopPropagation();
+                hasMoved = false;
+            }
+        }, true);
+    }
+    const enableHorizontalWheelScroll = enableHorizontalScroll;
+
+    function registerSoundCloudTrack(track) {
+        if (!track) return null;
+        if (!track.path && track.id) {
+            track.path = `soundcloud:${track.id}`;
+        }
+        if (!track.path) return null;
+        if (!track.src) {
+            track.src = `/api/soundcloud/stream/${track.id || track.path.replace('soundcloud:', '')}`;
+        }
+        if (!track.title) track.title = 'Untitled Track';
+        if (!track.artist) track.artist = 'SoundCloud Artist';
+        if (!track.cover) track.cover = DEFAULT_COVER;
+
+        soundCloudTracksCache.set(track.path, track);
+        saveSoundCloudCache();
+
+        let existing = allSongs.find(s => s.path === track.path || (track.id && s.id === track.id));
+        if (existing) {
+            Object.assign(existing, track);
+            if (existing.globalIndex === undefined || typeof existing.globalIndex !== 'number') {
+                existing.globalIndex = allSongs.indexOf(existing);
+            }
+            track.globalIndex = existing.globalIndex;
+            return existing;
+        }
+
+        track.globalIndex = allSongs.length;
+        allSongs.push(track);
+        return track;
+    }
+
+    function restoreSoundCloudTracksToAllSongs() {
+        loadSoundCloudCache();
+        soundCloudTracksCache.forEach((track) => {
+            let existing = allSongs.find(s => s.path === track.path);
+            if (!existing) {
+                track.globalIndex = allSongs.length;
+                allSongs.push(track);
+            } else {
+                track.globalIndex = existing.globalIndex !== undefined ? existing.globalIndex : allSongs.indexOf(existing);
+            }
+        });
+    }
+
+    // Load cached SoundCloud tracks on startup
+    loadSoundCloudCache();
+
     // Playback Queue & Navigation index
     let playQueue = [];
     let playQueueIndex = -1;
@@ -981,8 +1151,32 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
     }
 
-    // Helper: Return HTML for format badge (minimalist explicit style with letter 'F', no background, perfectly centered)
+    function isSoundCloudTrack(song) {
+        if (!song) return false;
+        if (song.isSoundCloud || song.source === 'soundcloud') return true;
+        if (song.format && (song.format.toLowerCase() === 'soundcloud' || song.format.toLowerCase() === 'sc')) return true;
+        if (song.path && typeof song.path === 'string') {
+            const lp = song.path.toLowerCase();
+            if (lp.startsWith('soundcloud:') || lp.includes('/soundcloud/') || lp.includes('\\soundcloud\\') || lp.endsWith('soundcloud') || lp.includes('api.soundcloud.com') || lp.includes('api-v2.soundcloud.com')) {
+                return true;
+            }
+        }
+        const urlToCheck = song.src || song.url;
+        if (urlToCheck && typeof urlToCheck === 'string') {
+            const lu = urlToCheck.toLowerCase();
+            if (lu.includes('soundcloud.com') || lu.includes('/api/soundcloud/')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Helper: Return HTML for format badge (FLAC [F] or minimalist white SoundCloud cloud badge)
     function getFormatBadgeHTML(song, extraClass = '') {
+        if (isSoundCloudTrack(song)) {
+            const cls = extraClass ? `flac-badge sc-badge ${extraClass}` : 'flac-badge sc-badge';
+            return `<span class="${cls}" title="SoundCloud Track" aria-label="SoundCloud"><svg viewBox="0 0 14 14" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="0.75" y="0.75" width="12.5" height="12.5" rx="2.5" stroke="currentColor" stroke-width="1.1"/><svg x="2.75" y="3.6" width="8.5" height="6.8" viewBox="0 0 640 512"><path fill="currentColor" d="M639.8 298.6c-1.3 23.1-11.5 44.8-28.4 60.5s-39.2 24.4-62.3 24.1h-218c-4.8 0-9.4-2-12.8-5.4s-5.3-8-5.3-12.8V130.2c-.2-4 .9-8 3.1-11.4s5.3-6.1 9-7.7c0 0 20.1-13.9 62.3-13.9c25.8 0 51.1 6.9 73.3 20.1c17.3 10.2 32.3 23.8 44.1 40.1s20 34.8 24.2 54.4c7.5-2.1 15.3-3.2 23.1-3.2c11.7-.1 23.3 2.2 34.2 6.7S606.8 226.6 615 235s14.6 18.3 18.9 29.3s6.3 22.6 5.9 34.3zm-354-153.5c.1-1 0-2-.3-2.9s-.8-1.8-1.5-2.6s-1.5-1.3-2.4-1.7s-1.9-.6-2.9-.6s-2 .2-2.9 .6s-1.7 1-2.4 1.7s-1.2 1.6-1.5 2.6s-.4 1.9-.3 2.9c-6 78.9-10.6 152.9 0 231.6c.2 1.7 1 3.3 2.3 4.5s3 1.8 4.7 1.8s3.4-.6 4.7-1.8s2.1-2.8 2.3-4.5c11.3-79.4 6.6-152 0-231.6zm-44 27.3c-.2-1.8-1.1-3.5-2.4-4.7s-3.1-1.9-5-1.9s-3.6 .7-5 1.9s-2.2 2.9-2.4 4.7c-7.9 67.9-7.9 136.5 0 204.4c.3 1.8 1.2 3.4 2.5 4.5s3.1 1.8 4.8 1.8s3.5-.6 4.8-1.8s2.2-2.8 2.5-4.5c8.8-67.8 8.8-136.5 .1-204.4zm-44.3-6.9c-.2-1.8-1-3.4-2.3-4.6s-3-1.8-4.8-1.8s-3.5 .7-4.8 1.8s-2.1 2.8-2.3 4.6c-6.7 72-10.2 139.3 0 211.1c0 1.9 .7 3.7 2.1 5s3.1 2.1 5 2.1s3.7-.7 5-2.1s2.1-3.1 2.1-5c10.5-72.8 7.3-138.2 .1-211.1zm-44 20.6c0-1.9-.8-3.8-2.1-5.2s-3.2-2.1-5.2-2.1s-3.8 .8-5.2 2.1s-2.1 3.2-2.1 5.2c-8.1 63.3-8.1 127.5 0 190.8c.2 1.8 1 3.4 2.4 4.6s3.1 1.9 4.8 1.9s3.5-.7 4.8-1.9s2.2-2.8 2.4-4.6c8.8-63.3 8.9-127.5 .3-190.8zM109 233.7c0-1.9-.8-3.8-2.1-5.1s-3.2-2.1-5.1-2.1s-3.8 .8-5.1 2.1s-2.1 3.2-2.1 5.1c-10.5 49.2-5.5 93.9 .4 143.6c.3 1.6 1.1 3.1 2.3 4.2s2.8 1.7 4.5 1.7s3.2-.6 4.5-1.7s2.1-2.5 2.3-4.2c6.6-50.4 11.6-94.1 .4-143.6zm-44.1-7.5c-.2-1.8-1.1-3.5-2.4-4.8s-3.2-1.9-5-1.9s-3.6 .7-5 1.9s-2.2 2.9-2.4 4.8c-9.3 50.2-6.2 94.4 .3 144.5c.7 7.6 13.6 7.5 14.4 0c7.2-50.9 10.5-93.8 .3-144.5zM20.3 250.8c-.2-1.8-1.1-3.5-2.4-4.8s-3.2-1.9-5-1.9s-3.6 .7-5 1.9s-2.3 2.9-2.4 4.8c-8.5 33.7-5.9 61.6 .6 95.4c.2 1.7 1 3.3 2.3 4.4s2.9 1.8 4.7 1.8s3.4-.6 4.7-1.8s2.1-2.7 2.3-4.4c7.5-34.5 11.2-61.8 .4-95.4z"/></svg></svg></span>`;
+        }
         if (!isFlacTrack(song)) return '';
         const cls = extraClass ? `flac-badge ${extraClass}` : 'flac-badge';
         return `<span class="${cls}" title="FLAC Lossless Audio" aria-label="FLAC"><svg viewBox="0 0 14 14" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="0.75" y="0.75" width="12.5" height="12.5" rx="2.5" stroke="currentColor" stroke-width="1.1"/><path d="M4.75 3.75 H9.25 V5.05 H6.25 V6.45 H8.65 V7.75 H6.25 V10.25 H4.75 Z" fill="currentColor"/></svg></span>`;
@@ -1238,7 +1432,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const albumArtists = Array.from(albumArtistsSet);
                 album.artists = albumArtists;
                 
-                if (albumArtists.length > 1) {
+                if (albumArtists.length > 3) {
+                    album.artist = "Various Artists";
+                } else if (albumArtists.length > 1) {
                     album.artist = albumArtists.join(", ");
                 } else if (albumArtists.length === 1) {
                     album.artist = albumArtists[0];
@@ -1550,7 +1746,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const savedPaths = playlists[playlistName] || [];
         const songPool = (allSongs && allSongs.length > 0) ? allSongs : (window.serverRawSongs ? window.serverRawSongs.map(generateServerFallbackMetadata) : []);
-        const playlistSongs = savedPaths.map(p => songPool.find(s => s.path === p)).filter(Boolean);
+        const playlistSongs = savedPaths.map(p => {
+            let found = songPool.find(s => s.path === p);
+            if (!found && soundCloudTracksCache.has(p)) {
+                found = soundCloudTracksCache.get(p);
+                if (!allSongs.some(s => s.path === p)) {
+                    found.globalIndex = allSongs.length;
+                    allSongs.push(found);
+                }
+            }
+            return found;
+        }).filter(Boolean);
         
         currentPlaylist = playlistSongs;
 
@@ -2079,6 +2285,33 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         menu.appendChild(viewArtistOption);
+
+        // SoundCloud options: Wave and Download to Library
+        if (isSoundCloudTrack(song)) {
+            const waveOption = document.createElement('div');
+            waveOption.className = 'playlist-context-menu-item';
+            waveOption.innerHTML = `
+                <i class="fa-solid fa-wave-square" style="color: var(--accent);"></i>
+                <span>Запустить волну</span>
+            `;
+            waveOption.addEventListener('click', () => {
+                menu.remove();
+                startSoundCloudWave(song);
+            });
+            menu.appendChild(waveOption);
+
+            const downloadOption = document.createElement('div');
+            downloadOption.className = 'playlist-context-menu-item';
+            downloadOption.innerHTML = `
+                <i class="fa-solid fa-download"></i>
+                <span>Download to Library</span>
+            `;
+            downloadOption.addEventListener('click', () => {
+                menu.remove();
+                downloadSoundCloudSong(song);
+            });
+            menu.appendChild(downloadOption);
+        }
 
         document.body.appendChild(menu);
         menu.style.position = 'fixed';
@@ -2744,6 +2977,41 @@ document.addEventListener('DOMContentLoaded', () => {
     const dropdownOptionsList = document.getElementById('dropdown-options-list');
     const searchInput = document.getElementById('search-input');
 
+    // Dropdown Type Configuration & Helper
+    const dropdownTypeConfig = {
+        album: { icon: 'fa-solid fa-compact-disc', label: 'Album' },
+        artist: { icon: 'fa-solid fa-user', label: 'Artist' },
+        song: { icon: 'fa-solid fa-music', label: 'Song name' },
+        playlist: { icon: 'fa-solid fa-list-ul', label: 'Playlist' },
+        soundcloud: { icon: 'fa-brands fa-soundcloud', label: 'SoundCloud', iconStyle: 'color: var(--accent);' }
+    };
+
+    function updateSelectedDropdownType(val) {
+        searchType = val;
+        const config = dropdownTypeConfig[val] || dropdownTypeConfig.album;
+        if (selectedTypeText) {
+            const styleAttr = config.iconStyle ? ` style="${config.iconStyle}"` : '';
+            selectedTypeText.innerHTML = `<i class="${config.icon} dropdown-type-icon"${styleAttr}></i><span class="dropdown-type-label">${config.label}</span>`;
+        }
+
+        // Toggle SoundCloud filter tabs visibility
+        const scFilterTabs = document.getElementById('soundcloud-filter-tabs');
+        if (scFilterTabs) {
+            if (val === 'soundcloud') {
+                scFilterTabs.classList.remove('hidden');
+                enableHorizontalScroll(scFilterTabs);
+            } else {
+                scFilterTabs.classList.add('hidden');
+            }
+        }
+
+        if (val === 'soundcloud') {
+            updateSoundCloudPlaceholder();
+        } else {
+            searchInput.placeholder = `Search by ${config.label.toLowerCase()}...`;
+        }
+    }
+
     // Toggle Dropdown List
     searchTypeDropdown.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -2759,16 +3027,17 @@ document.addEventListener('DOMContentLoaded', () => {
         option.addEventListener('click', (e) => {
             e.stopPropagation();
             const val = option.getAttribute('data-value');
-            searchType = val;
-            selectedTypeText.textContent = `▼ ${option.textContent}`;
+            updateSelectedDropdownType(val);
             searchTypeDropdown.classList.remove('open');
-            searchInput.placeholder = `Search by ${option.textContent.toLowerCase()}...`;
             
             // Clear search field and refresh panel
             searchInput.value = "";
             renderLibraryPanel();
         });
     });
+
+    // Initialize dropdown label and icon
+    updateSelectedDropdownType(searchType || 'album');
 
     // Real-time Fuzzy Search
     searchInput.addEventListener('input', () => {
@@ -2780,7 +3049,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const query = searchInput.value.trim();
         searchResults.innerHTML = "";
 
-        if (allSongs.length === 0) {
+        const scFilterTabs = document.getElementById('soundcloud-filter-tabs');
+        if (scFilterTabs) {
+            if (searchType === 'soundcloud') {
+                scFilterTabs.classList.remove('hidden');
+            } else {
+                scFilterTabs.classList.add('hidden');
+            }
+        }
+
+        if (allSongs.length === 0 && searchType !== 'soundcloud') {
             searchResults.innerHTML = `
                 <div class="empty-state">
                     <i class="fa-solid fa-music"></i>
@@ -2788,6 +3066,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span>Go to SETTINGS to configure music folders on the server.</span>
                 </div>
             `;
+            return;
+        }
+
+        if (searchType === 'soundcloud') {
+            renderSoundCloudPanel(query);
             return;
         }
 
@@ -2950,7 +3233,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <img src="${artistCover}" class="result-img" alt="${escapeHtml(item.name)}">
                     </div>
                     <div class="result-info">
-                        <div class="result-title"><span class="result-title-text">${formatArtistLinks(item.name)}</span></div>
+                        <div class="result-title"><span class="result-title-text">${escapeHtml(item.name)}</span></div>
                         <div class="result-subtitle">${item.tracks.length} songs</div>
                     </div>
                 `;
@@ -2959,15 +3242,74 @@ document.addEventListener('DOMContentLoaded', () => {
                     div.classList.add('active');
                     selectArtist(item.artistKey);
                 });
-            } else if (searchType === 'song') {
-                div.setAttribute('data-global-index', item.globalIndex);
-                if (currentlyPlayingIndex === item.globalIndex) {
+            } else if (searchType === 'soundcloud' && item.type === 'artist') {
+                const avatar = item.avatar || item.cover || DEFAULT_COVER;
+                const artName = item.name || item.username || 'SoundCloud Artist';
+                const followers = item.followersCount ? `${Number(item.followersCount).toLocaleString()} followers` : `${item.trackCount || 0} tracks`;
+                div.innerHTML = `
+                    <div class="result-img-wrapper" style="border-radius: 50%;">
+                        <img src="${avatar}" class="result-img" alt="${escapeHtml(artName)}" style="border-radius: 50%;">
+                    </div>
+                    <div class="result-info">
+                        <div class="result-title"><span class="result-title-text">${escapeHtml(artName)}</span></div>
+                        <div class="result-subtitle"><i class="fa-solid fa-user" style="font-size: 0.65rem; margin-right: 4px; color: var(--accent);"></i>SoundCloud Artist • ${escapeHtml(followers)}</div>
+                    </div>
+                `;
+                div.addEventListener('click', () => {
+                    document.querySelectorAll('.result-item').forEach(el => el.classList.remove('active'));
                     div.classList.add('active');
+                    openSoundCloudArtist(item);
+                });
+            } else if (searchType === 'soundcloud' && (item.type === 'album' || item.type === 'playlist' || item.isAlbum !== undefined)) {
+                const cover = item.cover || item.artwork_url || DEFAULT_COVER;
+                const isAlb = item.type === 'album' || item.isAlbum;
+                const icon = isAlb ? 'compact-disc' : 'list-ul';
+                const typeLabel = isAlb ? 'Album' : 'Playlist';
+                const artistName = item.artist || (typeof item.user === 'string' ? item.user : item.user?.username) || 'SoundCloud';
+                const trCount = item.trackCount || (item.tracks ? item.tracks.length : 0);
+                div.innerHTML = `
+                    <div class="result-img-wrapper">
+                        <img src="${cover}" class="result-img" alt="${escapeHtml(item.title || '')}">
+                    </div>
+                    <div class="result-info">
+                        <div class="result-title">
+                            <span class="result-title-text">${escapeHtml(item.title || '')}</span>
+                        </div>
+                        <div class="result-subtitle"><i class="fa-solid fa-${icon}" style="font-size: 0.65rem; margin-right: 4px; color: var(--accent);"></i>${typeLabel} • ${escapeHtml(artistName)} • ${trCount} tracks</div>
+                    </div>
+                `;
+                div.addEventListener('click', () => {
+                    document.querySelectorAll('.result-item').forEach(el => el.classList.remove('active'));
+                    div.classList.add('active');
+                    if (isAlb) {
+                        openSoundCloudAlbum(item);
+                    } else {
+                        openSoundCloudPlaylist(item);
+                    }
+                });
+            } else if (searchType === 'song' || searchType === 'soundcloud') {
+                // Ensure track has valid globalIndex (auto-register if SoundCloud track)
+                if (item.globalIndex === undefined) {
+                    const reg = registerSoundCloudTrack(item);
+                    if (reg) item.globalIndex = reg.globalIndex;
+                }
+
+                div.setAttribute('data-global-index', item.globalIndex);
+                const isCurrentSong = (currentlyPlayingIndex === item.globalIndex);
+                if (isCurrentSong) {
+                    div.classList.add('active');
+                    if (isPlaying) div.classList.add('playing');
                 }
                 const flacBadgeHTML = getFormatBadgeHTML(item);
+                const downloadBtnHTML = (isSoundCloudTrack(item) && !item.isDownloadedLocally)
+                    ? `<button class="result-action-btn download-btn" title="Download to Library"><i class="fa-solid fa-download"></i></button>`
+                    : '';
                 div.innerHTML = `
                     <div class="result-img-wrapper">
                         <img src="${item.cover || DEFAULT_COVER}" class="result-img" alt="${escapeHtml(item.title)}">
+                        <div class="result-play-overlay">
+                            <i class="fa-solid ${isCurrentSong && isPlaying ? 'fa-pause' : 'fa-play'}"></i>
+                        </div>
                     </div>
                     <div class="result-info">
                         <div class="result-title">
@@ -2977,6 +3319,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="result-subtitle">${formatArtistLinks(item.artist)} • ${escapeHtml(item.album)}</div>
                     </div>
                     <div class="result-actions">
+                        ${downloadBtnHTML}
                         <button class="result-action-btn add-btn" title="Add to Playlist">
                             <i class="fa-solid fa-plus"></i>
                         </button>
@@ -2992,6 +3335,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
 
+                const dlBtn = div.querySelector('.download-btn');
+                if (dlBtn) {
+                    dlBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        downloadSoundCloudSong(item, dlBtn);
+                    });
+                }
+
                 div.addEventListener('contextmenu', (e) => {
                     e.preventDefault();
                     showTrackContextMenu(e, item);
@@ -2999,25 +3351,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 div.addEventListener('click', (e) => {
                     if (e.target.closest('.result-actions')) return;
-                    document.querySelectorAll('.result-item').forEach(el => el.classList.remove('active'));
-                    div.classList.add('active');
-                    const albumKey = item.albumKey;
-                    selectAlbum(albumKey);
 
-                    if (isShuffle) {
-                        originalQueue = [...currentPlaylist];
-                        const clickedIdx = currentPlaylist.findIndex(s => s.globalIndex === item.globalIndex);
-                        const clickedSong = currentPlaylist[clickedIdx];
-                        const remainingSongs = currentPlaylist.filter((_, idx) => idx !== clickedIdx);
-                        shuffleArray(remainingSongs);
-                        playQueue = [clickedSong, ...remainingSongs];
-                        playQueueIndex = 0;
-                    } else {
-                        originalQueue = [];
-                        playQueue = [...currentPlaylist];
-                        playQueueIndex = playQueue.findIndex(s => s.globalIndex === item.globalIndex);
+                    const artistLink = e.target.closest('.artist-link');
+                    if (artistLink) {
+                        e.stopPropagation();
+                        selectArtistByName(artistLink.dataset.name);
+                        return;
                     }
-                    playTrack(item.globalIndex);
+
+                    // Ensure track is registered and has valid globalIndex
+                    if (item.globalIndex === undefined) {
+                        const reg = registerSoundCloudTrack(item);
+                        if (reg) item.globalIndex = reg.globalIndex;
+                    }
+
+                    // If user clicked track that is ALREADY playing/loaded: toggle play/pause directly
+                    if (currentlyPlayingIndex === item.globalIndex) {
+                        if (isPlaying && !bgAudio.paused && !isTrackLoading) {
+                            togglePlayPause();
+                            return;
+                        }
+                        // If paused, errored or stuck, force reload and play
+                        playTrack(item, 0, true);
+                        return;
+                    }
+
+                    document.querySelectorAll('.result-item').forEach(el => el.classList.remove('active', 'playing'));
+                    div.classList.add('active');
+
+                    if (searchType === 'soundcloud' || item.isSoundCloud || isSoundCloudTrack(item)) {
+                        startSoundCloudWave(item);
+                    } else {
+                        const albumKey = item.albumKey;
+                        selectAlbum(albumKey);
+
+                        if (isShuffle) {
+                            originalQueue = [...currentPlaylist];
+                            const clickedIdx = currentPlaylist.findIndex(s => s.globalIndex === item.globalIndex);
+                            const clickedSong = currentPlaylist[clickedIdx] || item;
+                            const remainingSongs = currentPlaylist.filter((_, idx) => idx !== clickedIdx);
+                            shuffleArray(remainingSongs);
+                            playQueue = [clickedSong, ...remainingSongs];
+                            playQueueIndex = 0;
+                        } else {
+                            originalQueue = [];
+                            playQueue = [...currentPlaylist];
+                            playQueueIndex = playQueue.findIndex(s => s.globalIndex === item.globalIndex);
+                            if (playQueueIndex < 0) playQueueIndex = 0;
+                        }
+                        playTrack(item.globalIndex);
+                    }
                 });
             } else if (searchType === 'playlist') {
                 const playlistTracks = item.tracks || [];
@@ -3156,8 +3539,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         loadArtistDescription(artist.name);
 
+        if (artistAlbums.length === 0) {
+            currentPlaylist = [...artist.tracks];
+            renderPlaylistView(artist.name, "Artist Profile", `${artist.tracks.length} track${artist.tracks.length !== 1 ? 's' : ''}`, artistCover);
+            if (detailCover) detailCover.style.borderRadius = '50%';
+            if (detailArtist) detailArtist.classList.remove('clickable-artist');
+            loadArtistDescription(artist.name);
+            return;
+        }
+
         // Toggle visibility
-        // wait, in other places we used hidden class, let's keep consistency:
         if (songListContainer) songListContainer.classList.add('hidden');
         if (albumsGridContainer) albumsGridContainer.classList.remove('hidden');
 
@@ -3416,9 +3807,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         nextBatch.forEach((song, batchIdx) => {
             const absoluteIdx = renderedSongsCount + batchIdx;
+
+            // Guarantee song is registered in allSongs with valid globalIndex
+            if (song.globalIndex === undefined || typeof song.globalIndex !== 'number' || !allSongs[song.globalIndex]) {
+                const reg = registerSoundCloudTrack(song);
+                if (reg && typeof reg.globalIndex === 'number') {
+                    song.globalIndex = reg.globalIndex;
+                } else {
+                    let idx = allSongs.findIndex(s => s.path === song.path || (s.id && s.id === song.id));
+                    if (idx === -1) {
+                        song.globalIndex = allSongs.length;
+                        allSongs.push(song);
+                    } else {
+                        song.globalIndex = idx;
+                    }
+                }
+            }
+
             const isTrackPlaying = (currentlyPlayingIndex === song.globalIndex);
             const songDiv = document.createElement('div');
             songDiv.className = `song-item ${isTrackPlaying ? 'playing' : ''}`;
+            songDiv.setAttribute('data-global-index', song.globalIndex);
             songDiv.style.animation = 'fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both';
             songDiv.style.animationDelay = `${batchIdx * 25}ms`;
             
@@ -3428,19 +3837,30 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             const isPlaylistView = (currentSelectedPlaylistName !== null);
+            const downloadBtnHTML = (isSoundCloudTrack(song) && !song.isDownloadedLocally)
+                ? `<button class="song-action-btn download-btn" title="Download to Library" data-path="${song.path}">
+                       <i class="fa-solid fa-download"></i>
+                   </button>`
+                : '';
             const actionButtonHTML = isPlaylistView
                 ? `<div class="song-actions">
+                       ${downloadBtnHTML}
                        <button class="song-action-btn remove-btn" title="Remove from Playlist" data-path="${song.path}">
                            <i class="fa-solid fa-trash-can"></i>
                        </button>
                    </div>`
                 : `<div class="song-actions">
+                       ${downloadBtnHTML}
                        <button class="song-action-btn add-btn" title="Add to Playlist">
                            <i class="fa-solid fa-plus"></i>
                        </button>
                    </div>`;
 
             const flacBadgeHTML = getFormatBadgeHTML(song);
+
+            const initialDur = (song.duration && !isNaN(song.duration) && song.duration > 0)
+                ? formatTime(song.duration)
+                : (durationCache[song.src] || '--:--');
 
             songDiv.innerHTML = `
                 <div class="song-index">
@@ -3455,17 +3875,34 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="song-artist">${formatArtistLinks(song.artist)}</div>
                 </div>
                 <div class="song-album">${escapeHtml(song.album)}</div>
-                <div class="song-duration" id="duration-${song.globalIndex}">--:--</div>
+                <div class="song-duration" id="duration-${song.globalIndex}">${initialDur}</div>
                 ${actionButtonHTML}
             `;
 
-            // Play track on click, but NOT if clicking the artist/album/title links or actions!
+            // Play track on click (entire row / background / title / album)
             songDiv.addEventListener('click', (e) => {
-                if (e.target.classList.contains('clickable-artist') || e.target.classList.contains('artist-link') || e.target.closest('.song-actions')) return;
+                if (e.target.closest('.song-actions') || e.target.closest('.action-btn')) return;
                 
+                const artistLink = e.target.closest('.artist-link');
+                if (artistLink) {
+                    selectArtistByName(artistLink.dataset.name);
+                    return;
+                }
+
+                // If currently playing or loading, handle play/pause
+                if (currentlyPlayingIndex !== -1 && currentlyPlayingIndex === song.globalIndex) {
+                    if (isPlaying && !bgAudio.paused && !isTrackLoading) {
+                        togglePlayPause();
+                        return;
+                    }
+                    // If paused, errored or stuck, force reload and play
+                    playTrack(song, 0, true);
+                    return;
+                }
+
                 if (isShuffle) {
                     originalQueue = [...currentPlaylist];
-                    const clickedSong = currentPlaylist[absoluteIdx];
+                    const clickedSong = currentPlaylist[absoluteIdx] || song;
                     const remainingSongs = currentPlaylist.filter((_, idx) => idx !== absoluteIdx);
                     shuffleArray(remainingSongs);
                     playQueue = [clickedSong, ...remainingSongs];
@@ -3475,38 +3912,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     playQueue = [...currentPlaylist];
                     playQueueIndex = absoluteIdx;
                 }
-                playTrack(song.globalIndex);
+                playTrack(song);
             });
-
-            // Bind click for artist link
-            const artistEl = songDiv.querySelector('.song-artist');
-            if (artistEl) {
-                artistEl.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const link = e.target.closest('.artist-link');
-                    if (link) {
-                        selectArtistByName(link.dataset.name);
-                    }
-                });
-            }
-
-            // Bind click for title link to see the album
-            const titleEl = songDiv.querySelector('.song-title');
-            if (titleEl) {
-                titleEl.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    selectAlbumByNameAndArtist(song.album, song.artist, song.albumKey);
-                });
-            }
-
-            // Bind click for album link to see the album
-            const albumEl = songDiv.querySelector('.song-album');
-            if (albumEl) {
-                albumEl.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    selectAlbumByNameAndArtist(song.album, song.artist, song.albumKey);
-                });
-            }
 
             // Bind click for add/remove playlist buttons
             if (isPlaylistView) {
@@ -3533,6 +3940,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
+            const dlBtn = songDiv.querySelector('.download-btn');
+            if (dlBtn) {
+                dlBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    downloadSoundCloudSong(song, dlBtn);
+                });
+            }
+
             songListContainer.appendChild(songDiv);
             fetchAudioDuration(song);
         });
@@ -3552,7 +3968,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Background duration fetch to prevent tags reading latency
     const durationCache = {};
     function fetchAudioDuration(song) {
+        if (!song) return;
         const id = `duration-${song.globalIndex}`;
+        if (song.duration && !isNaN(song.duration) && song.duration > 0) {
+            const formatted = formatTime(song.duration);
+            durationCache[song.src] = formatted;
+            const el = document.getElementById(id);
+            if (el) el.textContent = formatted;
+            return;
+        }
+
         const cached = durationCache[song.src];
         if (cached) {
             const el = document.getElementById(id);
@@ -3560,16 +3985,25 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const tempAudio = new Audio(song.src);
+        // Never open audio streams for SoundCloud tracks to fetch duration
+        if (isSoundCloudTrack(song) || (song.path && song.path.startsWith('soundcloud:'))) {
+            return;
+        }
+
+        // For local tracks without metadata duration: load safely with cleanup
+        const tempAudio = new Audio();
+        tempAudio.preload = 'metadata';
+        tempAudio.src = song.src;
         tempAudio.addEventListener('loadedmetadata', () => {
             const formatted = formatTime(tempAudio.duration);
             durationCache[song.src] = formatted;
             const el = document.getElementById(id);
             if (el) el.textContent = formatted;
-            // Unload
             tempAudio.src = "";
-            tempAudio.load();
-        });
+        }, { once: true });
+        tempAudio.addEventListener('error', () => {
+            tempAudio.src = "";
+        }, { once: true });
     }
 
     // ==========================================
@@ -3625,6 +4059,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const currentTime = (!isNaN(bgAudio.currentTime) && bgAudio.currentTime >= 0) ? bgAudio.currentTime : 0;
             const playing = isPlayingState !== undefined ? isPlayingState : isPlaying;
 
+            let coverUrl = (typeof song.cover === 'string' && song.cover.startsWith('http')) ? song.cover : '';
+            if (!coverUrl && isSoundCloudTrack(song)) {
+                const cached = soundCloudTracksCache.get(song.path);
+                if (cached && cached.cover && cached.cover.startsWith('http')) {
+                    coverUrl = cached.cover;
+                }
+            }
+            if (coverUrl && coverUrl.includes('sndcdn.com')) {
+                coverUrl = coverUrl.replace(/-large\./, '-t500x500.').replace(/-t[0-9]+x[0-9]+\./, '-t500x500.');
+            }
+            const permalink = song.permalinkUrl || song.permalink || '';
+
             await fetch('/api/discord-rpc/activity', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -3635,7 +4081,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     duration: duration,
                     currentTime: currentTime,
                     isPlaying: playing,
-                    coverUrl: (typeof song.cover === 'string' && song.cover.startsWith('http')) ? song.cover : ''
+                    coverUrl: coverUrl,
+                    permalink: permalink
                 })
             });
         } catch (e) {
@@ -3653,10 +4100,54 @@ document.addEventListener('DOMContentLoaded', () => {
     // 11. AUDIO CONTROLS & EVENT BINDINGS
     // ==========================================
 
-    function playTrack(globalIdx, animateDirection = 0) {
-        if (globalIdx < 0 || globalIdx >= allSongs.length) return;
+    let isTrackLoading = false;
+
+    function playTrack(target, animateDirection = 0, forceReload = false) {
+        let song;
+        let globalIdx;
+
+        if (typeof target === 'object' && target !== null) {
+            song = target;
+            if (song.globalIndex === undefined || typeof song.globalIndex !== 'number' || !allSongs[song.globalIndex]) {
+                const reg = registerSoundCloudTrack(song);
+                if (reg && typeof reg.globalIndex === 'number') {
+                    song.globalIndex = reg.globalIndex;
+                } else {
+                    let idx = allSongs.findIndex(s => s.path === song.path || (s.id && s.id === song.id));
+                    if (idx === -1) {
+                        song.globalIndex = allSongs.length;
+                        allSongs.push(song);
+                    } else {
+                        song.globalIndex = idx;
+                    }
+                }
+            }
+            globalIdx = song.globalIndex;
+        } else if (typeof target === 'number' && !isNaN(target) && target >= 0 && target < allSongs.length) {
+            globalIdx = target;
+            song = allSongs[globalIdx];
+        } else {
+            console.warn('[playTrack] Invalid track target:', target);
+            return;
+        }
+
+        if (!song) return;
+
+        // Ensure stream / src url exists
+        if (!song.src) {
+            if (song.url) song.src = song.url;
+            else if (song.path && song.path.startsWith('soundcloud:')) {
+                song.src = `/api/soundcloud/stream/${song.path.replace('soundcloud:', '')}`;
+            } else if (song.id) {
+                song.src = `/api/soundcloud/stream/${song.id}`;
+            }
+        }
+        if (allSongs[globalIdx] && !allSongs[globalIdx].src) {
+            allSongs[globalIdx].src = song.src;
+        }
 
         currentlyPlayingIndex = globalIdx;
+        isTrackLoading = true;
 
         // Ensure playQueue and index are in sync with what is being played
         if (playQueue.length === 0 || !playQueue.some(s => s.globalIndex === globalIdx)) {
@@ -3667,7 +4158,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isShuffle) {
                 originalQueue = [...baseQueue];
                 const clickedIdx = baseQueue.findIndex(s => s.globalIndex === globalIdx);
-                const clickedSong = baseQueue[clickedIdx];
+                const clickedSong = baseQueue[clickedIdx] || song;
                 const remainingSongs = baseQueue.filter((_, idx) => idx !== clickedIdx);
                 shuffleArray(remainingSongs);
                 playQueue = [clickedSong, ...remainingSongs];
@@ -3676,12 +4167,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 originalQueue = [];
                 playQueue = [...baseQueue];
                 playQueueIndex = playQueue.findIndex(s => s.globalIndex === globalIdx);
+                if (playQueueIndex < 0) playQueueIndex = 0;
             }
         } else {
             playQueueIndex = playQueue.findIndex(s => s.globalIndex === globalIdx);
+            if (playQueueIndex < 0) playQueueIndex = 0;
         }
-
-        const song = allSongs[currentlyPlayingIndex];
 
         // Init audio context on user action
         initAudioContext();
@@ -3689,8 +4180,8 @@ document.addEventListener('DOMContentLoaded', () => {
             audioContext.resume();
         }
 
-        // Cross-fade fade-out of current playing track
-        if (isCrossfadeEnabled && bgAudio.src && !bgAudio.paused && bgAudio.currentTime > 0) {
+        // Cross-fade fade-out of current playing track (only for local audio to avoid extra streams)
+        if (isCrossfadeEnabled && bgAudio.src && !bgAudio.paused && bgAudio.currentTime > 0 && !isSoundCloudTrack(song)) {
             const fadeAudio = new Audio();
             fadeAudio.src = bgAudio.src;
             fadeAudio.currentTime = bgAudio.currentTime;
@@ -3725,8 +4216,23 @@ document.addEventListener('DOMContentLoaded', () => {
             crossfadeIntervalId = null;
         }
 
-        // Set source and play
-        bgAudio.src = song.src;
+        // Reset times and progress slider immediately
+        progressSlider.value = 0;
+        progressSlider.style.setProperty('--value', '0%');
+        currentTimeEl.textContent = '00:00';
+        totalTimeEl.textContent = (song.duration && !isNaN(song.duration) && song.duration > 0) ? formatTime(song.duration) : '--:--';
+
+        // Provide immediate visual feedback that track is loading
+        playIcon.className = 'fa-solid fa-spinner fa-spin';
+        updateHighlighting();
+
+        // Set source and play (cache-busting timestamp for SoundCloud to bypass dead sockets)
+        if (isSoundCloudTrack(song)) {
+            const baseSrc = (song.src || '').split('?')[0];
+            bgAudio.src = `${baseSrc}?t=${Date.now()}`;
+        } else {
+            bgAudio.src = song.src;
+        }
         bgAudio.load();
 
         // If crossfade, start new audio at 0 volume
@@ -3758,11 +4264,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const newImg = document.createElement('img');
             newImg.src = nextCoverSrc;
             newImg.alt = 'Track Cover';
-            if (isPlaying) {
-                newImg.className = 'track-cover spinning';
-            } else {
-                newImg.className = 'track-cover spinning paused';
-            }
+            newImg.className = 'track-cover spinning';
             newImg.id = 'track-cover';
             
             newWrapper.appendChild(newImg);
@@ -3826,16 +4328,32 @@ document.addEventListener('DOMContentLoaded', () => {
         // Load lyrics
         loadLyrics(song);
 
-        // Reset progress slider
-        progressSlider.value = 0;
-        progressSlider.style.setProperty('--value', '0%');
-
         // Update Dynamic Island Queue
         if (typeof updateIslandQueue === 'function') {
             updateIslandQueue();
         }
 
+        // Watchdog timeout to release loading lock if playback hangs
+        if (window._trackLoadingTimeout) {
+            clearTimeout(window._trackLoadingTimeout);
+            window._trackLoadingTimeout = null;
+        }
+        window._trackLoadingTimeout = setTimeout(() => {
+            if (isTrackLoading && currentlyPlayingIndex === globalIdx && bgAudio.paused) {
+                console.warn('[playTrack] Loading watchdog timeout reached, resetting loading lock');
+                isTrackLoading = false;
+                playIcon.className = 'fa-solid fa-play';
+                updateHighlighting();
+            }
+        }, 7000);
+
         bgAudio.play().then(() => {
+            if (window._trackLoadingTimeout) {
+                clearTimeout(window._trackLoadingTimeout);
+                window._trackLoadingTimeout = null;
+            }
+            if (currentlyPlayingIndex !== globalIdx) return;
+            isTrackLoading = false;
             isPlaying = true;
             playIcon.className = 'fa-solid fa-pause';
             setCoverAnimationState(true);
@@ -3863,33 +4381,54 @@ document.addEventListener('DOMContentLoaded', () => {
             // Re-render views to highlight currently playing item
             updateHighlighting();
         }).catch(err => {
+            if (window._trackLoadingTimeout) {
+                clearTimeout(window._trackLoadingTimeout);
+                window._trackLoadingTimeout = null;
+            }
             if (err.name === 'AbortError') {
                 console.log("Playback aborted (normal when switching tracks rapidly).");
                 return;
             }
             console.error("Audio playback error:", err);
-            isPlaying = false;
-            playIcon.className = 'fa-solid fa-play';
-            setCoverAnimationState(false);
-            updateMediaSessionPlaybackState('paused');
-            sendDiscordRpcActivity(song, false);
-            updateHighlighting();
+            if (currentlyPlayingIndex === globalIdx) {
+                isTrackLoading = false;
+                isPlaying = false;
+                playIcon.className = 'fa-solid fa-play';
+                setCoverAnimationState(false);
+                updateMediaSessionPlaybackState('paused');
+                sendDiscordRpcActivity(song, false);
+                updateHighlighting();
+            }
         });
     }
 
+    function togglePlayPause() {
+        if (playBtn) playBtn.click();
+    }
+
     function updateHighlighting() {
-        // Highlight in left side panel if search results contain it
-        const resultItems = document.querySelectorAll('.result-item');
-        if (searchType === 'song') {
-            resultItems.forEach(itemEl => {
-                const gIdx = parseInt(itemEl.getAttribute('data-global-index'), 10);
-                if (gIdx === currentlyPlayingIndex) {
-                    itemEl.classList.add('active');
+        // Highlight in left side panel if search results contain it (supports song & soundcloud)
+        const resultItems = document.querySelectorAll('.result-item[data-global-index]');
+        resultItems.forEach(itemEl => {
+            const gIdx = parseInt(itemEl.getAttribute('data-global-index'), 10);
+            const overlayIcon = itemEl.querySelector('.result-play-overlay i');
+            if (gIdx === currentlyPlayingIndex) {
+                itemEl.classList.add('active');
+                if (isTrackLoading) {
+                    itemEl.classList.add('playing');
+                    if (overlayIcon) overlayIcon.className = 'fa-solid fa-spinner fa-spin';
+                } else if (isPlaying) {
+                    itemEl.classList.add('playing');
+                    if (overlayIcon) overlayIcon.className = 'fa-solid fa-pause';
                 } else {
-                    itemEl.classList.remove('active');
+                    itemEl.classList.remove('playing');
+                    if (overlayIcon) overlayIcon.className = 'fa-solid fa-play';
                 }
-            });
-        }
+            } else {
+                itemEl.classList.remove('active', 'playing');
+                if (overlayIcon) overlayIcon.className = 'fa-solid fa-play';
+            }
+        });
 
         // Highlight in right playlist
         const songItems = document.querySelectorAll('.song-item');
@@ -3901,7 +4440,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (isPlayingSong) {
                     itemEl.classList.add('playing');
                     if (iconEl) {
-                        iconEl.className = isPlaying ? 'fa-solid fa-volume-high' : 'fa-solid fa-play';
+                        if (isTrackLoading) {
+                            iconEl.className = 'fa-solid fa-spinner fa-spin';
+                        } else if (isPlaying) {
+                            iconEl.className = 'fa-solid fa-volume-high';
+                        } else {
+                            iconEl.className = 'fa-solid fa-play';
+                        }
                     }
                 } else {
                     itemEl.classList.remove('playing');
@@ -3922,6 +4467,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentlyPlayingIndex === -1) {
             // Play first song
             playTrack(0);
+            return;
+        }
+
+        if (isTrackLoading) {
+            // User clicked pause while track is still buffering/loading
+            if (window._trackLoadingTimeout) {
+                clearTimeout(window._trackLoadingTimeout);
+                window._trackLoadingTimeout = null;
+            }
+            bgAudio.pause();
+            isTrackLoading = false;
+            isPlaying = false;
+            playIcon.className = 'fa-solid fa-play';
+            setCoverAnimationState(false);
+            updateMediaSessionPlaybackState('paused');
+            updateHighlighting();
             return;
         }
 
@@ -3947,13 +4508,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 clearInterval(crossfadeIntervalId);
                 crossfadeIntervalId = null;
             }
+
+            // If audio element is in an error, unready, or stalled state, reload via playTrack
+            if (bgAudio.error || bgAudio.networkState === HTMLMediaElement.NETWORK_NO_SOURCE || (bgAudio.readyState === 0 && !bgAudio.currentTime)) {
+                console.log('[playBtn] Audio element in faulted or unready state, reloading track via playTrack');
+                playTrack(currentlyPlayingIndex, 0, true);
+                return;
+            }
+
             bgAudio.play().then(() => {
                 playIcon.className = 'fa-solid fa-pause';
                 setCoverAnimationState(true);
                 isPlaying = true;
                 updateMediaSessionPlaybackState('playing');
                 sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], true);
-            }).catch(e => console.log(e));
+            }).catch(err => {
+                console.warn('[playBtn] Unpause play() failed, recovering via playTrack:', err.message);
+                playTrack(currentlyPlayingIndex, 0, true);
+            });
         }
         updateHighlighting();
     });
@@ -4210,10 +4782,56 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     bgAudio.addEventListener('loadedmetadata', () => {
-        totalTimeEl.textContent = formatTime(bgAudio.duration);
+        if (bgAudio.duration && !isNaN(bgAudio.duration) && bgAudio.duration > 0) {
+            totalTimeEl.textContent = formatTime(bgAudio.duration);
+        }
         if (allSongs[currentlyPlayingIndex]) {
             sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], isPlaying);
         }
+    });
+
+    bgAudio.addEventListener('playing', () => {
+        if (window._trackLoadingTimeout) {
+            clearTimeout(window._trackLoadingTimeout);
+            window._trackLoadingTimeout = null;
+        }
+        isTrackLoading = false;
+        isPlaying = true;
+        playIcon.className = 'fa-solid fa-pause';
+        setCoverAnimationState(true);
+        updateHighlighting();
+    });
+
+    bgAudio.addEventListener('waiting', () => {
+        if (isPlaying && !bgAudio.paused) {
+            playIcon.className = 'fa-solid fa-spinner fa-spin';
+        }
+    });
+
+    bgAudio.addEventListener('stalled', () => {
+        console.warn('[Audio Engine] Playback stalled on bgAudio');
+    });
+
+    bgAudio.addEventListener('pause', () => {
+        if (!isTrackLoading) {
+            isPlaying = false;
+            playIcon.className = 'fa-solid fa-play';
+            setCoverAnimationState(false);
+            updateHighlighting();
+        }
+    });
+
+    bgAudio.addEventListener('error', () => {
+        console.error('[Audio Engine] Media error on bgAudio:', bgAudio.error);
+        if (window._trackLoadingTimeout) {
+            clearTimeout(window._trackLoadingTimeout);
+            window._trackLoadingTimeout = null;
+        }
+        isTrackLoading = false;
+        isPlaying = false;
+        playIcon.className = 'fa-solid fa-play';
+        setCoverAnimationState(false);
+        updateHighlighting();
     });
 
     bgAudio.addEventListener('timeupdate', () => {
@@ -4280,11 +4898,62 @@ document.addEventListener('DOMContentLoaded', () => {
         selectAlbum(key);
     }
 
-    // Helper: Select artist and navigate to their profile (album grid)
-    function selectArtistByName(artistName) {
+    // Helper: Search and open an artist on SoundCloud if not in local library
+    async function searchAndOpenSoundCloudArtist(artistName) {
+        if (!artistName) return;
+        try {
+            if (albumsGridContainer) albumsGridContainer.classList.add('hidden');
+            if (songListContainer) {
+                songListContainer.classList.remove('hidden');
+                songListContainer.style.display = '';
+                songListContainer.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fa-solid fa-spinner fa-spin"></i>
+                        <p>Finding Artist on SoundCloud...</p>
+                        <span>${escapeHtml(artistName)}</span>
+                    </div>
+                `;
+            }
+
+            const res = await fetch(`/api/soundcloud/search?q=${encodeURIComponent(artistName)}&type=artists&limit=6`);
+            const data = await res.json();
+            if (data.success && Array.isArray(data.artists) && data.artists.length > 0) {
+                const exact = data.artists.find(a => 
+                    (a.name && a.name.toLowerCase() === artistName.toLowerCase()) ||
+                    (a.username && a.username.toLowerCase() === artistName.toLowerCase())
+                );
+                const targetArtist = exact || data.artists[0];
+                await openSoundCloudArtist(targetArtist);
+            } else {
+                if (typeof showToast === 'function') {
+                    showToast(`SoundCloud artist "${artistName}" not found`);
+                }
+                if (songListContainer) {
+                    songListContainer.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fa-solid fa-user-slash"></i>
+                            <p>Artist Not Found</p>
+                            <span>Could not find "${escapeHtml(artistName)}" on SoundCloud</span>
+                        </div>
+                    `;
+                }
+            }
+        } catch (e) {
+            console.error('[SoundCloud] Error searching artist:', e);
+            if (typeof showToast === 'function') {
+                showToast(`Error searching artist: ${e.message}`);
+            }
+        }
+    }
+
+    // Helper: Select artist and navigate to their profile (album grid or tracks)
+    async function selectArtistByName(artistName) {
         if (!artistName || artistName === 'Unknown Artist' || artistName === 'Artist Profile') return;
-        const artistKey = artistName.toLowerCase();
-        const artist = artists.find(a => a.artistKey === artistKey);
+        const cleanName = artistName.trim();
+        const artistKey = cleanName.toLowerCase();
+
+        // 1. Check local indexed artists
+        const artist = artists.find(a => a.artistKey === artistKey || (a.name && a.name.toLowerCase() === artistKey));
         if (artist) {
             // Highlight and switch search scope to Artist
             searchType = 'artist';
@@ -4297,7 +4966,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const resultItems = document.querySelectorAll('.result-item');
             resultItems.forEach(item => {
                 const titleEl = item.querySelector('.result-title');
-                if (titleEl && titleEl.textContent.toLowerCase() === artistName.toLowerCase()) {
+                if (titleEl && titleEl.textContent.trim().toLowerCase() === cleanName.toLowerCase()) {
                     item.classList.add('active');
                     item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }
@@ -4311,6 +4980,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 dynamicIsland.classList.remove('expanded');
                 dynamicIsland.classList.remove('locked');
             }
+            return;
+        }
+
+        // 2. Check allSongs for matches by split artist name
+        const matchedSongs = allSongs.filter(s => {
+            const split = splitArtists(s.artist);
+            return split.some(a => a.toLowerCase() === artistKey);
+        });
+        if (matchedSongs.length > 0) {
+            currentSelectedPlaylistName = null;
+            currentPlaylist = [...matchedSongs];
+            const cover = matchedSongs[0]?.cover || DEFAULT_COVER;
+            renderPlaylistView(cleanName, "Artist Profile", `${matchedSongs.length} track${matchedSongs.length !== 1 ? 's' : ''}`, cover);
+            if (detailCover) detailCover.style.borderRadius = '50%';
+            if (detailArtist) detailArtist.classList.remove('clickable-artist');
+            loadArtistDescription(cleanName);
+            if (dynamicIsland && !isIslandPinned) {
+                dynamicIsland.classList.remove('expanded');
+                dynamicIsland.classList.remove('locked');
+            }
+            return;
+        }
+
+        // 3. Fallback: Search on SoundCloud if SoundCloud is configured / enabled
+        if (isSoundCloudEnabled) {
+            await searchAndOpenSoundCloudArtist(cleanName);
+            return;
+        }
+
+        if (typeof showToast === 'function') {
+            showToast(`No tracks found for "${cleanName}"`);
         }
     }
 
@@ -5322,6 +6022,879 @@ document.addEventListener('DOMContentLoaded', () => {
     syncDiscordRpcStatus();
 
     // ==========================================
+    // 12.5. SOUNDCLOUD SERVICE & CLIENT INTEGRATION
+    // ==========================================
+    async function downloadSoundCloudSong(song, btnEl = null) {
+        if (!song) return;
+        const trackId = song.id || (song.path && song.path.replace('soundcloud:', ''));
+        if (!trackId) {
+            if (typeof showToast === 'function') showToast('Invalid SoundCloud track');
+            return;
+        }
+
+        if (btnEl) {
+            btnEl.disabled = true;
+            btnEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        }
+
+        if (typeof showToast === 'function') showToast(`Downloading "${song.title}"...`);
+
+        try {
+            const res = await fetch('/api/soundcloud/download-to-library', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trackId })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Download failed');
+            }
+
+            song.isDownloadedLocally = true;
+            song.localPath = data.filePath;
+            if (btnEl) {
+                btnEl.classList.add('downloaded-btn');
+                btnEl.title = 'Downloaded to Library';
+                btnEl.innerHTML = '<i class="fa-solid fa-check"></i>';
+            }
+            if (typeof showToast === 'function') showToast(`Saved to library: "${song.title}"`);
+        } catch (err) {
+            console.error('[SoundCloud] Download error:', err);
+            if (typeof showToast === 'function') showToast(`Download failed: ${err.message}`);
+            if (btnEl) {
+                btnEl.disabled = false;
+                btnEl.innerHTML = '<i class="fa-solid fa-download"></i>';
+            }
+        }
+    }
+
+    async function syncSoundCloudStatus() {
+        const toggleEl = document.getElementById('toggle-soundcloud');
+        const statusContainer = document.getElementById('soundcloud-status-container');
+        const statusDot = document.getElementById('soundcloud-status-dot');
+        const statusMsg = document.getElementById('soundcloud-status-msg');
+        const optionsDiv = document.getElementById('soundcloud-options');
+        const dropdownOption = document.getElementById('dropdown-option-soundcloud');
+
+        try {
+            const res = await fetch('/api/soundcloud/config');
+            if (!res.ok) throw new Error('Failed to fetch SoundCloud config');
+            const data = await res.json();
+
+            isSoundCloudEnabled = !!data.enabled;
+            soundCloudUser = data.user || null;
+
+            if (toggleEl) toggleEl.checked = isSoundCloudEnabled;
+
+            if (isSoundCloudEnabled) {
+                if (optionsDiv) optionsDiv.classList.remove('hidden');
+                if (statusContainer) statusContainer.classList.remove('hidden');
+                if (dropdownOption) dropdownOption.classList.remove('hidden');
+
+                if (data.hasToken && data.user) {
+                    if (statusDot) {
+                        statusDot.className = 'soundcloud-status-dot connected';
+                    }
+                    if (statusMsg) {
+                        const likes = data.user.likes_count ? ` (${data.user.likes_count} likes)` : '';
+                        statusMsg.textContent = `Connected: ${data.user.username}${likes}`;
+                        statusMsg.title = `Connected as ${data.user.username}`;
+                    }
+                } else if (data.hasToken) {
+                    if (statusDot) statusDot.className = 'soundcloud-status-dot checking';
+                    if (statusMsg) statusMsg.textContent = 'Token set, verifying...';
+                    fetch('/api/soundcloud/user').then(r => r.json()).then(ud => {
+                        if (ud.success && ud.user) {
+                            soundCloudUser = ud.user;
+                            if (statusDot) statusDot.className = 'soundcloud-status-dot connected';
+                            if (statusMsg) {
+                                const likes = ud.user.likes_count ? ` (${ud.user.likes_count} likes)` : '';
+                                statusMsg.textContent = `Connected: ${ud.user.username}${likes}`;
+                            }
+                        }
+                    }).catch(() => {});
+                } else {
+                    if (statusDot) statusDot.className = 'soundcloud-status-dot error';
+                    if (statusMsg) statusMsg.textContent = 'Enter OAuth token to connect';
+                }
+            } else {
+                if (optionsDiv) optionsDiv.classList.add('hidden');
+                if (statusContainer) statusContainer.classList.add('hidden');
+                if (dropdownOption) dropdownOption.classList.add('hidden');
+                const scFilterTabs = document.getElementById('soundcloud-filter-tabs');
+                if (scFilterTabs) scFilterTabs.classList.add('hidden');
+                if (searchType === 'soundcloud') {
+                    updateSelectedDropdownType('album');
+                    renderLibraryPanel();
+                }
+            }
+        } catch (e) {
+            console.error('[SoundCloud] Status sync failed:', e);
+            if (statusDot) statusDot.className = 'soundcloud-status-dot error';
+            if (statusMsg) statusMsg.textContent = 'Offline / Server unreachable';
+        }
+    }
+
+    // Helper: Create horizontal card item for Artists, Albums, Playlists
+    function createSoundCloudCard(item, type) {
+        const card = document.createElement('div');
+        card.className = 'sc-card-item';
+
+        if (type === 'artist') {
+            const avatar = item.avatar || item.avatarUrl || item.cover || DEFAULT_COVER;
+            const name = item.name || item.username || 'SoundCloud Artist';
+            const followers = item.followersCount ? `${Number(item.followersCount).toLocaleString()} followers` : `${item.trackCount || 0} tracks`;
+            card.innerHTML = `
+                <img src="${avatar}" class="sc-card-artist-avatar" alt="${escapeHtml(name)}" onerror="this.src='${DEFAULT_COVER}'">
+                <div class="sc-card-title" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+                <div class="sc-card-subtitle">${escapeHtml(followers)}</div>
+            `;
+            card.addEventListener('click', () => {
+                openSoundCloudArtist(item);
+            });
+        } else if (type === 'album') {
+            const cover = item.cover || item.artwork_url || item.artworkUrl || DEFAULT_COVER;
+            const title = item.title || 'SoundCloud Album';
+            const author = item.artist || (typeof item.user === 'string' ? item.user : item.user?.username) || 'SoundCloud';
+            const count = item.trackCount || (item.tracks ? item.tracks.length : 0);
+            card.innerHTML = `
+                <img src="${cover}" class="sc-card-cover" alt="${escapeHtml(title)}" onerror="this.src='${DEFAULT_COVER}'">
+                <div class="sc-card-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+                <div class="sc-card-subtitle">${escapeHtml(author)} • ${count} tr.</div>
+            `;
+            card.addEventListener('click', () => {
+                openSoundCloudAlbum(item);
+            });
+        } else if (type === 'playlist') {
+            const cover = item.cover || item.artwork_url || item.artworkUrl || DEFAULT_COVER;
+            const title = item.title || 'SoundCloud Playlist';
+            const author = item.artist || (typeof item.user === 'string' ? item.user : item.user?.username) || 'SoundCloud';
+            const count = item.trackCount || (item.tracks ? item.tracks.length : 0);
+            card.innerHTML = `
+                <img src="${cover}" class="sc-card-cover" alt="${escapeHtml(title)}" onerror="this.src='${DEFAULT_COVER}'">
+                <div class="sc-card-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+                <div class="sc-card-subtitle">${escapeHtml(author)} • ${count} tr.</div>
+            `;
+            card.addEventListener('click', () => {
+                openSoundCloudPlaylist(item);
+            });
+        }
+
+        return card;
+    }
+
+    async function startSoundCloudWave(song) {
+        if (!song) return;
+        const regSong = registerSoundCloudTrack(song) || song;
+        const cleanId = String(regSong.id || regSong.path || '').replace(/^soundcloud:/i, '').trim();
+        if (!cleanId) return;
+
+        // Reset UI view to Wave playlist
+        if (albumsGridContainer) albumsGridContainer.classList.add('hidden');
+        if (songListContainer) {
+            songListContainer.classList.remove('hidden');
+            songListContainer.style.display = '';
+        }
+        if (detailCover) detailCover.style.borderRadius = '';
+        if (detailArtist) detailArtist.classList.remove('clickable-artist');
+
+        currentSelectedPlaylistName = null;
+        currentPlaylist = [regSong];
+        playQueue = [regSong];
+        playQueueIndex = 0;
+        originalQueue = [];
+
+        const coverUrl = regSong.cover || DEFAULT_COVER;
+        renderPlaylistView(`Волна: ${regSong.title}`, regSong.artist, '<i class="fa-solid fa-spinner fa-spin"></i> Подбираем похожие треки...', coverUrl);
+
+        // Start playback of seed track immediately
+        playTrack(regSong);
+
+        try {
+            const resp = await fetch(`/api/soundcloud/station/${cleanId}`);
+            const data = await resp.json();
+            if (!data.success || !Array.isArray(data.tracks)) {
+                throw new Error(data.error || 'Failed to fetch wave');
+            }
+
+            // Register all station tracks
+            const stationTracks = [];
+            data.tracks.forEach(t => {
+                const reg = registerSoundCloudTrack(t);
+                if (reg && String(reg.id) !== String(regSong.id) && reg.path !== regSong.path) {
+                    stationTracks.push(reg);
+                }
+            });
+
+            // Deduplicate
+            const uniqueSimilar = [];
+            const seenIds = new Set([String(regSong.id), regSong.path]);
+            for (const t of stationTracks) {
+                const k = String(t.id || t.path);
+                if (!seenIds.has(k)) {
+                    seenIds.add(k);
+                    uniqueSimilar.push(t);
+                }
+            }
+
+            // Set currentPlaylist: [seedSong, ...similarTracks]
+            currentPlaylist = [regSong, ...uniqueSimilar];
+
+            if (isShuffle) {
+                originalQueue = [...currentPlaylist];
+                playQueue = [regSong, ...shuffleArray([...uniqueSimilar])];
+                playQueueIndex = 0;
+            } else {
+                originalQueue = [];
+                playQueue = [...currentPlaylist];
+                playQueueIndex = 0;
+            }
+
+            renderPlaylistView(`Волна: ${regSong.title}`, regSong.artist, `SoundCloud Волна • ${currentPlaylist.length} треков`, coverUrl);
+            if (typeof updateIslandQueue === 'function') {
+                updateIslandQueue();
+            }
+            updateHighlighting();
+        } catch (err) {
+            console.warn('[Wave] Failed to load station tracks:', err.message);
+            const metaEl = document.getElementById('detail-meta');
+            if (metaEl) {
+                metaEl.innerHTML = `SoundCloud Волна • 1 трек`;
+            }
+        }
+    }
+
+    async function openSoundCloudPlaylist(playlist) {
+        if (!playlist || !playlist.id) return;
+
+        if (albumsGridContainer) albumsGridContainer.classList.add('hidden');
+        if (songListContainer) {
+            songListContainer.classList.remove('hidden');
+            songListContainer.style.display = '';
+            songListContainer.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <p>Loading Playlist...</p>
+                    <span>${escapeHtml(playlist.title || 'SoundCloud Playlist')}</span>
+                </div>
+            `;
+        }
+
+        if (detailCover) detailCover.style.borderRadius = '';
+        if (detailArtist) detailArtist.classList.remove('clickable-artist');
+
+        try {
+            let plData = playlist;
+            const needsFetch = !plData.isFullyLoaded ||
+                !plData.tracks ||
+                plData.tracks.length === 0 ||
+                (plData.trackCount && plData.tracks.length < plData.trackCount) ||
+                typeof plData.tracks[0] !== 'object' ||
+                !plData.tracks[0].path;
+
+            if (needsFetch) {
+                const res = await fetch(`/api/soundcloud/playlist/${playlist.id}`);
+                const data = await res.json();
+                if (!data.success || !data.playlist) {
+                    throw new Error(data.error || 'Failed to load playlist');
+                }
+                plData = data.playlist;
+                plData.isFullyLoaded = true;
+            }
+
+            const tracks = plData.tracks || [];
+            tracks.forEach(registerSoundCloudTrack);
+
+            currentSelectedPlaylistName = null;
+            currentPlaylist = [...tracks];
+
+            const coverUrl = plData.cover || plData.artwork_url || DEFAULT_COVER;
+            const artistName = plData.artist || (typeof plData.user === 'string' ? plData.user : plData.user?.username) || 'SoundCloud';
+            const metaInfo = `${tracks.length} track${tracks.length !== 1 ? 's' : ''} • SoundCloud Playlist`;
+
+            renderPlaylistView(plData.title || 'SoundCloud Playlist', artistName, metaInfo, coverUrl);
+
+            if (plData.description) {
+                renderDescriptionContent(plData.description, [], null, null, null);
+            } else if (detailDescription) {
+                detailDescription.classList.add('hidden');
+                detailDescription.innerHTML = '';
+            }
+        } catch (err) {
+            console.error('[SoundCloud] Failed to open playlist:', err);
+            if (typeof showToast === 'function') showToast(`Failed to open playlist: ${err.message}`);
+            if (songListContainer) {
+                songListContainer.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fa-solid fa-triangle-exclamation" style="color: #ff3366;"></i>
+                        <p>Error Loading Playlist</p>
+                        <span>${escapeHtml(err.message || 'Unable to fetch playlist tracks')}</span>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    async function openSoundCloudAlbum(album) {
+        if (!album || !album.id) return;
+
+        if (albumsGridContainer) albumsGridContainer.classList.add('hidden');
+        if (songListContainer) {
+            songListContainer.classList.remove('hidden');
+            songListContainer.style.display = '';
+            songListContainer.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <p>Loading Album...</p>
+                    <span>${escapeHtml(album.title || 'SoundCloud Album')}</span>
+                </div>
+            `;
+        }
+
+        if (detailCover) detailCover.style.borderRadius = '';
+        if (detailArtist) detailArtist.classList.remove('clickable-artist');
+
+        try {
+            let albData = album;
+            const needsFetch = !albData.isFullyLoaded ||
+                !albData.tracks ||
+                albData.tracks.length === 0 ||
+                (albData.trackCount && albData.tracks.length < albData.trackCount) ||
+                typeof albData.tracks[0] !== 'object' ||
+                !albData.tracks[0].path;
+
+            if (needsFetch) {
+                const res = await fetch(`/api/soundcloud/album/${album.id}`);
+                const data = await res.json();
+                if (!data.success || !data.playlist) {
+                    throw new Error(data.error || 'Failed to load album');
+                }
+                albData = data.playlist;
+                albData.isFullyLoaded = true;
+            }
+
+            const tracks = albData.tracks || [];
+            tracks.forEach(registerSoundCloudTrack);
+
+            currentSelectedPlaylistName = null;
+            currentPlaylist = [...tracks];
+
+            const coverUrl = albData.cover || albData.artwork_url || DEFAULT_COVER;
+            const artistName = albData.artist || (typeof albData.user === 'string' ? albData.user : albData.user?.username) || 'SoundCloud';
+            const yearStr = albData.year ? ` • ${albData.year}` : '';
+            const metaInfo = `${tracks.length} track${tracks.length !== 1 ? 's' : ''}${yearStr} • SoundCloud Album`;
+
+            renderPlaylistView(albData.title || 'SoundCloud Album', artistName, metaInfo, coverUrl);
+
+            if (albData.description) {
+                renderDescriptionContent(albData.description, [], null, null, null);
+            } else if (detailDescription) {
+                detailDescription.classList.add('hidden');
+                detailDescription.innerHTML = '';
+            }
+        } catch (err) {
+            console.error('[SoundCloud] Failed to open album:', err);
+            if (typeof showToast === 'function') showToast(`Failed to open album: ${err.message}`);
+            if (songListContainer) {
+                songListContainer.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fa-solid fa-triangle-exclamation" style="color: #ff3366;"></i>
+                        <p>Error Loading Album</p>
+                        <span>${escapeHtml(err.message || 'Unable to fetch album tracks')}</span>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    async function openSoundCloudArtist(artist) {
+        if (!artist || !artist.id) return;
+
+        if (albumsGridContainer) albumsGridContainer.classList.add('hidden');
+        if (songListContainer) {
+            songListContainer.classList.remove('hidden');
+            songListContainer.style.display = '';
+            songListContainer.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <p>Loading Artist...</p>
+                    <span>${escapeHtml(artist.name || artist.username || 'SoundCloud Artist')}</span>
+                </div>
+            `;
+        }
+
+        try {
+            const res = await fetch(`/api/soundcloud/artist/${artist.id}`);
+            const data = await res.json();
+            if (!data.success || !data.artist) {
+                throw new Error(data.error || 'Artist not found');
+            }
+
+            const art = data.artist;
+            const tracks = data.tracks || art.tracks || [];
+            const albums = data.albums || art.albums || [];
+            const playlists = data.playlists || art.playlists || [];
+
+            tracks.forEach(registerSoundCloudTrack);
+
+            currentSelectedPlaylistName = null;
+            currentPlaylist = [...tracks];
+
+            const avatarUrl = art.avatar || art.cover || DEFAULT_COVER;
+            const artistName = art.name || art.username || 'SoundCloud Artist';
+            const followersStr = art.followersCount ? `${Number(art.followersCount).toLocaleString()} followers • ` : '';
+            const metaInfo = `${followersStr}${tracks.length} tracks`;
+
+            renderPlaylistView(artistName, "SoundCloud Artist", metaInfo, avatarUrl);
+
+            // Circular avatar in header
+            if (detailCover) detailCover.style.borderRadius = '50%';
+            if (detailArtist) detailArtist.classList.remove('clickable-artist');
+
+            // Render bio/description if available
+            if (art.description) {
+                renderDescriptionContent(art.description, [], art.followersCount, null, art.permalink_url);
+            } else if (detailDescription) {
+                detailDescription.classList.add('hidden');
+                detailDescription.innerHTML = '';
+            }
+
+            // If the artist has albums or playlists, display a horizontal discography shelf right above the tracks
+            const allReleases = [...albums, ...playlists];
+            if (allReleases.length > 0 && songListContainer) {
+                const shelf = document.createElement('div');
+                shelf.className = 'sc-artist-shelf';
+                shelf.style.padding = '8px 12px 14px 12px';
+                shelf.style.borderBottom = '1px solid rgba(255, 255, 255, 0.08)';
+                shelf.style.marginBottom = '10px';
+                shelf.innerHTML = `
+                    <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.76rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+                        <span><i class="fa-solid fa-compact-disc"></i> Discography & Playlists (${allReleases.length})</span>
+                    </div>
+                    <div class="sc-cards-scroll" style="padding: 0;"></div>
+                `;
+                const scrollRow = shelf.querySelector('.sc-cards-scroll');
+                enableHorizontalScroll(scrollRow);
+                allReleases.forEach(rel => {
+                    const isAlb = rel.type === 'album' || rel.isAlbum;
+                    scrollRow.appendChild(createSoundCloudCard(rel, isAlb ? 'album' : 'playlist'));
+                });
+                songListContainer.prepend(shelf);
+            }
+        } catch (err) {
+            console.error('[SoundCloud] Failed to open artist:', err);
+            if (typeof showToast === 'function') showToast(`Failed to open artist: ${err.message}`);
+            if (songListContainer) {
+                songListContainer.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fa-solid fa-triangle-exclamation" style="color: #ff3366;"></i>
+                        <p>Error Loading Artist</p>
+                        <span>${escapeHtml(err.message || 'Unable to fetch artist')}</span>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    async function renderSoundCloudPanel(query) {
+        if (!isSoundCloudEnabled) {
+            searchResults.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-brands fa-soundcloud" style="color: var(--accent);"></i>
+                    <p>SoundCloud is Disabled</p>
+                    <span>Enable SoundCloud in Settings to browse and stream tracks.</span>
+                </div>
+            `;
+            return;
+        }
+
+        const cleanQuery = query ? query.trim() : '';
+
+        // Query is present: Perform Search
+        if (cleanQuery) {
+            searchResults.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <p>Searching SoundCloud...</p>
+                    <span>"${escapeHtml(cleanQuery)}"</span>
+                </div>
+            `;
+
+            if (soundCloudSearchTimeout) clearTimeout(soundCloudSearchTimeout);
+            soundCloudSearchTimeout = setTimeout(async () => {
+                try {
+                    if (soundCloudSubTab === 'all') {
+                        const res = await fetch(`/api/soundcloud/search?q=${encodeURIComponent(cleanQuery)}&type=all&limit=25`);
+                        const data = await res.json();
+                        if (!data.success) {
+                            throw new Error(data.error || 'Search failed');
+                        }
+
+                        const artists = data.artists || [];
+                        const albums = data.albums || [];
+                        const playlists = data.playlists || [];
+                        const tracks = data.tracks || [];
+
+                        if (artists.length === 0 && albums.length === 0 && playlists.length === 0 && tracks.length === 0) {
+                            renderNoResults();
+                            return;
+                        }
+
+                        tracks.forEach(registerSoundCloudTrack);
+                        searchResults.innerHTML = '';
+
+                        // 1. Tracks Section (vertical list)
+                        if (tracks.length > 0) {
+                            const trackHeader = document.createElement('div');
+                            trackHeader.className = 'sc-section-header';
+                            trackHeader.innerHTML = `
+                                <span class="sc-section-title"><i class="fa-solid fa-music"></i> Tracks (${tracks.length})</span>
+                                <button class="sc-section-more-btn" data-tab="tracks">See all <i class="fa-solid fa-chevron-right"></i></button>
+                            `;
+                            trackHeader.querySelector('.sc-section-more-btn').addEventListener('click', () => {
+                                setSoundCloudSubTab('tracks');
+                            });
+                            searchResults.appendChild(trackHeader);
+
+                            activeResults = tracks;
+                            renderedResultsCount = 0;
+                            appendMoreResults();
+                        }
+
+                        // 2. Albums Section (horizontal cards)
+                        if (albums.length > 0) {
+                            const albumHeader = document.createElement('div');
+                            albumHeader.className = 'sc-section-header';
+                            albumHeader.innerHTML = `
+                                <span class="sc-section-title"><i class="fa-solid fa-compact-disc"></i> Albums (${albums.length})</span>
+                                <button class="sc-section-more-btn" data-tab="albums">See all <i class="fa-solid fa-chevron-right"></i></button>
+                            `;
+                            albumHeader.querySelector('.sc-section-more-btn').addEventListener('click', () => {
+                                setSoundCloudSubTab('albums');
+                            });
+                            searchResults.appendChild(albumHeader);
+
+                            const albumScroll = document.createElement('div');
+                            albumScroll.className = 'sc-cards-scroll';
+                            enableHorizontalScroll(albumScroll);
+                            albums.forEach(alb => {
+                                albumScroll.appendChild(createSoundCloudCard(alb, 'album'));
+                            });
+                            searchResults.appendChild(albumScroll);
+                        }
+
+                        // 3. Playlists Section (horizontal cards)
+                        if (playlists.length > 0) {
+                            const playlistHeader = document.createElement('div');
+                            playlistHeader.className = 'sc-section-header';
+                            playlistHeader.innerHTML = `
+                                <span class="sc-section-title"><i class="fa-solid fa-list-ul"></i> Playlists (${playlists.length})</span>
+                                <button class="sc-section-more-btn" data-tab="playlists">See all <i class="fa-solid fa-chevron-right"></i></button>
+                            `;
+                            playlistHeader.querySelector('.sc-section-more-btn').addEventListener('click', () => {
+                                setSoundCloudSubTab('playlists');
+                            });
+                            searchResults.appendChild(playlistHeader);
+
+                            const playlistScroll = document.createElement('div');
+                            playlistScroll.className = 'sc-cards-scroll';
+                            enableHorizontalScroll(playlistScroll);
+                            playlists.forEach(pl => {
+                                playlistScroll.appendChild(createSoundCloudCard(pl, 'playlist'));
+                            });
+                            searchResults.appendChild(playlistScroll);
+                        }
+
+                        // 4. Artists Section (horizontal cards)
+                        if (artists.length > 0) {
+                            const artistHeader = document.createElement('div');
+                            artistHeader.className = 'sc-section-header';
+                            artistHeader.innerHTML = `
+                                <span class="sc-section-title"><i class="fa-solid fa-user"></i> Artists (${artists.length})</span>
+                                <button class="sc-section-more-btn" data-tab="artists">See all <i class="fa-solid fa-chevron-right"></i></button>
+                            `;
+                            artistHeader.querySelector('.sc-section-more-btn').addEventListener('click', () => {
+                                setSoundCloudSubTab('artists');
+                            });
+                            searchResults.appendChild(artistHeader);
+
+                            const artistScroll = document.createElement('div');
+                            artistScroll.className = 'sc-cards-scroll';
+                            enableHorizontalScroll(artistScroll);
+                            artists.forEach(art => {
+                                artistScroll.appendChild(createSoundCloudCard(art, 'artist'));
+                            });
+                            searchResults.appendChild(artistScroll);
+                        }
+                    } else {
+                        // Sub-tab specific search
+                        const res = await fetch(`/api/soundcloud/search?q=${encodeURIComponent(cleanQuery)}&type=${soundCloudSubTab}&limit=50`);
+                        const data = await res.json();
+                        if (!data.success) {
+                            throw new Error(data.error || 'Search failed');
+                        }
+
+                        searchResults.innerHTML = '';
+                        let items = [];
+                        if (soundCloudSubTab === 'tracks') {
+                            items = data.tracks || [];
+                            items.forEach(registerSoundCloudTrack);
+                        } else if (soundCloudSubTab === 'albums') {
+                            items = data.albums || [];
+                        } else if (soundCloudSubTab === 'playlists') {
+                            items = data.playlists || [];
+                        } else if (soundCloudSubTab === 'artists') {
+                            items = data.artists || [];
+                        }
+
+                        if (items.length === 0) {
+                            renderNoResults();
+                            return;
+                        }
+
+                        activeResults = items;
+                        renderedResultsCount = 0;
+                        appendMoreResults();
+                    }
+                } catch (err) {
+                    searchResults.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fa-solid fa-triangle-exclamation" style="color: #ff3366;"></i>
+                            <p>Search Failed</p>
+                            <span>${escapeHtml(err.message || 'Error fetching SoundCloud content')}</span>
+                        </div>
+                    `;
+                }
+            }, 300);
+            return;
+        }
+
+        // Empty query: Show User profile banner, User Playlists, and Likes
+        searchResults.innerHTML = `
+            <div class="empty-state">
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                <p>Loading SoundCloud...</p>
+            </div>
+        `;
+
+        try {
+            if (soundCloudSubTab === 'all' || soundCloudSubTab === 'tracks') {
+                const likesRes = await fetch('/api/soundcloud/likes?limit=40');
+                const likesData = await likesRes.json();
+                const tracks = likesData.tracks || [];
+                tracks.forEach(registerSoundCloudTrack);
+
+                let userPlaylists = [];
+                if (soundCloudSubTab === 'all') {
+                    try {
+                        const plRes = await fetch('/api/soundcloud/user/playlists');
+                        const plData = await plRes.json();
+                        if (plData.success && plData.playlists) {
+                            userPlaylists = plData.playlists;
+                        }
+                    } catch (e) {}
+                }
+
+                searchResults.innerHTML = '';
+
+                // User Profile Banner if connected
+                if (soundCloudUser && soundCloudSubTab === 'all') {
+                    const banner = document.createElement('div');
+                    banner.className = 'sc-user-banner';
+                    banner.innerHTML = `
+                        <img src="${soundCloudUser.avatar_url || DEFAULT_COVER}" class="sc-user-avatar" alt="${escapeHtml(soundCloudUser.username)}" onerror="this.src='${DEFAULT_COVER}'">
+                        <div class="sc-user-details">
+                            <div class="sc-user-name">${escapeHtml(soundCloudUser.username)}</div>
+                            <div class="sc-user-meta">${soundCloudUser.followers_count ? Number(soundCloudUser.followers_count).toLocaleString() + ' followers' : ''} ${soundCloudUser.likes_count ? '• ' + soundCloudUser.likes_count + ' likes' : ''}</div>
+                        </div>
+                    `;
+                    searchResults.appendChild(banner);
+                }
+
+                // User Playlists Section (if any)
+                if (userPlaylists.length > 0 && soundCloudSubTab === 'all') {
+                    const plHeader = document.createElement('div');
+                    plHeader.className = 'sc-section-header';
+                    plHeader.innerHTML = `
+                        <span class="sc-section-title"><i class="fa-solid fa-list-ul"></i> Your Playlists (${userPlaylists.length})</span>
+                        <button class="sc-section-more-btn" data-tab="playlists">See all <i class="fa-solid fa-chevron-right"></i></button>
+                    `;
+                    plHeader.querySelector('.sc-section-more-btn').addEventListener('click', () => {
+                        setSoundCloudSubTab('playlists');
+                    });
+                    searchResults.appendChild(plHeader);
+
+                    const plScroll = document.createElement('div');
+                    plScroll.className = 'sc-cards-scroll';
+                    enableHorizontalScroll(plScroll);
+                    userPlaylists.forEach(pl => {
+                        plScroll.appendChild(createSoundCloudCard(pl, 'playlist'));
+                    });
+                    searchResults.appendChild(plScroll);
+                }
+
+                // User Likes Header & Tracks
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'playlist-create-row';
+                headerDiv.style.justifyContent = 'space-between';
+                headerDiv.style.padding = '8px 12px';
+                headerDiv.style.background = 'color-mix(in srgb, var(--accent) 10%, transparent)';
+                headerDiv.style.borderColor = 'color-mix(in srgb, var(--accent) 25%, transparent)';
+                headerDiv.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px; font-size: 0.78rem; font-weight: 600; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <i class="fa-solid fa-heart" style="color: var(--accent);"></i>
+                        <span>SoundCloud Likes (${likesData.total || tracks.length})</span>
+                    </div>
+                    <button id="sc-load-all-likes-btn" title="Open as Playlist" style="background: color-mix(in srgb, var(--accent) 20%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); color: #ffffff; padding: 4px 10px; border-radius: 8px; font-size: 0.72rem; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                        <i class="fa-solid fa-play"></i> Play All
+                    </button>
+                `;
+                searchResults.appendChild(headerDiv);
+
+                const playAllBtn = headerDiv.querySelector('#sc-load-all-likes-btn');
+                if (playAllBtn) {
+                    playAllBtn.addEventListener('click', () => {
+                        currentPlaylist = [...tracks];
+                        renderPlaylistView("SoundCloud Likes", "SoundCloud Favorites", `${tracks.length} tracks`, tracks[0]?.cover || DEFAULT_COVER);
+                        if (tracks.length > 0) {
+                            playTrack(tracks[0].globalIndex);
+                        }
+                    });
+                }
+
+                if (tracks.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'empty-state';
+                    empty.innerHTML = `
+                        <i class="fa-brands fa-soundcloud" style="color: var(--accent);"></i>
+                        <p>SoundCloud Connected</p>
+                        <span>Type in the search box above to find tracks, albums, playlists, or artists!</span>
+                    `;
+                    searchResults.appendChild(empty);
+                    return;
+                }
+
+                activeResults = tracks;
+                renderedResultsCount = 0;
+                appendMoreResults();
+            } else if (soundCloudSubTab === 'playlists') {
+                const plRes = await fetch('/api/soundcloud/user/playlists');
+                const plData = await plRes.json();
+                const userPlaylists = (plData.success && plData.playlists) ? plData.playlists : [];
+                searchResults.innerHTML = '';
+                if (userPlaylists.length === 0) {
+                    searchResults.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fa-solid fa-list-ul"></i>
+                            <p>No Playlists Found</p>
+                            <span>Search for any public playlist on SoundCloud using the search bar above.</span>
+                        </div>
+                    `;
+                    return;
+                }
+                activeResults = userPlaylists;
+                renderedResultsCount = 0;
+                appendMoreResults();
+            } else {
+                // albums or artists tab with empty query
+                const capitalizedTab = soundCloudSubTab.charAt(0).toUpperCase() + soundCloudSubTab.slice(1);
+                searchResults.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fa-brands fa-soundcloud" style="color: var(--accent);"></i>
+                        <p>Search ${capitalizedTab}</p>
+                        <span>Type in the search box above to discover SoundCloud ${soundCloudSubTab}.</span>
+                    </div>
+                `;
+            }
+        } catch (err) {
+            searchResults.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-brands fa-soundcloud" style="color: var(--accent);"></i>
+                    <p>SoundCloud Ready</p>
+                    <span>Type in the search box above to search songs, albums, playlists, or artists.</span>
+                </div>
+            `;
+        }
+    }
+
+    // SoundCloud Event Listeners in Settings
+    const toggleSoundCloud = document.getElementById('toggle-soundcloud');
+    const soundCloudTokenInput = document.getElementById('soundcloud-token-input');
+    const soundCloudTokenSaveBtn = document.getElementById('soundcloud-token-save-btn');
+    const soundCloudRefreshBtn = document.getElementById('soundcloud-refresh-btn');
+
+    if (toggleSoundCloud) {
+        toggleSoundCloud.addEventListener('change', async (e) => {
+            try {
+                const enabled = e.target.checked;
+                await fetch('/api/soundcloud/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled })
+                });
+                await syncSoundCloudStatus();
+                if (typeof showToast === 'function') {
+                    showToast(enabled ? 'SoundCloud enabled' : 'SoundCloud disabled');
+                }
+            } catch (err) {
+                console.error('SoundCloud toggle error:', err);
+            }
+        });
+    }
+
+    if (soundCloudTokenSaveBtn && soundCloudTokenInput) {
+        soundCloudTokenSaveBtn.addEventListener('click', async () => {
+            const token = soundCloudTokenInput.value.trim();
+            if (!token) {
+                if (typeof showToast === 'function') showToast('Please enter an OAuth token');
+                return;
+            }
+
+            soundCloudTokenSaveBtn.disabled = true;
+            soundCloudTokenSaveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+            try {
+                const res = await fetch('/api/soundcloud/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: true, oauthToken: token })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to save token');
+                }
+
+                soundCloudTokenInput.value = '';
+                await syncSoundCloudStatus();
+                if (typeof showToast === 'function') {
+                    showToast(`SoundCloud connected: ${data.config?.user?.username || 'Success'}`);
+                }
+            } catch (err) {
+                alert(`SoundCloud connection error: ${err.message}`);
+                await syncSoundCloudStatus();
+            } finally {
+                soundCloudTokenSaveBtn.disabled = false;
+                soundCloudTokenSaveBtn.textContent = 'SAVE';
+            }
+        });
+    }
+
+    if (soundCloudRefreshBtn) {
+        soundCloudRefreshBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await syncSoundCloudStatus();
+            if (typeof showToast === 'function') {
+                showToast('SoundCloud status refreshed');
+            }
+        });
+    }
+
+    // Initialize SoundCloud on startup
+    loadSoundCloudCache();
+    initSoundCloudFilterTabs();
+    syncSoundCloudStatus();
+
+    // ==========================================
     // 13. INDEXEDDB FOR BG IMAGE STORAGE & SLIDERS
     // ==========================================
     const DB_NAME = 'MoonPlayerDB';
@@ -5789,7 +7362,9 @@ document.addEventListener('DOMContentLoaded', () => {
             artist: song.artist || fileInfo.artist || pathInfo.artist || "Unknown Artist",
             album: song.album || pathInfo.album || "Unknown Album",
             year: song.year || "",
-            cover: song.folderCoverUrl || song.cover || DEFAULT_COVER
+            cover: song.folderCoverUrl || song.cover || DEFAULT_COVER,
+            isSoundCloud: song.isSoundCloud || false,
+            source: song.source || undefined
         };
     }
 
@@ -5909,6 +7484,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             allSongs = processedSongs;
+            restoreSoundCloudTracksToAllSongs();
             detectAndFixInvertedSongs(allSongs);
             buildLibraries();
             setupFuseSearch();
@@ -6284,6 +7860,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!dashboardLayout || !maximizeBtn) return;
             const isMaximized = dashboardLayout.classList.toggle('maximized-view');
             maximizeBtn.classList.toggle('maximized', isMaximized);
+            const mainContainer = document.querySelector('.main-container');
+            const bioCard = document.querySelector('.bio-card');
+            if (mainContainer) mainContainer.classList.toggle('has-maximized', isMaximized);
+            if (bioCard) bioCard.classList.toggle('has-maximized', isMaximized);
             const icon = maximizeBtn.querySelector('i');
             
             if (isMaximized) {

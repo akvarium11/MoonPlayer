@@ -44,6 +44,13 @@ A sleek, modern desktop audio player featuring an interactive Dynamic Island, 10
 
 <br/><br/>
 
+### ☁️ SoundCloud Streaming, Wave & Unified Discovery
+*Search and stream tracks, full playlists, albums, and artist discographies directly from SoundCloud with automatic similar track Wave stations and lossless UI.*
+<br/>
+<img src="https://files.catbox.moe/sd5f97.png" alt="MoonPlayer SoundCloud Showcase" width="95%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);" />
+
+<br/><br/>
+
 ### 🏝️ Interactive Dynamic Island (Expanded View)
 *Floating Dynamic Island with spinning vinyl turntable, real-time audio spectrum visualizer, synced lyrics, and queue.*
 <br/>
@@ -59,6 +66,7 @@ A sleek, modern desktop audio player featuring an interactive Dynamic Island, 10
 
 | Feature | Description |
 | :--- | :--- |
+| ☁️ **SoundCloud Streaming & Discovery** | Seamless ad-free streaming via SoundCloud API v2. Explore your personal likes and playlists, browse full artist discographies, listen to algorithmic Wave stations of similar tracks, and download tracks with ID3 tags directly into your local library. |
 | 🏝️ **Floating Dynamic Island** | Responsive capsule floating at the top. Expands into a full-featured player with spinning vinyl animation, live audio visualizer, timeline scrub, lyrics switcher, and queue drawer. Compact mode displays mini-waveforms and track info. |
 | 🎚️ **10-Band ISO Equalizer** | Studio-grade Web Audio API equalizer covering standard ISO frequencies (`32Hz` to `16kHz`). Features Preamp gain control (`-12dB` to `+12dB`), live spline curve (АЧХ) canvas, 10 crafted presets, and custom preset saving. |
 | 💎 **Lossless & Multi-Format** | First-class support for **FLAC Lossless** audio with an elegant `[F]` vector badge, plus `.mp3`, `.wav`, `.ogg`, `.m4a`, `.aac`, `.opus`, and `.webm`. |
@@ -184,6 +192,23 @@ chmod +x build_linux.sh
 4. Close settings. MoonPlayer will automatically index your songs, fetch artwork, and populate your library.
 5. Click on any track or album to start playing. Click the **Dynamic Island** at the top to expand the player, switch lyrics, adjust the equalizer, or view your queue!
 
+<br/>
+
+### ☁️ Connecting SoundCloud (How to get your OAuth Token)
+
+MoonPlayer integrates directly with SoundCloud to let you search, stream, generate Wave stations of similar tracks, and download music without third-party ads.
+
+1. Open MoonPlayer **Settings** (⚙️).
+2. Enable the **SoundCloud** toggle.
+3. Obtain your personal `oauth_token`:
+   - In any web browser (Chrome, Edge, Firefox), navigate to [soundcloud.com](https://soundcloud.com) and log in to your account.
+   - Press <kbd>F12</kbd> (or right-click -> *Inspect*) to open Developer Tools.
+   - Go to the **Application** tab (or **Storage** in Firefox) -> Expand **Cookies** -> Select `https://soundcloud.com`.
+   - In the cookie list, search for `oauth_token`.
+   - Copy the cookie value (starts with `2-` e.g., `2-325...`).
+4. Paste the token into the **OAuth Token** field in MoonPlayer Settings and click **SAVE**.
+5. Once connected, your username and avatar will appear with a green status indicator. You can now browse your personal likes, created playlists, search tracks/artists/albums, launch "Wave" stations on any song, or download songs directly to your library!
+
 ---
 
 ## ⌨️ Keyboard Shortcuts & Controls
@@ -232,6 +257,13 @@ This project is licensed under the **GPL-3.0 License** — see the [LICENSE](LIC
 
 <br/><br/>
 
+### ☁️ Интеграция с SoundCloud, умная Волна и профили артистов
+*Полноценный стриминг, доступ к своим лайкам и плейлистам, поиск альбомов и дискографий, автогенерация «Волны» похожих треков и скачивание в коллекцию.*
+<br/>
+<img src="https://files.catbox.moe/sd5f97.png" alt="Интеграция SoundCloud в MoonPlayer" width="95%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);" />
+
+<br/><br/>
+
 ### 🏝️ Интерактивный Dynamic Island (Раскрытый режим)
 *Плавающий остров с анимацией вращающейся виниловой пластинки, живым спектральным визуализатором, синхронизированными текстами и очередью.*
 <br/>
@@ -247,6 +279,7 @@ This project is licensed under the **GPL-3.0 License** — see the [LICENSE](LIC
 
 | Возможность | Описание |
 | :--- | :--- |
+| ☁️ **SoundCloud и умная Волна** | Бесшовный стриминг музыки без рекламы. Доступ к вашим лайкам и плейлистам, навигация по дискографиям исполнителей, автоматическая «Волна» с подбором похожих треков и скачивание в локальную коллекцию с ID3v2 тегами и обложками $500\times500$. |
 | 🏝️ **Интерактивный Dynamic Island** | Плавающий «остров» в верхней части экрана. Плавно разворачивается в полноценный аудиоплеер с анимированным винилом, спектрограммой, таймлайном, текстами песен и очередью воспроизведения. В компактном виде отображает мини-волну и текущий трек. |
 | 🎚️ **10-полосный ISO эквалайзер** | Студийный эквалайзер на Web Audio API по стандарту ISO (`32 Гц` — `16 кГц`). Регулировка предусиления Preamp (`от -12 дБ до +12 дБ`), живой график АЧХ (частотной характеристики), 10 готовых пресетов и сохранение собственных настроек. |
 | 💎 **Lossless и все форматы** | Полноценная поддержка **FLAC** с аккуратным векторным бейджем `[F]`, а также `.mp3`, `.wav`, `.ogg`, `.m4a`, `.aac`, `.opus` и `.webm`. |
@@ -371,6 +404,23 @@ chmod +x build_linux.sh
 3. В поле **Server Music Folders** укажите абсолютный путь к папке с музыкой (например, `D:\Music` или `/home/user/Music`) и нажмите **ADD**.
 4. Закройте настройки. Плеер автоматически проиндексирует треки, подтянет метаданные и обложки.
 5. Нажмите на любой трек для воспроизведения. Нажмите на **Dynamic Island** вверху экрана, чтобы открыть расширенную панель, включить текст песни, настроить эквалайзер или изменить очередь!
+
+<br/>
+
+### ☁️ Подключение SoundCloud (Как получить OAuth Token)
+
+MoonPlayer позволяет искать, слушать онлайн, запускать «Волну» рекомендаций и скачивать треки прямо из SoundCloud без рекламы.
+
+1. Откройте **Настройки** (⚙️ в правом верхнем углу).
+2. Включите тумблер **SoundCloud**.
+3. Получите ваш персональный `oauth_token`:
+   - В любом браузере откройте [soundcloud.com](https://soundcloud.com) и войдите в свой аккаунт.
+   - Нажмите клавишу <kbd>F12</kbd> (или правой кнопкой мыши -> *Просмотреть код*), чтобы открыть Инструменты разработчика (DevTools).
+   - Перейдите во вкладку **Application** (в Firefox — **Хранилище / Storage**) -> раскройте слева раздел **Cookies** -> выберите `https://soundcloud.com`.
+   - Найдите в списке cookie с именем `oauth_token`.
+   - Скопируйте его значение (начинается на `2-`, например `2-325...`).
+4. Вставьте скопированный токен в поле **OAuth Token** в настройках MoonPlayer и нажмите **SAVE**.
+5. Плеер подключится к вашему профилю (появится ваш никнейм и зеленый индикатор). Теперь во вкладке SoundCloud вам доступны ваши плейлисты, любимые треки, запуск «Волны» с похожей музыкой и скачивание треков!
 
 ---
 
