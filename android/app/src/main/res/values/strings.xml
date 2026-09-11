@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">MoonPlayer</string>
+    <string name="channel_name">MoonPlayer Playback</string>
+    <string name="channel_description">Active media playback controls</string>
+</resources>

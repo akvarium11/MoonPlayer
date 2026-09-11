@@ -43,3 +43,14 @@ webview2_sdk/
 # Build artifacts
 dist/
 
+# Android build & cache
+.gradle/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.cxx/
+android/app/.cxx/
+*.apk
+*.aab
+

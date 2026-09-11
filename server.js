@@ -719,6 +719,17 @@ app.get('/api/soundcloud/search', async (req, res) => {
     }
 });
 
+// Get SoundCloud track metadata by ID
+app.get('/api/soundcloud/track/:id', async (req, res) => {
+    try {
+        const track = await soundcloudService.getTrack(req.params.id);
+        if (!track) return res.status(404).json({ success: false, error: 'Track not found' });
+        res.json({ success: true, track });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Get SoundCloud playlist or album by ID
 app.get(['/api/soundcloud/playlist/:id', '/api/soundcloud/album/:id'], async (req, res) => {
     try {

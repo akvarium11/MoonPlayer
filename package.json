@@ -1,6 +1,6 @@
 {
   "name": "moonplayer",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Local browser-based music player with dynamic island and smart search",
   "main": "main.js",
   "scripts": {
@@ -9,6 +9,7 @@
     "server": "node server.js",
     "build": "electron-builder --win portable",
     "build:installer": "electron-builder --win nsis",
+    "build:android": "cd android && .\\gradlew.bat assembleDebug",
     "dist": "electron-builder"
   },
   "keywords": [],

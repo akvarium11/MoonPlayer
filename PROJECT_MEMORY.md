@@ -225,6 +225,127 @@ npm run server       # Запуск только фонового сервера
      - **Починка Unpause**: если при нажатии на Play/Unpause аудиоэлемент находится в состоянии ошибки (`bgAudio.error`), сброшенного источника (`NETWORK_NO_SOURCE`) или вызов `play()` отклоняется промисом, обработчик больше не молчит, а автоматически перезагружает и запускает трек через `playTrack(currentlyPlayingIndex, 0, true)`.
      - **Сторожевой таймер (Watchdog)**: добавлен таймаут 7 секунд, предотвращающий вечное зависание флага `isTrackLoading`, а клик по текущей песне в состоянии паузы/ошибки не блокируется, а принудительно перезапускает воспроизведение.
 
+9. **Android Edition (.apk) & Architecture Port (2026-09)**:
+   - **Архитектура Android**:
+     - Нативный Android WebView шелл (`android/`) на Kotlin со встроенным легковесным HTTP-сервером `NanoHTTPD` на `127.0.0.1:7644`.
+     - Потоковый HTTP-прокси для SoundCloud в `WebServer.kt`: стриминг аудио с CDN CloudFront проксируется через локальный сервер с поддержкой Range-запросов (`206 Partial Content`) вместо HTTP 302 редиректа. Это устранило CORS-глушение звука в Web Audio API и бесконечную анимацию загрузки визуализатора при воспроизведении.
+     - Фоновый сервис воспроизведения `MusicService` (Foreground Service) с поддержкой `MediaSessionCompat` и уведомления в шторке.
+     - Двусторонний мост `@JavascriptInterface` (`AndroidBridge` / `AndroidBridgeCallbacks`) для передачи статуса воспроизведения и обработки аппаратной кнопки «Назад».
+   - **Сборка**:
+     - Собрано приложение `dist/MoonPlayer.apk` (~7.4 MB) командой `npm run build:android`.
+
+10. **Mobile Polish & Media System Enhancements (2026-09)**:
+    - **SoundCloud Toggle Fix**: В `SoundCloudService.kt` состояние `enabled` отвязано от наличия токена (больше не принудительно сбрасывается в `false` при пустом токене). Пользователь может включить интеграцию, ввести и сохранить токен. В `script.js` добавлен статус "Enter OAuth token to connect", предотвращающий самопроизвольное выключение тумблера.
+    - **Адаптивность Настроек**: Уменьшены отступы `.settings-content` на мобильных экранах (до `16px 12px`), добавлены `overflow-x: hidden` для `.modal-body` и `min-width: 0` для всех flex-инпутов и кнопок. Модальные окна prompt (`#eq-preset-prompt-modal`, `#playlist-prompt-modal`, `#confirm-modal`) теперь адаптивно сжимаются до `max-width: 92vw`.
+    - **Лимит длины заголовков во view**: В `renderPlaylistView` для `#detail-title` добавлен лимит по символам (28 символов) с троеточием и сохранением полного названия в атрибуте `title`. В CSS для `.detail-title` включен `text-overflow: ellipsis; white-space: nowrap`.
+    - **Остановка при звуке на 0 (Pause on Zero Volume)**: В настройки добавлена опция «Pause When Volume is 0». На Android реализован `BroadcastReceiver` на `android.media.VOLUME_CHANGED_ACTION` с проверкой `AudioManager.STREAM_MUSIC`. При громкости 0 трек ставится на паузу; при увеличении громкости — воспроизведение автоматически продолжается. Добавлен фоллбэк для браузера/десктопа по событию `volumechange`.
+    - **Полноценное системное медиа-уведомление**: В `MusicService.kt` интегрированы:
+      - Таймлайн и перемотка (scrubber): передача `positionMs`, `durationMs` в `MediaMetadataCompat.METADATA_KEY_DURATION` и `PlaybackStateCompat.setState` с поддержкой `ACTION_SEEK_TO` и `onSeekTo`.
+      - Действие Лайк: кастомное действие `ACTION_LIKE` и кнопка в шторке с векторными иконками `ic_heart_filled` / `ic_heart_outline`.
+      - Обложка трека: динамическая загрузка с гарантированным фоллбэком на логотип приложения `R.drawable.ic_launcher`.
+    - **Починка клика по Dynamic Island**: Удалены ошибочные обработчики `setMobileView('details')` с `#mini-cover` и `#mini-track-title`, из-за которых клик по острову для его раскрытия принудительно переключал страницу на детальный вид.
+    - **Логотип плеера вместо битых картинок**: В `WebServer.kt` эндпоинт `/api/flac-cover` теперь отдает `/assets/icon.png` вместо HTTP 404. Во всех компонентах UI (`.result-img`, `.grid-album-cover`, `#track-cover`, `#mini-cover`, `#detail-cover`) добавлены обработчики `onerror` с подстановкой `DEFAULT_COVER`.
+
+11. **Mobile Layout Restoration & Media/View Navigation (2026-09)**:
+    - **Устранение сплющивания интерфейса (Card Squish Fix)**: Устранена специфичность CSS `.main-container.tilt-enabled`, которая переопределяла мобильный media query и применяла десктопные 100px padding слева и справа на мобильных экранах. В `@media (max-width: 900px)` добавлены строгие правила `padding: 68px 10px 10px 10px !important`, `width: 100vw !important` и `overflow: hidden !important`, а в `script.js` при наличии `window.AndroidBridge` 3D tilt и cursor glow принудительно отключаются (`tilt-enabled` удаляется). Карточка теперь занимает 100% ширины экрана смартфона без черных полей по бокам.
+    - **Восстановление системы Media / View**: В разметку `index.html` и стили `style.css` возвращен селектор вкладок `#mobile-nav-tabs` с кнопками «Media» (`#tab-btn-library`) и «View» (`#tab-btn-details`). Во вкладке Media отображается левая панель со списком треков, альбомов и поиском на всю высоту экрана. Во вкладке View отображаются обложка, плеер и список треков выбранного альбома/плейлиста. Кнопка возврата `<` (`#nav-back-btn`), клики по карточкам и аппаратная кнопка «Назад» на Android плавно переключают экраны через `setMobileView`.
+    - **Очистка настроек Android от десктопных элементов**: Из модального окна настроек для Android полностью удалены отсутствующие на смартфонах функции: «3D Card Tilt Effect», «Cursor Glow Effect», «Discord Rich Presence» и «Server Music Folders» / «Clear all music». Добавлен блок «Device Music Library» с кнопкой ручного перезапуска сканирования памяти устройства (`#rescan-library-settings-btn`).
+    - **Сборка APK**: Собрана обновленная версия `dist/MoonPlayer.apk` (~7.3 MB).
+
+12. **High-Performance Animations & 60-120 FPS Optimization (2026-09)**:
+    - **Visualizer Lifecycle & Layout Thrashing Elimination**:
+      - В `script.js` убран вызов `resizeCanvas()` из каждого кадра анимации `drawVisualizer()` (ранее вызывался 60-120 раз/сек и опрашивал `clientWidth`/`clientHeight`, вызывая принудительный reflow на каждом кадре). Ресайз канваса теперь срабатывает строго по событию `resize` или при фактическом раскрытии острова.
+      - Устранены 32 вызова `getComputedStyle(document.documentElement)` на каждый кадр; значение `--accent` кэшируется в `cachedAccentColor` и обновляется только при смене цветовой схемы.
+      - Визуализатор полностью останавливается (`cancelAnimationFrame`), когда трек на паузе или когда Dynamic Island находится в компактном (свёрнутом) режиме, освобождая 100% ресурсов CPU и GPU.
+    - **Шелковистый 60/120 FPS морфинг Dynamic Island**:
+      - `.dynamic-island` и `.dynamic-island-container` переведены на аппаратное GPU-композитирование: `transform: translate3d(0, 0, 0)`, `contain: layout paint`, `-webkit-backface-visibility: hidden`.
+      - Из перехода `transition` удалена интерполяция тяжелой размытой тени `box-shadow` (ранее вызывала софтверную растеризацию размытия на каждом кадре морфинга). Используется стабильная контрастная тень и кривая `cubic-bezier(0.2, 0.9, 0.3, 1)` длительностью `0.38s`.
+      - Исправлен скачок отступов: убран `padding: 8px 12px !important` с `.dynamic-island.expanded` на мобильных (внутренние отступы сохранены на `.island-expanded`), что исключило визуальные дерганья в момент начала трансформации.
+      - Добавлена плавная анимация затухания/появления содержимого: `.island-compact` скрывается за 0.2s, а `.island-expanded` плавно проявляется за 0.28s после завершения изменения геометрии.
+    - **Оптимизация фоновых эффектов на Android**:
+      - На мобильных устройствах и в Android WebView тяжелые фоновые снежинки по умолчанию отключены; при включении снежинки перемещаются через `translate3d` без фильтра `blur()`, снижавшего FPS на мобильных GPU.
+      - Для `body.is-android .bio-card` и в `@media (max-width: 900px)` энергоемкий `backdrop-filter: blur(35px)` заменен на сплошной темный фон `#0d0d10`, устранены накладные расходы на постоянный рендеринг размытия всего экрана.
+      - В `document.addEventListener('mousemove')` добавлена мгновенная отсечка для мобильных устройств, предотвращающая лишние вызовы `getBoundingClientRect()` при свайпах и касаниях.
+    - **Аппаратное ускорение WebView**:
+      - В `MainActivity.kt` включены флаги `FLAG_HARDWARE_ACCELERATED`, `setLayerType(View.LAYER_TYPE_HARDWARE, null)` и приоритет `RenderPriority.HIGH`.
+      - Viewport в `index.html` дополнен параметрами `maximum-scale=1.0, user-scalable=no, viewport-fit=cover` для устранения 300мс задержки кликов и лишних проверок жестов.
+    - **Сборка APK**: Собрана высокопроизводительная версия `dist/MoonPlayer.apk`.
+
+13. **Custom Background Upload Fix on Android (2026-09)**:
+    - **Поддержка системного выбора файлов в WebView**: В `MainActivity.kt` в `WebChromeClient` реализован метод `onShowFileChooser(...)` с использованием `ActivityResultContracts.StartActivityForResult()`, `Intent.createChooser` и `Intent.ACTION_GET_CONTENT` (`image/*`). Ранее метод отсутствовал в `WebChromeClient`, из-за чего клик по скрытому `<input type="file">` игнорировался движком Android WebView и окно галереи не открывалось.
+    - **Разрешение на чтение изображений**: В `AndroidManifest.xml` и в `requestMediaPermissions()` добавлен запрос `READ_MEDIA_IMAGES` для Android 13+.
+    - **Оптимизация и автономное сохранение фото**: В `script.js` добавлена функция `processBgImageFile(file)`: если пользователь загружает фото высокого разрешения с камеры смартфона (более 1920px), изображение пропорционально масштабируется через Canvas и сохраняется в формате JPEG. Кроме того, файл преобразуется в отвязанный от временных URI `Blob`, что гарантирует его вечное сохранение в IndexedDB и мгновенную загрузку при последующих перезапусках приложения.
+    - **Просвечивание кастомного фона**: Для `body.has-custom-bg .bio-card` на смартфонах включен полупрозрачный фон `rgba(13, 13, 16, 0.72)` с легким размытием `8px`, благодаря чему загруженное фоновое изображение теперь красиво видно сквозь интерфейс плеера (в режиме без фона карточка остается сплошной `#0d0d10` для максимального FPS).
+    - **Сборка APK**: Обновлен файл `dist/MoonPlayer.apk`.
+
+14. **Preloader 0% Freeze / Temporal Dead Zone Fix (2026-09)**:
+    - **Причина зависания на 0%**: При запуске приложения на этапе `DOMContentLoaded` вызывалась функция `updateAccentColor(accentColor)` на строке 86. Внутри этой функции производилось присваивание `cachedAccentColor = color;`. Однако переменная `let cachedAccentColor = '#ffffff';` была объявлена ниже (на строке 88). Согласно спецификации ECMAScript, переменные `let` до момента их лексической декларации находятся в Temporal Dead Zone (TDZ). Из-за этого обращение выбрасывало необработанное исключение `ReferenceError: Cannot access 'cachedAccentColor' before initialization`.
+    - **Последствия ошибки**: Исключение прерывало выполнение всего блока `DOMContentLoaded`, в результате чего интервал прелоадера (`setInterval(..., 100)`) так и не запускался, а интерфейс плеера оставался заблокирован на 0% как на ПК, так и на Android.
+    - **Исправление**: Декларация `let cachedAccentColor = accentColor;` перенесена вверх к чтению акцентного цвета из `localStorage` (до первого вызова `updateAccentColor`). Синтаксис и запуск проверены через Node.js с эмуляцией DOM.
+    - **Синхронизация и билд**: Изменения синхронизированы в `public/script.js` и `android/app/src/main/assets/script.js`. APK пересобран и сохранен в `dist/MoonPlayer.apk`.
+
+15. **Mobile Track List Layout & SoundCloud in Playlists/Likes Fixes (2026-09)**:
+    - **Съезжание песен влево на мобильных и пустая область справа (Mobile Track Row Fix)**:
+      - **Причина**: На экранах $\le 900$px и в портретной ориентации `.song-album` имел свойство `flex: 0.8`, которое забирало почти половину горизонтальной ширины строки под колонку альбома, даже когда у трека не было альбома или поле было пустым. Из-за этого названия треков и имена артистов сплющивались до 5-6 букв (`unkno...`). Кроме того, контейнер `.song-actions` на смартфонах не имел состояния `:hover` и оставался скрытым с `opacity: 0; pointer-events: none;`, забирая при этом ~80px невидимого пустого места в потоке после длительности. Длительность `.song-duration` не имела `margin-left: auto;`, поэтому висела посреди строки, создавая визуальный эффект пустоты справа.
+      - **Решение**: В `@media (max-width: 900px), (orientation: portrait)` для `.song-item`:
+        - Колонка `.song-album` полностью скрыта (`display: none !important;`), освобождая до 250px ширины под заголовок и имя артиста.
+        - Блок `.song-main-info` расширен на всю доступную ширину (`flex: 1 1 0% !important; min-width: 0 !important;`).
+        - Длительность `.song-duration` выровнена к правому краю (`margin-left: auto !important;`).
+        - Блок `.song-actions` сделан видимым и интерактивным (`opacity: 1 !important; pointer-events: auto !important; margin-left: 6px !important;`).
+        - Добавлена кнопка трёх точек `⋮` (`.more-btn`) для вызова контекстного меню трека.
+        - Добавлена поддержка долгого нажатия (touch long-press) на строку `.song-item` для открытия меню действий на сенсорных экранах.
+        - Аналогично исправлены кнопки действий `.result-actions` в результатах поиска.
+    - **Отображение треков SoundCloud в плейлистах и лайках**:
+      - **Причина**: Функция `selectPlaylist()` искала сохраненные пути (`soundcloud:<id>`) в пуле `allSongs` и кэше `soundCloudTracksCache`. Если локальная библиотека была пустой (например, на Android при отсутствии локальных папок или до окончания сканирования тегов) либо кэш `localStorage` сбрасывался/переполнялся из-за тяжелых объектов треков, `filter(Boolean)` безвозвратно удалял треки SoundCloud из массива `playlistSongs`. В результате в списке плейлистов отображалось корректное число треков (например, «5 tracks»), но при открытии плейлист был пуст («No songs in this list»).
+      - **Решение**:
+        - В `selectPlaylist()` треки SoundCloud теперь **никогда не отбрасываются**. Если трека нет в пуле и кэше, мгновенно создается легковесный fallback-объект трека SoundCloud (`isSoundCloud: true, isLoadingMetadata: true`), регистрируется в реестре и отображается в списке.
+        - Добавлен асинхронный фоновый резолвинг `fetchMissingSoundCloudTracks(ids, playlistName)`: опрашивает новый эндпоинт `/api/soundcloud/track/:id` и при получении метаданных обновляет название, обложку, артиста и длительность без перезагрузки страницы и без сброса позиции скролла (`updateCurrentPlaylistDOM()`).
+        - В `server.js` и `soundcloud_service.js` (Node.js) добавлен метод `getTrack(id)` и эндпоинт `GET /api/soundcloud/track/:id`.
+        - В `WebServer.kt` и `SoundCloudService.kt` (Android Kotlin) добавлен метод `getTrack(id)` и обработка маршрута `GET /api/soundcloud/track/*`.
+        - В `script.js` функция `saveSoundCloudCache()` теперь фильтрует и сохраняет только компактные метаданные (до 300 треков), предотвращая ошибки `QuotaExceededError` в `localStorage`.
+        - `restoreSoundCloudTracksToAllSongs()` вызывается сразу при инициализации `DOMContentLoaded`, а также при пустой локальной библиотеке и ошибках сканирования сервера.
+        - В контекстное меню трека добавлена опция «Remove from this playlist» при просмотре плейлиста (включая «Liked»).
+        - Все изменения синхронизированы между веб-клиентом (`public/`) и Android assets (`android/app/src/main/assets/`).
+
+16. **Mobile Media/View Bottom Navigation Dock & Island Collision Fix (2026-09)**:
+    - **Проблема**: Кнопки переключения «Media» и «View» на смартфонах располагались в шапке карточки (`.card-header`). Динамический остров (`.dynamic-island-container`) зафиксирован по центру сверху (`top: 20px`). При разворачивании острова (высота от 125px до 290px для плеера, очереди или текста песен) он полностью перекрывал шапку и делал кнопки Media / View недоступными. Кроме того, на современных вытянутых смартфонах тянуться пальцем в самый верх экрана одной рукой было эргономически неудобно.
+    - **Архитектурное решение**:
+      - Из `.card-header` удален блок `.mobile-nav-tabs`. Шапка на мобильных устройствах стала чистой и просторной: слева логотип MoonPlayer, справа кнопки эквалайзера и настроек. Компактный динамический остров свободно парит в верхнем пространстве, не конфликтуя с элементами интерфейса.
+      - Внизу карточки (`.bio-card`), сразу под основным рабочим контейнером `.dashboard-layout`, реализован парящий док навигации `.mobile-nav-bar` с кнопками `.mobile-nav-item` («Media» и «View»).
+      - Док физически изолирован от динамического острова: остров находится на `y = 20-310px`, а док расположен у нижнего края экрана. Перекрытие исключено при любых состояниях острова.
+      - Док выполнен в современном capsule/dock стиле: темный стеклянный фон с блюром (`rgba(18, 18, 24, 0.92)`, `backdrop-filter: blur(20px)`), скругление 30px, акцентная активная кнопка (`var(--accent)`) с легким масштабированием иконки, тактильный отклик при нажатии.
+      - Идеальная эргономика «зоны большого пальца» (thumb zone) в соответствии со стандартами современных мобильных музыкальных приложений (Spotify, Apple Music, YouTube Music).
+      - На десктопе (`> 900px`) док полностью скрыт (`display: none !important`), привычный двухколоночный десктопный интерфейс остался без изменений.
+      - В `setMobileView()` в `script.js` добавлен автоматический возврат Dynamic Island в компактное состояние при переключении вкладок (если остров не закреплен на булавку-замок), гарантируя мгновенный доступ к поиску и контенту.
+      - Полная синхронизация с Android: изменения перенесены в `android/app/src/main/assets/`. Собрана обновленная версия `dist/MoonPlayer.apk` (~7.4 MB).
+
+17. **Mobile 60-120 FPS Playback Optimization, Background Stretch & SoundCloud Album Fixes (2026-09)**:
+    - **Устранение просадки FPS до 15 при воспроизведении музыки (Mobile Playback Optimization)**:
+      - **Причина лагов**: В `script.js` событие `timeupdate` каждую секунду вызывало `syncAndroidPlayback()`, которое через `AndroidBridge.updatePlaybackState` отправляло `ACTION_UPDATE` в фоновый сервис `MusicService.kt`. Внутри сервиса каждую секунду порождался новый фоновый поток (`thread`), который выполнял HTTP-запрос к встроенному веб-серверу за обложкой, повторно декодировал bitmap (`BitmapFactory.decodeStream`) и принудительно пересобирал системное уведомление шторки через `NotificationCompat.Builder` с вызовом `startForeground` и IPC-вызовами к `system_server`. На мобильном процессоре это вызывало колоссальную нагрузку на главный UI-поток WebView и постоянный Garbage Collection churn (до 50-100 мс задержки на каждый кадр).
+      - **Решение**:
+        - В `MusicService.kt` реализовано кэширование декодированной обложки (`coverBitmap`) и отслеживание смены трека (`trackChanged`). Загрузка обложки по HTTP и пересборка уведомления теперь запускаются **строго при фактической смене трека или ручном действии (play/pause/like/seek)**. При рутинных тиках времени воспроизведения вызывается легковесный метод `updatePlaybackStateOnly()`, передающий позицию напрямую в `mediaSession.setPlaybackState(...)` с временной меткой `SystemClock.elapsedRealtime()`, благодаря чему Android System UI плавно интерполирует позицию бегунка со скоростью 60 кадров/сек самостоятельно без вызова IPC и без пересоздания уведомлений.
+        - Иконка по умолчанию (`ic_launcher`) теперь декодируется один раз в `onCreate()`, а не при каждом апдейте.
+        - В `script.js` интервал фонового тика `syncAndroidPlayback()` снижен с 1 сек до 10 сек (основные события `play`, `pause`, `playing`, `ended`, `seeked`, `loadedmetadata` по-прежнему синхронизируются мгновенно).
+        - В `drawVisualizer()` добавлен троттлинг до 30 FPS на мобильных устройствах, предотвращающий 120 Гц рендеринг Canvas на смартфонах.
+        - В CSS для `.mini-waveform`, `.wave-bar` и `.mini-cover.spinning` включена изоляция композитинга: `contain: layout paint style`, `will-change: transform`, `transform: translateZ(0)`.
+        - Анимация вращения винила полноразмерной обложки `.track-cover.spinning` теперь автоматически ставится на паузу (`animation-play-state: paused !important`), когда Dynamic Island находится в свёрнутом (компактном) режиме, полностью освобождая ресурсы GPU.
+        - Для `.song-item.playing .song-index-play` на смартфонах отключена бесконечная анимация `pulse`, вызывавшая постоянные перерисовки элементов списка.
+    - **Устранение растягивания фона и секундного чёрного экрана (Mobile Background & Resize Fix)**:
+      - **Причина**: На мобильных устройствах при открытии клавиатуры (например, при клике в поиск) Android окно сжималось (`adjustResize`). Селектор `#custom-bg` имел `height: 100vh; background-size: cover;`. Из-за уменьшения высоты на высоту клавиатуры браузер заново пересчитывал геометрию и масштабирование картинки, сбрасывая текстуру в GPU и вызывая секундное моргание чёрным фоном под ней. То же происходило при сворачивании и разворачивании приложения из-за флага `setLayerType(View.LAYER_TYPE_HARDWARE, null)` на WebView в `MainActivity.kt`, который уничтожал и заново выделял аппаратный буфер.
+      - **Решение**:
+        - В `script.js` реализована функция `updateFixedScreenDimensions()`, которая считывает физическую высоту экрана (`window.screen.height`) и фиксирует её в CSS-переменной `--app-fixed-height`. Переменная обновляется только при смене ориентации экрана, но **не меняется при открытии/закрытии клавиатуры**.
+        - В CSS для `#custom-bg` заданы `height: var(--app-fixed-height, 100lvh)`, `background-repeat: no-repeat`, аппаратное композитирование `transform: translate3d(0, 0, 0)` и изоляция `contain: strict`. Задний фон теперь остаётся строго зафиксированным к физическому экрану и не сминается и не перерисовывается при появлении клавиатуры.
+        - В `MainActivity.kt` удалён `setLayerType(View.LAYER_TYPE_HARDWARE, null)`, а для самого WebView задан сплошной фоновый цвет `#0d0d10` (`R.color.status_bar`).
+        - В `styles.xml` и `colors.xml` системный `android:windowBackground` изменён с `#000000` на `#0d0d10`, устраняя чёрные промаргивания при сворачивании/разворачивании приложения.
+        - В `@media (max-width: 900px)` на `.main-container` и `.bio-card` добавлен `transition: none !important;`, исключая 800мс анимации изменения отступов при вызове клавиатуры.
+    - **Починка отображения описания альбомов в SoundCloud (Album Description Bug Fix)**:
+      - **Причина**: В `soundcloud_service.js` и `SoundCloudService.kt` метод `formatPlaylist()` не сохранял поле `description: p.description` из ответа API SoundCloud, из-за чего свойство `albData.description` всегда оставалось `undefined`. Кроме того, при переходе между альбомами или артистами висящие асинхронные запросы Last.fm не отменялись (`currentDescriptionAbortController` не прерывался), а контейнер `detailDescription` не очищался при старте загрузки нового альбома. В результате описание или теги предыдущего альбома (или био артиста) оставались на экране и отображались для нового альбома SoundCloud, у которого своего описания не было.
+      - **Решение**:
+        - В `formatPlaylist()` добавлен маппинг `description: p.description || ''` (Node.js) и `out.put("description", p.optString("description", ""))` (Kotlin).
+        - В `openSoundCloudAlbum()`, `openSoundCloudPlaylist()`, `openSoundCloudArtist()` и `renderPlaylistView()` в самом начале функции теперь гарантированно прерывается текущий контроллер `currentDescriptionAbortController.abort()` и немедленно очищается/скрывается блок описания `detailDescription`.
+        - Блок описания выводится только при наличии непустой строки `albData.description.trim()`, предотвращая отображение мусора или данных предыдущего альбома.
+    - **Сборка APK**: Изменения синхронизированы между `public/` и `android/app/src/main/assets/`. Собрана обновленная версия `dist/MoonPlayer.apk`.
+
 ---
 
 ## 💡 6. Соглашения и рекомендации для дальнейшей разработки
@@ -233,3 +354,4 @@ npm run server       # Запуск только фонового сервера
 2. **Безопасность строк**: Любой пользовательский ввод и названия треков должны экранироваться через `escapeHtml()` перед вставкой в `innerHTML`.
 3. **Совместимость с IndexedDB**: При добавлении новых полей в объект трека всегда предусматривать обратную совместимость с записями в кэше (как это сделано с `isFlacTrack` через проверку расширений и путей).
 4. **Синхронизация фонового демона**: Лаунчер C++ ожидает доступность порта `7644` при старте и корректно глушит дочерний процесс Node.js при закрытии окна.
+5. **Android Gradle Сборка**: Для повторной компиляции APK запускать `npm run build:android` (требует JDK 17/21 и Android SDK 34).

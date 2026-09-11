@@ -207,6 +207,7 @@ class SoundCloudService {
             permalink_url: p.permalink_url || '',
             likes_count: p.likes_count || 0,
             genre: p.genre || '',
+            description: p.description || '',
             tracks: tracks
         };
     }
@@ -398,6 +399,25 @@ class SoundCloudService {
             formatted.isFullyLoaded = true;
         }
         return formatted;
+    }
+
+    async getTrack(trackId) {
+        if (!trackId) return null;
+        const idStr = String(trackId).replace(/^soundcloud:/i, '').trim();
+        let track = this.trackCache.get(idStr);
+        if (track) return track;
+
+        if (!this.config.enabled || !this.config.oauthToken) {
+            throw new Error('SoundCloud is disabled or OAuth token is not configured');
+        }
+
+        const trackUrl = `https://api-v2.soundcloud.com/tracks/${idStr}`;
+        const resp = await fetch(trackUrl, { headers: this.getAuthHeader() });
+        if (!resp.ok) {
+            throw new Error(`Track ${idStr} not found (${resp.status})`);
+        }
+        const data = await resp.json();
+        return this.formatTrack(data);
     }
 
     async getTrackStation(trackId) {
