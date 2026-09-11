@@ -10,6 +10,12 @@
     --active-bg: rgba(255, 255, 255, 0.12);
     --font-header: 'Unbounded', sans-serif;
     --font-body: 'Outfit', sans-serif;
+
+    /* Dynamic Island Fluid Spring Interpolation Curves (Extended & Luxurious Physics) */
+    --island-spring-expand: cubic-bezier(0.22, 1.32, 0.26, 1);
+    --island-spring-collapse: cubic-bezier(0.34, 0, 0.15, 1);
+    --island-spring-content: cubic-bezier(0.22, 1.18, 0.30, 1);
+    --island-spring-pop: cubic-bezier(0.34, 1.35, 0.45, 1);
 }
 
 * {
@@ -1290,8 +1296,8 @@ body.is-android .result-play-overlay {
     z-index: 100;
     pointer-events: none;
     opacity: 0;
-    transform: translate3d(0, -20px, 0);
-    transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1);
+    transform: translate3d(0, -32px, 0) scale(0.88);
+    transition: opacity 0.4s ease, transform 0.48s var(--island-spring-pop);
     will-change: transform, opacity;
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
@@ -1299,7 +1305,7 @@ body.is-android .result-play-overlay {
 
 .dynamic-island-container.visible {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0) scale(1);
 }
 
 /* Dynamic Island Base Styles */
@@ -1319,39 +1325,54 @@ body.is-android .result-play-overlay {
     height: 40px;
     border-radius: 20px;
     
-    /* Hardware accelerated, buttery-smooth 60/120 FPS morph */
-    transition: width 0.38s cubic-bezier(0.2, 0.9, 0.3, 1),
-                height 0.38s cubic-bezier(0.2, 0.9, 0.3, 1),
-                border-radius 0.38s cubic-bezier(0.2, 0.9, 0.3, 1),
-                border-color 0.25s ease,
-                transform 0.38s cubic-bezier(0.2, 0.9, 0.3, 1);
-    will-change: width, height, border-radius;
+    /* Fluid spring interpolation on collapse (0.32s) */
+    transition: width 0.32s var(--island-spring-collapse),
+                height 0.32s var(--island-spring-collapse),
+                border-radius 0.28s var(--island-spring-collapse),
+                border-color 0.20s ease,
+                box-shadow 0.32s var(--island-spring-collapse),
+                transform 0.32s var(--island-spring-collapse);
+    will-change: width, height, border-radius, transform;
     transform: translate3d(0, 0, 0) scale(var(--island-scale, 1));
     transform-origin: top center;
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
-    contain: layout paint;
+    contain: paint;
 }
 
 .dynamic-island:hover {
     border-color: rgba(255, 255, 255, 0.35);
 }
 
-/* Expanded State dimensions */
+/* Tactile press response with subtle physical elasticity */
+.dynamic-island:not(.expanded):active {
+    transform: translate3d(0, 0, 0) scale(calc(var(--island-scale, 1) * 0.97));
+    transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Expanded State dimensions & fluid spring interpolation (extended 0.52s) */
 .dynamic-island.expanded {
     width: 440px;
     height: 150px;
     border-radius: 28px;
     border-color: rgba(255, 255, 255, 0.25);
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    transition: width 0.52s var(--island-spring-expand),
+                height 0.52s var(--island-spring-expand),
+                border-radius 0.46s var(--island-spring-expand),
+                border-color 0.28s ease,
+                box-shadow 0.52s var(--island-spring-expand),
+                transform 0.52s var(--island-spring-expand);
 }
 
 .dynamic-island.expanded.queue-expanded {
     height: 310px;
+    transition: height 0.52s var(--island-spring-expand);
 }
 
 .dynamic-island.expanded.lyrics-expanded {
     height: 250px;
+    transition: height 0.52s var(--island-spring-expand);
 }
 
 /* 1. COMPACT STATE CONTENT */
@@ -1367,24 +1388,79 @@ body.is-android .result-play-overlay {
     left: 0;
     opacity: 1;
     visibility: visible;
-    transition: opacity 0.2s cubic-bezier(0.2, 0.9, 0.3, 1), visibility 0.2s;
     z-index: 2;
     cursor: pointer;
     transform: translate3d(0, 0, 0);
-    will-change: opacity;
+    transition: opacity 0.14s ease, visibility 0.14s;
+    will-change: opacity, transform;
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
 }
 
+.compact-left,
+.compact-center,
+.compact-right {
+    display: flex;
+    align-items: center;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.compact-left {
+    transform-origin: left center;
+    transition: transform 0.30s var(--island-spring-pop),
+                opacity 0.22s ease;
+}
+
+.compact-center {
+    flex: 1;
+    min-width: 0;
+    margin: 0 8px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform-origin: center center;
+    transition: transform 0.30s var(--island-spring-pop),
+                opacity 0.22s ease;
+}
+
+.compact-right {
+    transform-origin: right center;
+    width: 24px;
+    justify-content: center;
+    transition: transform 0.30s var(--island-spring-pop),
+                opacity 0.22s ease;
+}
+
+/* Spatial dispersal of compact elements during expansion */
 .dynamic-island.expanded .island-compact {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
+    transition: opacity 0.18s ease, visibility 0.18s;
 }
 
-.compact-left {
-    display: flex;
-    align-items: center;
+.dynamic-island.expanded .compact-left {
+    transform: translate3d(8px, 2px, 0) scale(1.15);
+    opacity: 0;
+    transition: transform 0.26s var(--island-spring-content),
+                opacity 0.18s ease;
+}
+
+.dynamic-island.expanded .compact-center {
+    transform: translateY(-4px) scale(0.96);
+    opacity: 0;
+    transition: transform 0.22s ease,
+                opacity 0.18s ease;
+}
+
+.dynamic-island.expanded .compact-right {
+    transform: translate3d(6px, 0, 0) scale(0.9);
+    opacity: 0;
+    transition: transform 0.22s ease,
+                opacity 0.18s ease;
 }
 
 .mini-cover {
@@ -1485,8 +1561,8 @@ body.is-android .result-play-overlay {
 }
 
 @keyframes bounceWave {
-    0% { transform: scaleY(0.25); }
-    100% { transform: scaleY(1); }
+    0% { transform: scaleY(0.25) translateZ(0); }
+    100% { transform: scaleY(1) translateZ(0); }
 }
 
 /* 2. EXPANDED STATE CONTENT */
@@ -1500,7 +1576,7 @@ body.is-android .result-play-overlay {
     top: 0;
     left: 0;
     padding: 16px 20px;
-    transition: opacity 0.2s cubic-bezier(0.2, 0.9, 0.3, 1), visibility 0.2s;
+    transition: opacity 0.15s var(--island-spring-collapse), visibility 0.15s;
     z-index: 1;
     display: flex;
     flex-direction: column;
@@ -1516,7 +1592,7 @@ body.is-android .result-play-overlay {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
-    transition: opacity 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) 0.08s;
+    transition: opacity 0.36s ease 0.04s;
 }
 
 .mini-cover,
@@ -1550,6 +1626,25 @@ body.is-android .result-play-overlay {
     height: 80px;
     position: relative;
     flex-shrink: 0;
+    transform-origin: center center;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+/* Organic cover swelling from compact mini-cover */
+.dynamic-island:not(.expanded) .covers-container {
+    transform: scale(0.7) translate3d(-8px, -6px, 0);
+    opacity: 0;
+    transition: transform 0.24s var(--island-spring-collapse),
+                opacity 0.18s ease;
+}
+
+.dynamic-island.expanded .covers-container {
+    transform: scale(1) translate3d(0, 0, 0);
+    opacity: 1;
+    transition: transform 0.52s var(--island-spring-expand) 0.03s,
+                opacity 0.34s ease 0.03s;
 }
 
 .cover-wrapper {
@@ -1562,7 +1657,7 @@ body.is-android .result-play-overlay {
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s ease;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
 }
 
 .cover-wrapper::after {
@@ -1600,8 +1695,8 @@ body.is-android .result-play-overlay {
 }
 
 @keyframes spinVinyl {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from { transform: rotate(0deg) translateZ(0); }
+    to { transform: rotate(360deg) translateZ(0); }
 }
 
 .island-expanded .player-controls {
@@ -1619,6 +1714,23 @@ body.is-android .result-play-overlay {
     display: flex;
     flex-direction: column;
     padding-right: 112px;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.dynamic-island:not(.expanded) .island-expanded .track-info {
+    transform: translate3d(0, -6px, 0);
+    opacity: 0;
+    transition: transform 0.22s var(--island-spring-collapse),
+                opacity 0.16s ease;
+}
+
+.dynamic-island.expanded .island-expanded .track-info {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+    transition: transform 0.48s var(--island-spring-content) 0.04s,
+                opacity 0.34s ease 0.04s;
 }
 
 .island-expanded #track-title {
@@ -1648,6 +1760,23 @@ body.is-android .result-play-overlay {
     font-size: 0.65rem;
     color: var(--text-secondary);
     width: 100%;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.dynamic-island:not(.expanded) .island-expanded .progress-section {
+    transform: translate3d(0, 4px, 0) scale(0.98);
+    opacity: 0;
+    transition: transform 0.22s var(--island-spring-collapse),
+                opacity 0.16s ease;
+}
+
+.dynamic-island.expanded .island-expanded .progress-section {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+    transition: transform 0.48s var(--island-spring-content) 0.05s,
+                opacity 0.34s ease 0.05s;
 }
 
 #current-time, #total-time {
@@ -1662,6 +1791,23 @@ body.is-android .result-play-overlay {
     align-items: center;
     margin-top: 2px;
     gap: 12px;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.dynamic-island:not(.expanded) .island-expanded .controls-section {
+    transform: translate3d(0, 6px, 0) scale(0.97);
+    opacity: 0;
+    transition: transform 0.22s var(--island-spring-collapse),
+                opacity 0.16s ease;
+}
+
+.dynamic-island.expanded .island-expanded .controls-section {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+    transition: transform 0.52s var(--island-spring-expand) 0.06s,
+                opacity 0.34s ease 0.06s;
 }
 
 .playback-controls {
@@ -1772,7 +1918,16 @@ body.is-android .result-play-overlay {
     height: 8px;
     pointer-events: none;
     z-index: 0;
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+    transition: opacity 0.38s cubic-bezier(0.2, 0.8, 0.25, 1),
+                transform 0.38s cubic-bezier(0.2, 0.8, 0.25, 1);
+    will-change: opacity, transform;
+}
+
+.island-expanded .visualizer-wrapper.active {
     opacity: 0.85;
+    transform: translate3d(0, 0, 0);
 }
 
 .visualizer {
@@ -1864,14 +2019,16 @@ body.is-android .result-play-overlay {
         padding: 5px 8px !important;
         margin: 8px auto 2px auto !important;
         flex-shrink: 0 !important;
-        background: rgba(18, 18, 24, 0.92) !important;
-        backdrop-filter: blur(20px) !important;
-        -webkit-backdrop-filter: blur(20px) !important;
-        border: 1px solid var(--card-border) !important;
+        background: #14141c !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
         border-radius: 30px !important;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
         width: fit-content !important;
         z-index: 50 !important;
+        transform: translateZ(0) !important;
+        contain: paint layout !important;
     }
 
     .mobile-nav-item {
@@ -1974,6 +2131,9 @@ body.is-android .result-play-overlay {
         min-height: 0 !important;
         max-height: none !important;
         overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        overscroll-behavior-y: contain !important;
+        transform: translateZ(0) !important;
     }
 
     /* View Tab Active: Hide panel-left, Show panel-right */
@@ -2021,6 +2181,9 @@ body.is-android .result-play-overlay {
         min-height: 0 !important;
         max-height: none !important;
         overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        overscroll-behavior-y: contain !important;
+        transform: translateZ(0) !important;
     }
 
     /* Maximized View (Detail/Lyrics mode) */
@@ -2096,6 +2259,19 @@ body.is-android .result-play-overlay {
         gap: 6px !important;
         display: flex !important;
         align-items: center !important;
+        contain: layout style paint !important;
+        content-visibility: auto !important;
+        contain-intrinsic-size: 52px !important;
+        animation: none !important;
+        animation-delay: 0s !important;
+    }
+
+    .result-item {
+        contain: layout style paint !important;
+        content-visibility: auto !important;
+        contain-intrinsic-size: 56px !important;
+        animation: none !important;
+        animation-delay: 0s !important;
     }
 
     .song-index {
@@ -2180,6 +2356,33 @@ body.is-android .result-play-overlay {
         height: 28px !important;
         padding: 4px !important;
         font-size: 0.8rem !important;
+    }
+
+    .island-expanded .close-toggle-btn {
+        display: flex !important;
+        top: 9px !important;
+        right: 10px !important;
+        width: 24px !important;
+        height: 24px !important;
+    }
+
+    .island-expanded .queue-toggle-btn:not(.lyrics-toggle-btn):not(.lock-toggle-btn):not(.close-toggle-btn) {
+        top: 9px !important;
+        right: 38px !important;
+        width: 24px !important;
+        height: 24px !important;
+    }
+
+    .island-expanded .lyrics-toggle-btn {
+        right: 66px !important;
+    }
+
+    .island-expanded .lock-toggle-btn {
+        right: 94px !important;
+    }
+
+    .island-expanded .track-info {
+        padding-right: 124px !important;
     }
 }
 
@@ -2309,19 +2512,31 @@ body.is-android .result-play-overlay {
         margin: 0 !important;
     }
 
-    .island-expanded .queue-toggle-btn {
+    .island-expanded .close-toggle-btn {
+        display: flex !important;
         top: 9px !important;
         right: 10px !important;
         width: 24px !important;
         height: 24px !important;
     }
 
-    .island-expanded .lyrics-toggle-btn {
+    .island-expanded .queue-toggle-btn:not(.lyrics-toggle-btn):not(.lock-toggle-btn):not(.close-toggle-btn) {
+        top: 9px !important;
         right: 38px !important;
+        width: 24px !important;
+        height: 24px !important;
+    }
+
+    .island-expanded .lyrics-toggle-btn {
+        right: 66px !important;
     }
 
     .island-expanded .lock-toggle-btn {
-        right: 66px !important;
+        right: 94px !important;
+    }
+
+    .island-expanded .track-info {
+        padding-right: 124px !important;
     }
 
     .island-expanded .visualizer-wrapper {
@@ -2911,20 +3126,41 @@ body.is-android .result-play-overlay {
 
 
 .island-queue-section {
-    display: none !important;
-}
-
-.dynamic-island.queue-expanded .island-queue-section {
     width: 100%;
-    margin-top: 5px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    padding-top: 8px;
+    margin-top: 0;
+    border-top: 1px solid transparent;
+    padding-top: 0;
     display: flex !important;
     flex-direction: column;
     gap: 6px;
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+    transform: translate3d(0, -6px, 0) scale(0.99);
+    transition: max-height 0.28s var(--island-spring-expand),
+                opacity 0.18s ease,
+                transform 0.28s var(--island-spring-expand),
+                margin-top 0.28s var(--island-spring-expand),
+                padding-top 0.28s var(--island-spring-expand),
+                border-color 0.2s ease;
+    will-change: max-height, opacity, transform;
+}
+
+.dynamic-island.queue-expanded .island-queue-section {
+    max-height: 150px;
     opacity: 1;
-    max-height: 140px;
     pointer-events: auto;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-color: rgba(255, 255, 255, 0.08);
+    transform: translate3d(0, 0, 0) scale(1);
+    transition: max-height 0.38s var(--island-spring-expand) 0.02s,
+                opacity 0.26s ease 0.03s,
+                transform 0.38s var(--island-spring-expand) 0.02s,
+                margin-top 0.38s var(--island-spring-expand),
+                padding-top 0.38s var(--island-spring-expand),
+                border-color 0.18s ease;
 }
 
 .queue-toggle-btn {
@@ -2937,24 +3173,43 @@ body.is-android .result-play-overlay {
     font-size: 0.7rem;
     cursor: pointer;
     z-index: 100;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     width: 24px;
     height: 24px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
+    transform: scale(0.8);
+    opacity: 0;
+    pointer-events: none;
+    will-change: transform, opacity;
+    transition: transform 0.16s var(--island-spring-collapse),
+                opacity 0.12s ease,
+                background-color 0.2s,
+                border-color 0.2s,
+                color 0.2s;
+}
+
+.dynamic-island.expanded .queue-toggle-btn {
+    transform: scale(1);
+    opacity: 1;
+    pointer-events: auto;
+    transition: transform 0.44s var(--island-spring-pop) 0.08s,
+                opacity 0.26s ease 0.08s,
+                background-color 0.2s,
+                border-color 0.2s,
+                color 0.2s;
 }
 
 .queue-toggle-btn:hover {
     color: #ffffff;
     background: rgba(255, 255, 255, 0.15);
     border-color: rgba(255, 255, 255, 0.25);
-    transform: scale(1.1);
+    transform: scale(1.08);
 }
 
 .queue-toggle-btn:active {
-    transform: scale(0.95);
+    transform: scale(0.94);
 }
 
 .island-queue-title {
@@ -3219,6 +3474,17 @@ body.is-android .result-play-overlay {
     right: 44px !important;
 }
 
+/* Close Button Styles (Mobile Dynamic Island) */
+.close-toggle-btn {
+    display: none !important;
+}
+
+.close-toggle-btn:hover {
+    color: #ff5555 !important;
+    background: rgba(255, 85, 85, 0.18) !important;
+    border-color: rgba(255, 85, 85, 0.35) !important;
+}
+
 .dynamic-island.queue-expanded #island-queue-btn,
 .dynamic-island.lyrics-expanded #island-lyrics-btn {
     color: var(--accent) !important;
@@ -3293,21 +3559,41 @@ body.is-android .result-play-overlay {
    ========================================== */
 
 .island-lyrics-section {
-    display: none !important;
-}
-
-.dynamic-island.lyrics-expanded .island-lyrics-section {
     width: 100%;
-    margin-top: 5px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    padding-top: 8px;
+    margin-top: 0;
+    border-top: 1px solid transparent;
+    padding-top: 0;
     display: flex !important;
     flex-direction: column;
     gap: 6px;
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+    transform: translate3d(0, -6px, 0) scale(0.99);
+    transition: max-height 0.28s var(--island-spring-expand),
+                opacity 0.18s ease,
+                transform 0.28s var(--island-spring-expand),
+                margin-top 0.28s var(--island-spring-expand),
+                padding-top 0.28s var(--island-spring-expand),
+                border-color 0.2s ease;
+    will-change: max-height, opacity, transform;
+}
+
+.dynamic-island.lyrics-expanded .island-lyrics-section {
+    max-height: 110px;
     opacity: 1;
-    max-height: 95px;
     pointer-events: auto;
-    animation: slideInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-color: rgba(255, 255, 255, 0.08);
+    transform: translate3d(0, 0, 0) scale(1);
+    transition: max-height 0.38s var(--island-spring-expand) 0.02s,
+                opacity 0.26s ease 0.03s,
+                transform 0.38s var(--island-spring-expand) 0.02s,
+                margin-top 0.38s var(--island-spring-expand),
+                padding-top 0.38s var(--island-spring-expand),
+                border-color 0.18s ease;
 }
 
 .island-lyrics-title {

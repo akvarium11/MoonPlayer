@@ -1,7 +1,10 @@
 package com.moonplayer.app
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
+import android.util.LruCache
 import fi.iki.elonen.NanoHTTPD
 import org.json.JSONObject
 import java.io.*
@@ -40,6 +43,50 @@ class WebServer(private val context: Context, port: Int = 7644) : NanoHTTPD("127
             "woff2" to "font/woff2",
             "ttf" to "font/ttf"
         )
+
+        private val coverCache = object : LruCache<String, ByteArray>(16 * 1024 * 1024) {
+            override fun sizeOf(key: String, value: ByteArray): Int = value.size
+        }
+        private val EMPTY_COVER = ByteArray(0)
+
+        fun compressCoverIfNeeded(raw: ByteArray, maxDim: Int = 512): ByteArray {
+            try {
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
+                val w = opts.outWidth
+                val h = opts.outHeight
+                if (w <= 0 || h <= 0) return raw
+                if (w <= maxDim && h <= maxDim && raw.size <= 250_000) {
+                    return raw
+                }
+
+                var sampleSize = 1
+                var halfW = w / 2
+                var halfH = h / 2
+                while ((halfW / sampleSize) >= maxDim && (halfH / sampleSize) >= maxDim) {
+                    sampleSize *= 2
+                }
+
+                val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                val bmp = BitmapFactory.decodeByteArray(raw, 0, raw.size, decodeOpts) ?: return raw
+
+                val scale = minOf(maxDim.toFloat() / bmp.width, maxDim.toFloat() / bmp.height, 1.0f)
+                val finalBmp = if (scale < 1.0f) {
+                    val scaled = Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
+                    if (scaled != bmp) bmp.recycle()
+                    scaled
+                } else {
+                    bmp
+                }
+
+                val baos = ByteArrayOutputStream()
+                finalBmp.compress(Bitmap.CompressFormat.JPEG, 85, baos)
+                finalBmp.recycle()
+                return baos.toByteArray()
+            } catch (e: Throwable) {
+                return raw
+            }
+        }
     }
 
     override fun serve(session: IHTTPSession): Response {
@@ -57,7 +104,8 @@ class WebServer(private val context: Context, port: Int = 7644) : NanoHTTPD("127
 
             // API: /api/songs
             if (uri == "/api/songs") {
-                val json = MediaScanner.getAllSongsJson(context)
+                val refresh = params["refresh"]?.firstOrNull() == "true"
+                val json = MediaScanner.getAllSongsJson(context, refresh)
                 val resp = newFixedLengthResponse(Response.Status.OK, "application/json", json)
                 addCorsHeaders(resp)
                 return resp
@@ -88,40 +136,70 @@ class WebServer(private val context: Context, port: Int = 7644) : NanoHTTPD("127
                 val filePathParam = params["path"]?.firstOrNull()
                 if (filePathParam != null) {
                     val decodedPath = URLDecoder.decode(filePathParam, "UTF-8")
+                    val cachedArt = coverCache.get(decodedPath)
+                    if (cachedArt != null) {
+                        if (cachedArt.isEmpty()) {
+                            val resp = serveAsset("/assets/icon.png")
+                            resp.addHeader("Cache-Control", "public, max-age=604800, immutable")
+                            return resp
+                        } else {
+                            val bais = ByteArrayInputStream(cachedArt)
+                            val resp = newFixedLengthResponse(Response.Status.OK, "image/jpeg", bais, cachedArt.size.toLong())
+                            resp.addHeader("Cache-Control", "public, max-age=604800, immutable")
+                            addCorsHeaders(resp)
+                            return resp
+                        }
+                    }
+
                     val file = File(decodedPath)
                     if (file.exists()) {
+                        var artBytes: ByteArray? = null
                         try {
                             val mmr = MediaMetadataRetriever()
                             mmr.setDataSource(file.absolutePath)
-                            val art = mmr.embeddedPicture
+                            val rawArt = mmr.embeddedPicture
                             mmr.release()
-                            if (art != null && art.isNotEmpty()) {
-                                val bais = ByteArrayInputStream(art)
-                                val resp = newFixedLengthResponse(Response.Status.OK, "image/jpeg", bais, art.size.toLong())
-                                resp.addHeader("Cache-Control", "public, max-age=86400")
-                                addCorsHeaders(resp)
-                                return resp
+                            if (rawArt != null && rawArt.isNotEmpty()) {
+                                artBytes = compressCoverIfNeeded(rawArt, 512)
                             }
                         } catch (e: Exception) {
                             // Fallback to directory cover
                         }
 
-                        // Check parent folder for cover image
-                        val parent = file.parentFile
-                        if (parent != null && parent.isDirectory) {
-                            val coverFile = parent.listFiles()?.firstOrNull { f ->
-                                val name = f.nameWithoutExtension.lowercase()
-                                val ext = f.extension.lowercase()
-                                (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp") &&
-                                (name.contains("cover") || name.contains("folder") || name.contains("album") || name.contains("front"))
+                        if (artBytes == null) {
+                            // Check parent folder for cover image
+                            val parent = file.parentFile
+                            if (parent != null && parent.isDirectory) {
+                                val coverFile = parent.listFiles()?.firstOrNull { f ->
+                                    val name = f.nameWithoutExtension.lowercase()
+                                    val ext = f.extension.lowercase()
+                                    (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp") &&
+                                    (name.contains("cover") || name.contains("folder") || name.contains("album") || name.contains("front"))
+                                }
+                                if (coverFile != null && coverFile.exists()) {
+                                    try {
+                                        val rawCover = coverFile.readBytes()
+                                        artBytes = compressCoverIfNeeded(rawCover, 512)
+                                    } catch (e: Exception) {}
+                                }
                             }
-                            if (coverFile != null && coverFile.exists()) {
-                                return serveFileRange(coverFile, session.headers)
-                            }
+                        }
+
+                        if (artBytes != null && artBytes.isNotEmpty()) {
+                            coverCache.put(decodedPath, artBytes)
+                            val bais = ByteArrayInputStream(artBytes)
+                            val resp = newFixedLengthResponse(Response.Status.OK, "image/jpeg", bais, artBytes.size.toLong())
+                            resp.addHeader("Cache-Control", "public, max-age=604800, immutable")
+                            addCorsHeaders(resp)
+                            return resp
+                        } else {
+                            coverCache.put(decodedPath, EMPTY_COVER)
                         }
                     }
                 }
-                return serveAsset("/assets/icon.png")
+                val resp = serveAsset("/assets/icon.png")
+                resp.addHeader("Cache-Control", "public, max-age=604800, immutable")
+                return resp
             }
 
             // API: /api/cover-art

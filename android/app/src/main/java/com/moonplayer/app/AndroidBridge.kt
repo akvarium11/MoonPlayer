@@ -85,4 +85,18 @@ class AndroidBridge(private val activity: MainActivity) {
     fun hasStoragePermission(): Boolean {
         return activity.hasPermissions()
     }
+
+    @JavascriptInterface
+    fun exitApp() {
+        activity.runOnUiThread {
+            if (!MusicService.isPlayingStatic) {
+                try {
+                    activity.stopService(android.content.Intent(activity, MusicService::class.java))
+                } catch (e: Exception) {}
+                activity.finishAffinity()
+            } else {
+                activity.moveTaskToBack(true)
+            }
+        }
+    }
 }

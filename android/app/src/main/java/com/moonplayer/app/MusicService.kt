@@ -56,10 +56,18 @@ class MusicService : Service() {
                 putExtra("durationMs", durationMs)
                 putExtra("isLiked", isLiked)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                try {
+                    context.startService(intent)
+                } catch (e2: Exception) {
+                    e2.printStackTrace()
+                }
             }
         }
     }
@@ -85,6 +93,14 @@ class MusicService : Service() {
     private var isLiked: Boolean = false
     private var coverBitmap: Bitmap? = null
     private var defaultLauncherIcon: Bitmap? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val wakeLockReleaseRunnable = Runnable {
+        if (!isPlaying) {
+            while (wakeLock?.isHeld == true) {
+                try { wakeLock?.release() } catch (e: Exception) {}
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -138,8 +154,7 @@ class MusicService : Service() {
                 }
 
                 override fun onStop() {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
+                    stopPlaybackAndSelf()
                 }
             })
             isActive = true
@@ -169,8 +184,7 @@ class MusicService : Service() {
                 updateNotification()
             }
             ACTION_STOP -> {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                stopPlaybackAndSelf()
             }
             ACTION_UPDATE -> {
                 val newTitle = intent.getStringExtra("title") ?: currentTitle
@@ -197,9 +211,11 @@ class MusicService : Service() {
                 isLiked = newLiked
 
                 if (isPlaying) {
+                    mainHandler.removeCallbacks(wakeLockReleaseRunnable)
                     if (wakeLock?.isHeld != true) wakeLock?.acquire(3 * 3600 * 1000L) // 3 hours max
                 } else {
-                    if (wakeLock?.isHeld == true) wakeLock?.release()
+                    mainHandler.removeCallbacks(wakeLockReleaseRunnable)
+                    mainHandler.postDelayed(wakeLockReleaseRunnable, 60_000L) // 60s buffer for track changes
                 }
 
                 if (trackChanged) {
@@ -339,6 +355,11 @@ class MusicService : Service() {
         val likeIcon = if (isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart_outline
         val likeTitle = if (isLiked) "Unlike" else "Like"
 
+        val dismissIntent = PendingIntent.getService(
+            this, 5, Intent(this, MusicService::class.java).apply { action = ACTION_STOP },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle(currentTitle)
@@ -346,6 +367,7 @@ class MusicService : Service() {
             .setSubText(currentAlbum)
             .setLargeIcon(finalArtwork)
             .setContentIntent(pendingOpenApp)
+            .setDeleteIntent(dismissIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(isPlaying)
             .setShowWhen(false)
@@ -361,7 +383,59 @@ class MusicService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (isPlaying) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            } else {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_DETACH)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(false)
+                }
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                notificationManager?.notify(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (!isPlaying && !isPlayingStatic && (wakeLock?.isHeld != true)) {
+            stopPlaybackAndSelf()
+        }
+    }
+
+    private fun stopPlaybackAndSelf() {
+        isPlaying = false
+        isPlayingStatic = false
+        mainHandler.removeCallbacks(wakeLockReleaseRunnable)
+        while (wakeLock?.isHeld == true) {
+            try { wakeLock?.release() } catch (e: Exception) {}
+        }
+        try {
+            mediaSession?.isActive = false
+            mediaSession?.release()
+            mediaSession = null
+        } catch (e: Exception) {}
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (e: Exception) {}
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.cancel(NOTIFICATION_ID)
+        } catch (e: Exception) {}
+        stopSelf()
     }
 
     private fun createNotificationChannel() {
@@ -381,8 +455,7 @@ class MusicService : Service() {
     }
 
     override fun onDestroy() {
-        if (wakeLock?.isHeld == true) wakeLock?.release()
-        mediaSession?.release()
+        stopPlaybackAndSelf()
         super.onDestroy()
     }
 

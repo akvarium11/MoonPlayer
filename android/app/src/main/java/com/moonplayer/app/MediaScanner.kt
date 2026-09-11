@@ -30,6 +30,15 @@ object MediaScanner {
     private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif")
     private val COVER_KEYWORDS = listOf("cover", "folder", "front", "album", "art", "default")
 
+    private var cachedSongsJson: String? = null
+    private var lastScanTime: Long = 0L
+
+    @Synchronized
+    fun invalidateCache() {
+        cachedSongsJson = null
+        lastScanTime = 0L
+    }
+
     fun getAllSongs(context: Context): List<SongItem> {
         val songMap = LinkedHashMap<String, SongItem>()
 
@@ -66,7 +75,13 @@ object MediaScanner {
         return songMap.values.toList()
     }
 
-    fun getAllSongsJson(context: Context): String {
+    @Synchronized
+    fun getAllSongsJson(context: Context, forceRefresh: Boolean = false): String {
+        val now = System.currentTimeMillis()
+        if (!forceRefresh && cachedSongsJson != null && (now - lastScanTime < 60_000)) {
+            return cachedSongsJson!!
+        }
+
         val songs = getAllSongs(context)
         val jsonArray = JSONArray()
 
@@ -194,7 +209,17 @@ object MediaScanner {
                 val rawAlbum = it.getString(albumCol)
                 val year = it.getString(yearCol)
                 val durMs = it.getLong(durCol)
-                val durSec = if (durMs > 0) durMs / 1000.0 else 0.0
+                var durSec = if (durMs > 0) durMs / 1000.0 else 0.0
+                if (durSec <= 0.0) {
+                    try {
+                        val mmr = MediaMetadataRetriever()
+                        mmr.setDataSource(file.absolutePath)
+                        val dStr = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                        val dMs = dStr?.toLongOrNull() ?: 0L
+                        if (dMs > 0) durSec = dMs / 1000.0
+                        mmr.release()
+                    } catch (_: Exception) {}
+                }
 
                 val cleanTitle = if (!rawTitle.isNullOrBlank() && rawTitle != "<unknown>") rawTitle else file.nameWithoutExtension
                 val cleanArtist = if (!rawArtist.isNullOrBlank() && rawArtist != "<unknown>") rawArtist else "Unknown Artist"

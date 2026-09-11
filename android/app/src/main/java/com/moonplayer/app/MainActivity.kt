@@ -104,6 +104,8 @@ class MainActivity : AppCompatActivity() {
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 cacheMode = WebSettings.LOAD_DEFAULT
+                layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
+                setNeedInitialFocus(false)
                 @Suppress("DEPRECATION")
                 setRenderPriority(WebSettings.RenderPriority.HIGH)
             }
@@ -220,7 +222,7 @@ class MainActivity : AppCompatActivity() {
                 webView.evaluateJavascript("window.AndroidBridgeCallbacks && window.AndroidBridgeCallbacks.onBackPressed ? window.AndroidBridgeCallbacks.onBackPressed() : false;") { result ->
                     val handled = result == "true" || result == "\"true\""
                     if (!handled) {
-                        // Move to background instead of destroying activity so music continues playing
+                        // Minimize app to background so playback continues and session is preserved
                         moveTaskToBack(true)
                     }
                 }
@@ -311,10 +313,16 @@ class MainActivity : AppCompatActivity() {
         volumeReceiver?.let {
             try { unregisterReceiver(it) } catch (e: Exception) {}
         }
-        try {
-            webServer?.stop()
-        } catch (e: Exception) {
-            e.printStackTrace()
+        if (!MusicService.isPlayingStatic) {
+            try {
+                stopService(Intent(this, MusicService::class.java))
+            } catch (e: Exception) {}
+            try {
+                webServer?.stop()
+            } catch (e: Exception) {}
+            try {
+                webView.destroy()
+            } catch (e: Exception) {}
         }
         super.onDestroy()
     }
