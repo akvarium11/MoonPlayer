@@ -11,8 +11,9 @@ A sleek, modern desktop audio player featuring an interactive Dynamic Island, 10
 
 [![GitHub License](https://img.shields.io/github/license/akvarium11/MoonPlayer?style=for-the-badge&color=7c3aed)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/akvarium11/MoonPlayer?style=for-the-badge&color=eab308)](https://github.com/akvarium11/MoonPlayer/stargazers)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078D6?style=for-the-badge&logo=windows)](https://github.com/akvarium11/MoonPlayer)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android-0078D6?style=for-the-badge&logo=windows)](https://github.com/akvarium11/MoonPlayer)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-24C8D8?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app)
+[![Android](https://img.shields.io/badge/Android-Companion%20App-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/akvarium11/MoonPlayer/releases/latest)
 [![Node.js](https://img.shields.io/badge/Node.js-Express%205-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
 [![Discord RPC](https://img.shields.io/badge/Discord-Rich%20Presence-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com)
 
@@ -56,6 +57,13 @@ A sleek, modern desktop audio player featuring an interactive Dynamic Island, 10
 <br/>
 <img src="https://files.catbox.moe/b8wvng.png" alt="MoonPlayer Dynamic Island" width="95%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);" />
 
+<br/><br/>
+
+### 📱 Android Mobile Companion App
+*Mobile-optimized interface featuring a floating Dynamic Island, background playback service with lock screen MediaSession controls, local storage library scanner, and touch-adapted navigation.*
+<br/>
+<img src="https://raw.githubusercontent.com/akvarium11/MoonPlayer/main/assets/preview_mobile.jpg" alt="MoonPlayer Android App" width="380" style="border-radius: 24px; border: 4px solid rgba(255,255,255,0.1); box-shadow: 0 16px 40px rgba(0,0,0,0.7);" />
+
 </div>
 
 <br/>
@@ -68,6 +76,7 @@ A sleek, modern desktop audio player featuring an interactive Dynamic Island, 10
 | :--- | :--- |
 | ☁️ **SoundCloud Streaming & Discovery** | Seamless ad-free streaming via SoundCloud API v2. Explore your personal likes and playlists, browse full artist discographies, listen to algorithmic Wave stations of similar tracks, and download tracks with ID3 tags directly into your local library. |
 | 🏝️ **Floating Dynamic Island** | Responsive capsule floating at the top. Expands into a full-featured player with spinning vinyl animation, live audio visualizer, timeline scrub, lyrics switcher, and queue drawer. Compact mode displays mini-waveforms and track info. |
+| 📱 **Android Companion App** | Official **MoonPlayer.apk** for Android 7.0+ (API 24–34). Features foreground background audio service, notification drawer & lock screen controls (MediaSession API), hardware volume key support, local device music scanner, and touch-optimized Dynamic Island navigation. |
 | 🎚️ **10-Band ISO Equalizer** | Studio-grade Web Audio API equalizer covering standard ISO frequencies (`32Hz` to `16kHz`). Features Preamp gain control (`-12dB` to `+12dB`), live spline curve (АЧХ) canvas, 10 crafted presets, and custom preset saving. |
 | 💎 **Lossless & Multi-Format** | First-class support for **FLAC Lossless** audio with an elegant `[F]` vector badge, plus `.mp3`, `.wav`, `.ogg`, `.m4a`, `.aac`, `.opus`, and `.webm`. |
 | 🎮 **Discord Rich Presence** | Automatically updates your Discord status with current track title, artist, album name, elapsed & remaining playback time, pause detection, and dynamic high-res album covers via Deezer, iTunes, and Last.fm. |
@@ -83,43 +92,53 @@ A sleek, modern desktop audio player featuring an interactive Dynamic Island, 10
 ## <a id="architecture-en" name="architecture-en"></a>🏗️ Architecture
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Desktop Shell / Launcher                        │
-│   • Tauri v2 Standalone (src-tauri / MoonPlayer.exe)                   │
-│   • OR Native C++ Wrapper (launcher.cpp + WebView2 / WebKitGTK)        │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ Embeds Web Engine
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                    Frontend UI (HTML5 / CSS3 / ES6+)                   │
-│   • Dynamic Island (Compact Capsule & Expanded Vinyl Turntable)        │
-│   • Web Audio API 10-Band Equalizer & Visualizer Spectrum Canvas       │
-│   • IndexedDB Metadata & Artwork Caching                               │
-│   • Fuse.js Typo-Tolerant Search & .LRC Lyrics Parser                  │
-└───────────────────────────────────▲────────────────────────────────────┘
-                                    │ REST API & Audio Streaming (/api/stream)
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                  Backend Service (Node.js + Express)                   │
-│   • Local Directory Scanner & File Watcher                             │
-│   • Discord RPC Client (discord_presence.js)                           │
-│   • High-Res Artwork Resolver (Deezer, iTunes, Last.fm)                │
-│   • Persistent Settings (music_folders.json, cover_cache.json)         │
-└────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┬───────────────────────────────────────────────┐
+│           Desktop Shell / Launcher            │               Android Companion               │
+│   • Tauri v2 Standalone (src-tauri Rust)      │   • Native Android APK (API 24–34)            │
+│   • C++ Native Wrapper (WebView2 / WebKitGTK) │   • Android AudioService & MediaSession       │
+└───────────────────────┬───────────────────────┴───────────────────────┬───────────────────────┘
+                        │                                               │
+                        ▼                                               ▼
+┌───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                               Frontend UI (HTML5 / CSS3 / ES6+)                               │
+│   • Dynamic Island (Compact Capsule & Expanded Vinyl Turntable)                               │
+│   • Web Audio API 10-Band Equalizer & Visualizer Spectrum Canvas                              │
+│   • IndexedDB Metadata & Artwork Caching                                                      │
+│   • Fuse.js Typo-Tolerant Search & .LRC Lyrics Parser                                         │
+│   • Touch Gestures & Responsive Mobile Viewport Overlays                                      │
+└───────────────────────▲───────────────────────────────────────────────▲───────────────────────┘
+                        │                                               │
+                        ▼                                               ▼
+┌───────────────────────────────────────────────┐ ┌─────────────────────────────────────────────┐
+│      Backend Service (Node.js + Express)      │ │          Android System Framework           │
+│   • Local Directory Scanner & File Watcher    │ │   • MediaSession & Foreground Service       │
+│   • Discord RPC Client (discord_presence.js)  │ │   • Native Storage Access (MediaStore API)  │
+│   • High-Res Artwork Resolver (Deezer, etc.)  │ │   • Hardware Volume & Headset Hook Events   │
+│   • Persistent JSON Settings                  │ │   • Zero-Lag Hardware Accelerated WebView   │
+└───────────────────────────────────────────────┘ └─────────────────────────────────────────────┘
 ```
 
 ---
 
 ## <a id="installation-en" name="installation-en"></a>🚀 Quick Start & Installation
 
-### Option 1: Standalone Portable Binary (Recommended for Users)
-No runtime dependencies, Node.js, or complex compilation required:
-1. Download **`MoonPlayer.exe`** from [Releases](https://github.com/akvarium11/MoonPlayer/releases).
-2. Launch `MoonPlayer.exe` and enjoy your music right away!
+### Option 1: Standalone Desktop App (Recommended for Windows)
+No runtime dependencies or Node.js required on user PCs:
+- **Installer**: Download **`MoonPlayer_2.5.0_x64-setup.exe`** from [Latest Release](https://github.com/akvarium11/MoonPlayer/releases/latest) for automatic installation with Start Menu and Desktop shortcuts.
+- **Portable**: Download **`MoonPlayer_2.5.0_portable.zip`**, extract anywhere, and launch `moonplayer.exe`.
 
 ---
 
-### Option 2: Running from Source (Developers)
+### Option 2: 📱 Android Mobile Companion App
+Take your music and SoundCloud streaming anywhere on your smartphone:
+1. Download **`MoonPlayer.apk`** from [Latest Release](https://github.com/akvarium11/MoonPlayer/releases/latest).
+2. Install the APK on your Android device (Android 7.0+ / API 24–34).
+3. Grant audio storage access when prompted to automatically scan your device's music files.
+4. Enjoy continuous background playback, lock screen media controls, and the touch-adapted Dynamic Island!
+
+---
+
+### Option 3: Running from Source (Developers)
 
 #### Prerequisites
 - [Node.js](https://nodejs.org/) (version 18 or higher recommended)
@@ -150,7 +169,7 @@ npm run tauri:build
 
 ---
 
-### Option 3: Lightweight Native C++ Launcher (WebView2 / WebKitGTK)
+### Option 4: Lightweight Native C++ Launcher (WebView2 / WebKitGTK)
 
 <details>
 <summary><b>Click to expand C++ compilation instructions</b></summary>
@@ -207,6 +226,16 @@ MoonPlayer integrates directly with SoundCloud to let you search, stream, genera
    - Copy the cookie value (starts with `2-` e.g., `2-325...`).
 4. Paste the token into the **OAuth Token** field in MoonPlayer Settings and click **SAVE**.
 5. Once connected, your username and avatar will appear with a green status indicator. You can now browse your personal likes, created playlists, search tracks/artists/albums, launch "Wave" stations on any song, or download songs directly to your library!
+
+<br/>
+
+### 📱 Using MoonPlayer on Android
+
+1. **Install and Open**: Launch **MoonPlayer.apk** on your Android device.
+2. **Instant Local Scan**: Grant audio/media access on startup. The app automatically indexes all songs and folders on your device or SD card (`.flac`, `.mp3`, `.wav`, `.m4a`, `.ogg`, `.opus`) without needing any desktop server.
+3. **SoundCloud on Mobile**: Enter Settings (⚙️), paste your SoundCloud OAuth token, and your likes, playlists, and algorithmic Wave recommendations become immediately accessible on your phone.
+4. **Dynamic Island & Gestures**: Tap the top floating capsule to open the vinyl player, queue, or lyrics. Swipe down to dismiss smoothly.
+5. **Background Service & Lock Screen**: MoonPlayer runs a persistent Android Foreground AudioService with native `MediaSession` integration. Control playback, skip tracks, and view album art directly from your lock screen, notification center, or Bluetooth headset buttons.
 
 ---
 
@@ -268,6 +297,13 @@ This project is licensed under the **GPL-3.0 License** — see the [LICENSE](LIC
 <br/>
 <img src="https://files.catbox.moe/b8wvng.png" alt="Dynamic Island MoonPlayer" width="95%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);" />
 
+<br/><br/>
+
+### 📱 Мобильная версия для Android
+*Адаптированный под сенсорные экраны интерфейс с плавающим Dynamic Island, фоновым сервисом воспроизведения с уведомлением в шторке/на экране блокировки и сканером локальной музыки устройства.*
+<br/>
+<img src="https://raw.githubusercontent.com/akvarium11/MoonPlayer/main/assets/preview_mobile.jpg" alt="Интерфейс MoonPlayer для Android" width="380" style="border-radius: 24px; border: 4px solid rgba(255,255,255,0.1); box-shadow: 0 16px 40px rgba(0,0,0,0.7);" />
+
 </div>
 
 <br/>
@@ -280,6 +316,7 @@ This project is licensed under the **GPL-3.0 License** — see the [LICENSE](LIC
 | :--- | :--- |
 | ☁️ **SoundCloud и умная Волна** | Бесшовный стриминг музыки без рекламы. Доступ к вашим лайкам и плейлистам, навигация по дискографиям исполнителей, автоматическая «Волна» с подбором похожих треков и скачивание в локальную коллекцию с ID3v2 тегами и обложками $500\times500$. |
 | 🏝️ **Интерактивный Dynamic Island** | Плавающий «остров» в верхней части экрана. Плавно разворачивается в полноценный аудиоплеер с анимированным винилом, спектрограммой, таймлайном, текстами песен и очередью воспроизведения. В компактном виде отображает мини-волну и текущий трек. |
+| 📱 **Мобильная версия для Android** | Официальный клиент **MoonPlayer.apk** для Android 7.0+ (API 24–34). Фоновое воспроизведение через Foreground Service, управление в шторке и на экране блокировки (MediaSession API), аппаратные кнопки громкости, сканирование треков из памяти телефона и жестовый Dynamic Island. |
 | 🎚️ **10-полосный ISO эквалайзер** | Студийный эквалайзер на Web Audio API по стандарту ISO (`32 Гц` — `16 кГц`). Регулировка предусиления Preamp (`от -12 дБ до +12 дБ`), живой график АЧХ (частотной характеристики), 10 готовых пресетов и сохранение собственных настроек. |
 | 💎 **Lossless и все форматы** | Полноценная поддержка **FLAC** с аккуратным векторным бейджем `[F]`, а также `.mp3`, `.wav`, `.ogg`, `.m4a`, `.aac`, `.opus` и `.webm`. |
 | 🎮 **Discord Rich Presence** | Отображение статуса в Discord: название трека, исполнитель, альбом, прогресс воспроизведения, статус паузы и автоматическая подгрузка HD-обложек через Deezer, iTunes и Last.fm. |
@@ -295,43 +332,53 @@ This project is licensed under the **GPL-3.0 License** — see the [LICENSE](LIC
 ## <a id="architecture-ru" name="architecture-ru"></a>🏗️ Архитектура
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                     Десктопная оболочка / Лаунчер                      │
-│   • Автономный Tauri v2 (src-tauri / MoonPlayer.exe)                   │
-│   • ИЛИ Нативный C++ лаунчер (launcher.cpp + WebView2 / WebKitGTK)     │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ Встраивает WebView
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                   Клиентский UI (HTML5 / CSS3 / ES6+)                  │
-│   • Dynamic Island (Компактная капсула и раскрытый виниловый плеер)   │
-│   • 10-полосный эквалайзер Web Audio API & Canvas визуализатор        │
-│   • Кэширование тегов и обложек в IndexedDB                            │
-│   • Нечеткий поиск Fuse.js & парсер синхронизированных .LRC текстов    │
-└───────────────────────────────────▲────────────────────────────────────┘
-                                    │ REST API и аудио-стриминг (/api/stream)
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                   Бэкенд сервис (Node.js + Express)                    │
-│   • Сканирование файловой системы и отслеживание изменений            │
-│   • Клиент Discord RPC (discord_presence.js)                           │
-│   • Резолвер обложек высокого разрешения (Deezer, iTunes, Last.fm)     │
-│   • Хранение конфигурации (music_folders.json, cover_cache.json)       │
-└────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┬───────────────────────────────────────────────┐
+│         Десктопная оболочка / Лаунчер         │              Мобильный компаньон              │
+│   • Автономный Tauri v2 (src-tauri на Rust)   │   • Нативное Android APK (API 24–34)          │
+│   • Нативный C++ лаунчер (WebView2/WebKitGTK) │   • Фоновый AudioService и MediaSession       │
+└───────────────────────┬───────────────────────┴───────────────────────┬───────────────────────┘
+                        │                                               │
+                        ▼                                               ▼
+┌───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                              Клиентский UI (HTML5 / CSS3 / ES6+)                              │
+│   • Dynamic Island (Компактная капсула и раскрытый виниловый плеер)                           │
+│   • 10-полосный эквалайзер Web Audio API & Canvas визуализатор                                │
+│   • Кэширование тегов и обложек в IndexedDB                                                   │
+│   • Нечеткий поиск Fuse.js & парсер синхронизированных .LRC текстов                           │
+│   • Сенсорная оптимизация и поддержка жестов на мобильных экранах                             │
+└───────────────────────▲───────────────────────────────────────────────▲───────────────────────┘
+                        │                                               │
+                        ▼                                               ▼
+┌───────────────────────────────────────────────┐ ┌─────────────────────────────────────────────┐
+│       Бэкенд сервис (Node.js + Express)       │ │            Система Android (OS)             │
+│   • Сканирование файловой системы и вотчер    │ │   • MediaSession и Foreground Service       │
+│   • Клиент Discord RPC (discord_presence.js)  │ │   • Чтение треков устройства (MediaStore)   │
+│   • Резолвер обложек (Deezer, iTunes, Last.fm)│ │   • Аппаратные кнопки громкости и гарнитур  │
+│   • Хранение конфигурации JSON                │ │   • Аппаратно-ускоренный системный WebView  │
+└───────────────────────────────────────────────┘ └─────────────────────────────────────────────┘
 ```
 
 ---
 
 ## <a id="installation-ru" name="installation-ru"></a>🚀 Быстрый старт и установка
 
-### Вариант 1: Автономный переносимый EXE (Для пользователей)
+### Вариант 1: Десктопная версия для Windows (Рекомендуется)
 Не требует установки Node.js, Python или дополнительных программ:
-1. Скачайте **`MoonPlayer.exe`** из раздела [Releases](https://github.com/akvarium11/MoonPlayer/releases).
-2. Запустите файл и сразу слушайте музыку!
+- **Установщик**: Скачайте **`MoonPlayer_2.5.0_x64-setup.exe`** из раздела [Releases](https://github.com/akvarium11/MoonPlayer/releases/latest) для быстрой установки с ярлыками в меню «Пуск» и на рабочем столе.
+- **Портативная версия**: Скачайте архив **`MoonPlayer_2.5.0_portable.zip`**, распакуйте в любую папку и запустите `moonplayer.exe`.
 
 ---
 
-### Вариант 2: Запуск из исходного кода (Для разработчиков)
+### Вариант 2: 📱 Мобильное приложение для Android
+Слушайте треки с устройства и SoundCloud прямо на телефоне:
+1. Скачайте **`MoonPlayer.apk`** из раздела [Releases](https://github.com/akvarium11/MoonPlayer/releases/latest).
+2. Установите APK на ваш смартфон (поддерживается Android 7.0+ / API 24–34).
+3. Разрешите доступ к аудиофайлам при первом запуске — плеер мгновенно просканирует музыку на устройстве и SD-карте.
+4. Пользуйтесь непрерывным фоновым воспроизведением с удобным плеером в шторке уведомлений и на экране блокировки!
+
+---
+
+### Вариант 3: Запуск из исходного кода (Для разработчиков)
 
 #### Требования
 - Установленный [Node.js](https://nodejs.org/) (версия 18 или новее)
@@ -362,7 +409,7 @@ npm run tauri:build
 
 ---
 
-### Вариант 3: Сборка нативного C++ лаунчера (WebView2 / WebKitGTK)
+### Вариант 4: Сборка нативного C++ лаунчера (WebView2 / WebKitGTK)
 
 <details>
 <summary><b>Нажмите, чтобы развернуть инструкции по компиляции C++</b></summary>
@@ -402,6 +449,16 @@ chmod +x build_linux.sh
 3. В поле **Server Music Folders** укажите абсолютный путь к папке с музыкой (например, `D:\Music` или `/home/user/Music`) и нажмите **ADD**.
 4. Закройте настройки. Плеер автоматически проиндексирует треки, подтянет метаданные и обложки.
 5. Нажмите на любой трек для воспроизведения. Нажмите на **Dynamic Island** вверху экрана, чтобы открыть расширенную панель, включить текст песни, настроить эквалайзер или изменить очередь!
+
+<br/>
+
+### 📱 Использование MoonPlayer на Android
+
+1. **Установка и первый запуск**: Установите и запустите **MoonPlayer.apk** на Android-смартфоне.
+2. **Мгновенное сканирование**: При первом запуске разрешите доступ к аудиофайлам — приложение автоматически просканирует и отобразит всю музыку из памяти телефона и SD-карты (`.flac`, `.mp3`, `.wav`, `.m4a`, `.ogg`, `.opus`) без необходимости подключения к ПК.
+3. **SoundCloud на смартфоне**: Перейдите в Настройки (⚙️), вставьте ваш токен SoundCloud — и ваши плейлисты, лайки и рекомендации «Волны» будут всегда с вами.
+4. **Dynamic Island и жесты**: Нажимайте на плавающую капсулу сверху для открытия плеера с винилом, текстов песен или очереди воспроизведения.
+5. **Фоновый режим и экран блокировки**: Благодаря системному Foreground AudioService и поддержке `MediaSession`, музыка воспроизводится непрерывно в фоне, а управлять треками, переключать паузу и смотреть обложки можно прямо из шторки уведомлений и экрана блокировки.
 
 <br/>
 
