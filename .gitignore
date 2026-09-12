@@ -42,6 +42,7 @@ webview2_sdk/
 
 # Build artifacts
 dist/
+bin/
 
 # Android build & cache
 .gradle/

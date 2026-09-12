@@ -4,13 +4,17 @@
   "description": "Local browser-based music player with dynamic island and smart search",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron .",
+    "start": "tauri dev",
+    "dev": "tauri dev",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build && node scripts/package-portable.js",
+    "build": "tauri build && node scripts/package-portable.js",
     "server": "node server.js",
-    "build": "electron-builder --win portable",
-    "build:installer": "electron-builder --win nsis",
+    "package": "node scripts/package-portable.js",
     "build:android": "cd android && .\\gradlew.bat assembleDebug",
-    "dist": "electron-builder"
+    "start:electron": "electron .",
+    "build:electron": "electron-builder --win portable",
+    "dist": "tauri build && node scripts/package-portable.js"
   },
   "keywords": [],
   "author": "akvarium11",
@@ -20,6 +24,7 @@
     "express": "^5.2.1"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "electron": "^44.1.1",
     "electron-builder": "^26.15.3"
   },

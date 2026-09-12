@@ -12,7 +12,7 @@ A sleek, modern desktop audio player featuring an interactive Dynamic Island, 10
 [![GitHub License](https://img.shields.io/github/license/akvarium11/MoonPlayer?style=for-the-badge&color=7c3aed)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/akvarium11/MoonPlayer?style=for-the-badge&color=eab308)](https://github.com/akvarium11/MoonPlayer/stargazers)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078D6?style=for-the-badge&logo=windows)](https://github.com/akvarium11/MoonPlayer)
-[![Electron](https://img.shields.io/badge/Electron-44.1.1-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://electronjs.org)
+[![Tauri](https://img.shields.io/badge/Tauri-v2-24C8D8?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app)
 [![Node.js](https://img.shields.io/badge/Node.js-Express%205-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
 [![Discord RPC](https://img.shields.io/badge/Discord-Rich%20Presence-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com)
 
@@ -76,7 +76,7 @@ A sleek, modern desktop audio player featuring an interactive Dynamic Island, 10
 | 🎨 **Aesthetic Customization** | Vibrant accent presets (Neon Green, Pink, Electric Blue, Purple, Sunset Orange, Minimalist White) plus a custom color picker. Upload your own wallpapers with customizable blur and opacity. |
 | 📜 **Synchronized Lyrics (.lrc)** | Real-time karaoke-style lyrics display synced directly with playback inside the expanded island. |
 | ⏱️ **Sleep Timer** | Built-in shutdown countdown timers (15, 30, 45, 60 minutes) to gently pause your music when heading to sleep. |
-| 🪟 **Dual Engine Architecture** | Run as a standalone portable Electron app, or use the ultra-lightweight native C++ launcher (`launcher.cpp`) with Edge WebView2 on Windows and WebKit2GTK on Linux. |
+| 🪟 **Tauri v2 Native Architecture** | Powered by ultra-lightweight **Tauri v2** & Rust desktop shell with Edge WebView2 on Windows and WebKit2GTK on Linux, replacing heavy Electron with instant launch, minimal RAM, and native OS integration. |
 
 ---
 
@@ -85,7 +85,7 @@ A sleek, modern desktop audio player featuring an interactive Dynamic Island, 10
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        Desktop Shell / Launcher                        │
-│   • Electron Standalone (dist/MoonPlayer.exe)                          │
+│   • Tauri v2 Standalone (src-tauri / MoonPlayer.exe)                   │
 │   • OR Native C++ Wrapper (launcher.cpp + WebView2 / WebKitGTK)        │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ Embeds Web Engine
@@ -140,13 +140,12 @@ npm install
 npm start
 ```
 
-#### Build Standalone Executables
+#### Build Standalone Executables (Tauri v2)
 ```bash
-# Build standalone portable Windows x64 binary (dist/MoonPlayer.exe)
+# Build standalone desktop binary with Tauri
 npm run build
-
-# Build NSIS Windows installer
-npm run build:installer
+# or
+npm run tauri:build
 ```
 
 ---
@@ -289,7 +288,7 @@ This project is licensed under the **GPL-3.0 License** — see the [LICENSE](LIC
 | 🎨 **Глубокая кастомизация** | Готовые неоновые цветовые темы (зеленый, розовый, голубой, фиолетовый, оранжевый, белый) и палитра для любого цвета. Возможность загрузки своего фонового изображения с регулировкой блюра и прозрачности. |
 | 📜 **Синхронизация текстов (.lrc)** | Построчное отображение караоке-текстов песен в реальном времени прямо внутри Dynamic Island. |
 | ⏱️ **Таймер сна** | Встроенный таймер автоотключения на 15, 30, 45 или 60 минут. |
-| 🪟 **Двойной движок** | Работает как полностью автономный переносимый файл (Electron), так и через нативный легковесный C++ лаунчер (`launcher.cpp` на WebView2 / WebKitGTK). |
+| 🪟 **Нативная архитектура Tauri v2** | Работает на ультра-легковесной десктопной оболочке **Tauri v2** и Rust (WebView2 на Windows / WebKitGTK на Linux) вместо тяжелого Electron — мгновенный старт, минимум RAM и глубокая системная интеграция. |
 
 ---
 
@@ -298,7 +297,7 @@ This project is licensed under the **GPL-3.0 License** — see the [LICENSE](LIC
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                     Десктопная оболочка / Лаунчер                      │
-│   • Автономный Electron (dist/MoonPlayer.exe)                          │
+│   • Автономный Tauri v2 (src-tauri / MoonPlayer.exe)                   │
 │   • ИЛИ Нативный C++ лаунчер (launcher.cpp + WebView2 / WebKitGTK)     │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ Встраивает WebView
@@ -353,13 +352,12 @@ npm install
 npm start
 ```
 
-#### Сборка автономного бинарника
+#### Сборка автономного бинарника (Tauri v2)
 ```bash
-# Сборка portable-версии для Windows (dist/MoonPlayer.exe)
+# Сборка нативного десктопного бинарника через Tauri
 npm run build
-
-# Сборка установочного пакета Windows (NSIS Installer)
-npm run build:installer
+# или
+npm run tauri:build
 ```
 
 ---

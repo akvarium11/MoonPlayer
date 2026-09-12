@@ -24,6 +24,9 @@ function getWritableDir() {
     if (process.env.PORTABLE_EXECUTABLE_DIR) {
         return process.env.PORTABLE_EXECUTABLE_DIR;
     }
+    if (process.env.MOONPLAYER_DATA_DIR) {
+        return process.env.MOONPLAYER_DATA_DIR;
+    }
     try {
         const electron = require('electron');
         const app = electron.app || (electron.remote && electron.remote.app);
@@ -31,6 +34,9 @@ function getWritableDir() {
             return app.getPath('userData');
         }
     } catch (e) {}
+    if (process.platform === 'win32' && process.env.APPDATA) {
+        return path.join(process.env.APPDATA, 'MoonPlayer');
+    }
     return __dirname;
 }
 
@@ -857,7 +863,15 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`MoonPlayer server is running on port ${PORT}`);
     console.log(`Local URL: http://localhost:${PORT}`);
+});
+
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.log(`MoonPlayer server already running on port ${PORT}`);
+    } else {
+        console.error('[Server Error]', err);
+    }
 });
