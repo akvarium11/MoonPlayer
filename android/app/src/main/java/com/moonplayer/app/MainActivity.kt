@@ -89,7 +89,8 @@ class MainActivity : AppCompatActivity() {
 
         // Setup WebView with native hardware acceleration
         webView = WebView(this).apply {
-            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.status_bar))
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER

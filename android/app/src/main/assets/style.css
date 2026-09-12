@@ -66,8 +66,9 @@ body {
     position: relative;
 }
 
+html.has-custom-bg,
 body.has-custom-bg {
-    background-color: transparent;
+    background-color: transparent !important;
 }
 
 /* Snowflake Container */
@@ -2913,15 +2914,15 @@ body.is-android .result-play-overlay {
    ========================================== */
 #custom-bg {
     position: fixed;
+    inset: 0;
     top: 0;
     left: 0;
+    right: 0;
+    bottom: 0;
     width: 100%;
     width: 100vw;
     height: 100%;
-    height: 100vh;
-    height: 100lvh;
-    height: var(--app-fixed-height, 100lvh);
-    min-height: 100vh;
+    min-height: 100%;
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -2934,7 +2935,8 @@ body.is-android .result-play-overlay {
     -webkit-transform: translate3d(0, 0, 0);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
-    contain: strict;
+    contain: paint;
+    will-change: transform;
 }
 
 .bg-settings-wrapper {
@@ -3137,29 +3139,26 @@ body.is-android .result-play-overlay {
     opacity: 0;
     pointer-events: none;
     overflow: hidden;
-    transform: translate3d(0, -6px, 0) scale(0.99);
-    transition: max-height 0.28s var(--island-spring-expand),
-                opacity 0.18s ease,
-                transform 0.28s var(--island-spring-expand),
-                margin-top 0.28s var(--island-spring-expand),
-                padding-top 0.28s var(--island-spring-expand),
+    transform: translate3d(0, -6px, 0);
+    transition: opacity 0.22s ease,
+                transform 0.28s var(--island-spring-collapse),
+                max-height 0.28s var(--island-spring-collapse),
                 border-color 0.2s ease;
-    will-change: max-height, opacity, transform;
+    will-change: opacity, transform;
+    contain: paint layout;
 }
 
 .dynamic-island.queue-expanded .island-queue-section {
-    max-height: 150px;
+    max-height: 160px;
     opacity: 1;
     pointer-events: auto;
     margin-top: 6px;
     padding-top: 8px;
     border-color: rgba(255, 255, 255, 0.08);
-    transform: translate3d(0, 0, 0) scale(1);
-    transition: max-height 0.38s var(--island-spring-expand) 0.02s,
-                opacity 0.26s ease 0.03s,
+    transform: translate3d(0, 0, 0);
+    transition: opacity 0.26s ease 0.04s,
                 transform 0.38s var(--island-spring-expand) 0.02s,
-                margin-top 0.38s var(--island-spring-expand),
-                padding-top 0.38s var(--island-spring-expand),
+                max-height 0.38s var(--island-spring-expand),
                 border-color 0.18s ease;
 }
 
@@ -3229,6 +3228,9 @@ body.is-android .result-play-overlay {
     flex: 1;
     padding-right: 4px;
     width: 100%;
+    contain: content;
+    -webkit-overflow-scrolling: touch;
+    will-change: transform;
 }
 
 .queue-item {
@@ -3241,19 +3243,21 @@ body.is-android .result-play-overlay {
     cursor: pointer;
     background-color: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.01);
-    transition: all 0.2s;
-    animation: slideInQueueItem 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+    animation: slideInQueueItem 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
     overflow: hidden;
+    will-change: transform, opacity;
+    contain: layout style;
 }
 
 @keyframes slideInQueueItem {
     from {
         opacity: 0;
-        transform: translateY(8px);
+        transform: translate3d(0, 8px, 0);
     }
     to {
         opacity: 1;
-        transform: translateY(0);
+        transform: translate3d(0, 0, 0);
     }
 }
 

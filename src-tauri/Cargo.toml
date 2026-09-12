@@ -1,6 +1,6 @@
 [package]
 name = "moonplayer"
-version = "2.4.0"
+version = "2.5.0"
 description = "MoonPlayer Desktop"
 authors = ["akvarium11"]
 license = "GPL-3.0"

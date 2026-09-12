@@ -3,23 +3,30 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const rootDir = path.resolve(__dirname, '..');
+const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+const version = pkg.version || '2.5.0';
+
 const releaseDir = path.join(rootDir, 'src-tauri', 'target', 'release');
 const distDir = path.join(rootDir, 'dist');
 const portableDir = path.join(distDir, 'MoonPlayer-portable');
-const zipFile = path.join(distDir, 'MoonPlayer_2.4.0_portable.zip');
-const nsisSrc = path.join(releaseDir, 'bundle', 'nsis', 'MoonPlayer_2.4.0_x64-setup.exe');
-const nsisDst = path.join(distDir, 'MoonPlayer_2.4.0_x64-setup.exe');
+const zipFile = path.join(distDir, `MoonPlayer_${version}_portable.zip`);
+const nsisDir = path.join(releaseDir, 'bundle', 'nsis');
+const nsisDst = path.join(distDir, `MoonPlayer_${version}_x64-setup.exe`);
 
-console.log('[Packaging] Preparing portable and installer distribution in dist/...');
+console.log(`[Packaging] Preparing portable and installer distribution for v${version} in dist/...`);
 
 if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
 }
 
 // 1. Copy NSIS installer to dist
-if (fs.existsSync(nsisSrc)) {
-    console.log('[Packaging] Copying installer to dist/MoonPlayer_2.4.0_x64-setup.exe...');
-    fs.copyFileSync(nsisSrc, nsisDst);
+if (fs.existsSync(nsisDir)) {
+    const setupFiles = fs.readdirSync(nsisDir).filter(f => f.endsWith('-setup.exe'));
+    if (setupFiles.length > 0) {
+        const nsisSrc = path.join(nsisDir, setupFiles[0]);
+        console.log(`[Packaging] Copying installer to dist/${path.basename(nsisDst)}...`);
+        fs.copyFileSync(nsisSrc, nsisDst);
+    }
 }
 
 // 2. Prepare portable directory

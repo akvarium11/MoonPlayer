@@ -1234,13 +1234,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Render initially
         renderLibraryPanel();
 
-        // Select the first album or song by default if available
-        if (albums.length > 0) {
-            selectAlbum(albums[0].albumKey);
-        } else if (allSongs.length > 0) {
-            // No albums? Load list of songs
-            currentPlaylist = [...allSongs];
-            renderPlaylistView("All Tracks", "Indexed Local Audio", "Various", null);
+        // Populate currentPlaylist in memory without forcing album view
+        if (!currentPlaylist || currentPlaylist.length === 0) {
+            if (allSongs.length > 0) {
+                currentPlaylist = [...allSongs];
+            }
         }
     });
 
@@ -5667,10 +5665,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const fragment = document.createDocumentFragment();
         upcoming.forEach((song, localIdx) => {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'queue-item';
-            itemDiv.style.animationDelay = `${localIdx * 45}ms`;
+            if (localIdx < 8) {
+                itemDiv.style.animationDelay = `${localIdx * 25}ms`;
+            } else {
+                itemDiv.style.animation = 'none';
+                itemDiv.style.opacity = '1';
+                itemDiv.style.transform = 'none';
+            }
             const flacBadgeHTML = getFormatBadgeHTML(song, 'flac-badge-queue');
             itemDiv.innerHTML = `
                 <div class="queue-item-title">
@@ -5690,8 +5695,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 showTrackContextMenu(e, song);
             });
-            queueListEl.appendChild(itemDiv);
+            fragment.appendChild(itemDiv);
         });
+        queueListEl.appendChild(fragment);
     }
 
     function loadLyrics(song) {
@@ -7768,11 +7774,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 customBgEl.style.opacity = bgOpacity;
                 customBgEl.style.filter = `blur(${bgBlur}px)`;
                 document.body.classList.add('has-custom-bg');
+                document.documentElement.classList.add('has-custom-bg');
                 
                 if (bgRemoveBtn) bgRemoveBtn.classList.remove('hidden');
                 if (bgSlidersContainer) bgSlidersContainer.classList.remove('hidden');
             } else {
                 document.body.classList.remove('has-custom-bg');
+                document.documentElement.classList.remove('has-custom-bg');
             }
         } catch (err) {
             console.error("Failed loading background from IndexedDB:", err);
@@ -7811,6 +7819,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 document.body.classList.add('has-custom-bg');
+                document.documentElement.classList.add('has-custom-bg');
                 if (bgRemoveBtn) bgRemoveBtn.classList.remove('hidden');
                 if (bgSlidersContainer) bgSlidersContainer.classList.remove('hidden');
 
@@ -7844,6 +7853,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     customBgEl.style.opacity = '0';
                 }
                 document.body.classList.remove('has-custom-bg');
+                document.documentElement.classList.remove('has-custom-bg');
                 if (bgRemoveBtn) bgRemoveBtn.classList.add('hidden');
                 if (bgSlidersContainer) bgSlidersContainer.classList.add('hidden');
                 if (typeof showToast === 'function') {
@@ -8226,11 +8236,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentSelectedPlaylistName) {
                 selectPlaylist(currentSelectedPlaylistName);
             } else if (!currentPlaylist || currentPlaylist.length === 0) {
-                if (albums.length > 0) {
-                    selectAlbum(albums[0].albumKey);
-                } else if (allSongs.length > 0) {
+                if (allSongs.length > 0) {
                     currentPlaylist = [...allSongs];
-                    renderPlaylistView("All Tracks", "Indexed Server Audio", "Various", null);
                 }
             }
         } catch (e) {
