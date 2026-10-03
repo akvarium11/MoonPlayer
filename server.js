@@ -653,17 +653,27 @@ app.get('/api/soundcloud/config', (req, res) => {
     res.json({
         enabled: !!cfg.enabled,
         hasToken: !!(cfg.oauthToken && cfg.oauthToken.trim()),
-        user: soundcloudService.currentUser || cfg.user || null
+        user: soundcloudService.currentUser || cfg.user || null,
+        syncDestination: cfg.syncDestination || 'offline',
+        hasDatadomeCookie: !!(cfg.datadomeCookie && cfg.datadomeCookie.trim())
     });
 });
 
 // Update SoundCloud configuration (enabled flag & oauthToken)
 app.post('/api/soundcloud/config', async (req, res) => {
     try {
-        const { enabled, oauthToken } = req.body;
+        const { enabled, oauthToken, syncDestination, datadomeCookie } = req.body;
         const update = {};
         if (typeof enabled === 'boolean') update.enabled = enabled;
         if (typeof oauthToken === 'string') update.oauthToken = oauthToken.trim();
+        if (syncDestination === 'offline' || syncDestination === 'soundcloud' || syncDestination === 'both') {
+            update.syncDestination = syncDestination;
+        }
+        if (typeof datadomeCookie === 'string') {
+            let cookie = datadomeCookie.trim();
+            if (cookie.toLowerCase().startsWith('datadome=')) cookie = cookie.slice('datadome='.length).trim();
+            update.datadomeCookie = cookie;
+        }
 
         if (update.oauthToken) {
             const user = await soundcloudService.verifyToken(update.oauthToken);
@@ -676,7 +686,9 @@ app.post('/api/soundcloud/config', async (req, res) => {
             config: {
                 enabled: !!saved.enabled,
                 hasToken: !!(saved.oauthToken && saved.oauthToken.trim()),
-                user: soundcloudService.currentUser || saved.user || null
+                user: soundcloudService.currentUser || saved.user || null,
+                syncDestination: saved.syncDestination || 'offline',
+                hasDatadomeCookie: !!(saved.datadomeCookie && saved.datadomeCookie.trim())
             }
         });
     } catch (e) {
@@ -766,8 +778,10 @@ app.get('/api/soundcloud/artist/:id', async (req, res) => {
             success: true,
             artist,
             tracks: artist.tracks || [],
+            topTracks: artist.topTracks || [],
             albums: artist.albums || [],
-            playlists: artist.playlists || []
+            playlists: artist.playlists || [],
+            likes: artist.likes || []
         });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -776,13 +790,34 @@ app.get('/api/soundcloud/artist/:id', async (req, res) => {
 
 // Get user liked tracks from SoundCloud
 app.get('/api/soundcloud/likes', async (req, res) => {
-    const { limit, offset } = req.query;
+    const { limit, offset, next } = req.query;
     try {
         const data = await soundcloudService.getUserLikes(
             limit ? parseInt(limit) : 50,
-            offset ? parseInt(offset) : 0
+            offset ? parseInt(offset) : 0,
+            typeof next === 'string' && next ? next : null
         );
         res.json({ success: true, ...data });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/soundcloud/like', async (req, res) => {
+    try {
+        const trackId = req.body && req.body.trackId;
+        if (!trackId) return res.status(400).json({ success: false, error: 'trackId is required' });
+        const result = await soundcloudService.likeTrack(trackId);
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.delete('/api/soundcloud/like/:id', async (req, res) => {
+    try {
+        const result = await soundcloudService.unlikeTrack(req.params.id);
+        res.json(result);
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -793,6 +828,38 @@ app.get(['/api/soundcloud/playlists', '/api/soundcloud/user/playlists'], async (
     try {
         const playlists = await soundcloudService.getUserPlaylists();
         res.json({ success: true, playlists });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/soundcloud/playlists', async (req, res) => {
+    try {
+        const title = req.body && req.body.title;
+        if (!title || !String(title).trim()) return res.status(400).json({ success: false, error: 'title is required' });
+        const tracks = Array.isArray(req.body.tracks) ? req.body.tracks : [];
+        const playlist = await soundcloudService.createPlaylist(String(title), req.body.sharing || 'private', tracks);
+        res.json({ success: true, playlist });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/soundcloud/playlists/:id/tracks', async (req, res) => {
+    try {
+        const trackId = req.body && req.body.trackId;
+        if (!trackId) return res.status(400).json({ success: false, error: 'trackId is required' });
+        const playlist = await soundcloudService.addTrackToPlaylist(req.params.id, trackId);
+        res.json({ success: true, playlist });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.delete('/api/soundcloud/playlists/:id/tracks/:trackId', async (req, res) => {
+    try {
+        const result = await soundcloudService.removeTrackFromPlaylist(req.params.id, req.params.trackId);
+        res.json(result);
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }

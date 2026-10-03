@@ -253,6 +253,48 @@ document.addEventListener('DOMContentLoaded', () => {
     let artists = [];    // Grouped by Artist Name
     let playlists = {};  // Custom playlists: { name: [path1, path2, ...] }
     let currentSelectedPlaylistName = null; // Currently selected playlist
+
+    const scLikedIds = new Set();
+    let scLikesNextHref = null;
+    let scLikesLoading = false;
+
+    function saveScLikedIds() {
+        try { localStorage.setItem('moonplayer_sc_liked_ids', JSON.stringify([...scLikedIds])); } catch {}
+    }
+
+    try {
+        const savedScLikes = JSON.parse(localStorage.getItem('moonplayer_sc_liked_ids') || '[]');
+        if (Array.isArray(savedScLikes)) savedScLikes.forEach(id => scLikedIds.add(String(id)));
+    } catch {}
+
+    async function loadMoreSoundCloudLikes() {
+        if (scLikesLoading || !scLikesNextHref) return;
+        if (searchType !== 'soundcloud') return;
+        if (soundCloudSubTab !== 'all' && soundCloudSubTab !== 'tracks') return;
+        const searchInputEl = document.getElementById('search-input');
+        if (searchInputEl && searchInputEl.value.trim()) return;
+
+        scLikesLoading = true;
+        const href = scLikesNextHref;
+        try {
+            const res = await fetch('/api/soundcloud/likes?next=' + encodeURIComponent(href));
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'Failed to load likes');
+            if (scLikesNextHref !== href) return;
+            scLikesNextHref = data.next_href || null;
+            const fresh = (data.tracks || []).filter(t => t && !activeResults.some(a => a && a.id === t.id));
+            fresh.forEach(registerSoundCloudTrack);
+            fresh.forEach(t => { if (t.id != null) scLikedIds.add(String(t.id)); });
+            if (fresh.length) saveScLikedIds();
+            activeResults.push(...fresh);
+            appendMoreResults();
+            updateLikeButtonState();
+        } catch (err) {
+            console.error('[SoundCloud] likes page failed:', err);
+        } finally {
+            scLikesLoading = false;
+        }
+    }
     
     // Navigation History Stack
     const historyStack = [];
@@ -1933,8 +1975,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         likeBtn.style.opacity = '';
         likeBtn.style.pointerEvents = '';
+        const isSc = isSoundCloudTrack(currentSong);
+        const scId = isSc ? (currentSong.id || extractSoundCloudId(currentSong.path)) : null;
         const songPath = currentSong.path || (currentSong.id ? `soundcloud:${currentSong.id}` : null);
-        const isLiked = playlists['Liked'] && songPath && (playlists['Liked'].includes(songPath) || (currentSong.id && playlists['Liked'].includes(`soundcloud:${currentSong.id}`)));
+        const isLiked = isSc
+            ? !!(scId && scLikedIds.has(String(scId)))
+            : !!(playlists['Liked'] && songPath && (playlists['Liked'].includes(songPath) || (currentSong.id && playlists['Liked'].includes(`soundcloud:${currentSong.id}`))));
         if (isLiked) {
             likeBtn.innerHTML = '<i class="fa-solid fa-heart"></i>';
             likeBtn.classList.add('liked');
@@ -3108,6 +3154,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const menu = document.createElement('div');
         menu.className = 'playlist-context-menu';
 
+        const sectionLabel = (text) => {
+            const el = document.createElement('div');
+            el.className = 'playlist-context-menu-item';
+            el.style.cssText = 'color: var(--text-muted); cursor: default; font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase;';
+            el.textContent = text;
+            return el;
+        };
+
+        menu.appendChild(sectionLabel('Offline'));
+
         const playlistNames = Object.keys(playlists);
         if (playlistNames.length === 0) {
             const emptyItem = document.createElement('div');
@@ -3120,13 +3176,13 @@ document.addEventListener('DOMContentLoaded', () => {
             playlistNames.forEach(name => {
                 const item = document.createElement('div');
                 item.className = 'playlist-context-menu-item';
-                
+
                 const hasSong = playlists[name].includes(song.path);
                 item.innerHTML = `
                     <i class="fa-solid ${hasSong ? 'fa-check' : 'fa-music'}" style="${hasSong ? 'color: var(--accent);' : ''}"></i>
                     <span>${escapeHtml(name)}</span>
                 `;
-                
+
                 item.addEventListener('click', () => {
                     if (isSoundCloudTrack(song)) {
                         registerSoundCloudTrack(song);
@@ -3177,15 +3233,106 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         menu.appendChild(createOption);
 
+        if (isSoundCloudEnabled && isSoundCloudTrack(song)) {
+            const scId = song.id || extractSoundCloudId(song.path);
+            if (scId) {
+                const scDivider = document.createElement('div');
+                scDivider.className = 'playlist-context-menu-divider';
+                menu.appendChild(scDivider);
+                menu.appendChild(sectionLabel('SoundCloud'));
+
+                const loadingItem = document.createElement('div');
+                loadingItem.className = 'playlist-context-menu-item';
+                loadingItem.style.color = 'var(--text-muted)';
+                loadingItem.style.cursor = 'default';
+                loadingItem.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Loading...</span>';
+                menu.appendChild(loadingItem);
+
+                const createSc = document.createElement('div');
+                createSc.className = 'playlist-context-menu-item';
+                createSc.innerHTML = '<i class="fa-brands fa-soundcloud" style="color: #ff5500;"></i><span>New SoundCloud Playlist...</span>';
+                createSc.addEventListener('click', async () => {
+                    menu.remove();
+                    const name = await showCustomPrompt("New SoundCloud Playlist", "Playlist Name");
+                    if (name === null) return;
+                    const trimmed = name.trim();
+                    if (!trimmed) return;
+                    try {
+                        const res = await fetch('/api/soundcloud/playlists', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ title: trimmed, tracks: [scId] })
+                        });
+                        const d = await res.json();
+                        if (!d.success) throw new Error(d.error || 'Failed');
+                        if (typeof showToast === 'function') showToast(`Created "${trimmed}" on SoundCloud`);
+                    } catch (err) {
+                        if (typeof showToast === 'function') showToast(err.message || 'Failed to create SoundCloud playlist');
+                    }
+                });
+                menu.appendChild(createSc);
+
+                fetch('/api/soundcloud/user/playlists').then(r => r.json()).then(d => {
+                    if (!loadingItem.isConnected) return;
+                    loadingItem.remove();
+                    const list = (d.success && d.playlists) ? d.playlists.filter(p => !p.isAlbum) : [];
+                    if (list.length === 0) {
+                        const empty = document.createElement('div');
+                        empty.className = 'playlist-context-menu-item';
+                        empty.style.color = 'var(--text-muted)';
+                        empty.style.cursor = 'default';
+                        empty.textContent = d.success ? 'No SoundCloud playlists' : (d.error || 'Failed to load');
+                        createSc.before(empty);
+                        return;
+                    }
+                    const scNum = Number(String(scId).replace(/^soundcloud:/i, ''));
+                    list.forEach(pl => {
+                        const has = (pl.tracks || []).some(t => Number(t.id) === scNum);
+                        const item = document.createElement('div');
+                        item.className = 'playlist-context-menu-item';
+                        item.innerHTML = `
+                            <i class="fa-solid ${has ? 'fa-check' : 'fa-music'}" style="${has ? 'color: #ff5500;' : ''}"></i>
+                            <span>${escapeHtml(pl.title)}</span>
+                        `;
+                        item.addEventListener('click', async () => {
+                            item.style.pointerEvents = 'none';
+                            try {
+                                const res = has
+                                    ? await fetch(`/api/soundcloud/playlists/${encodeURIComponent(pl.id)}/tracks/${encodeURIComponent(scId)}`, { method: 'DELETE' })
+                                    : await fetch(`/api/soundcloud/playlists/${encodeURIComponent(pl.id)}/tracks`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ trackId: scId })
+                                    });
+                                const rd = await res.json();
+                                if (!rd.success) throw new Error(rd.error || 'Failed');
+                                menu.remove();
+                                if (typeof showToast === 'function') {
+                                    showToast(has ? `Removed from "${pl.title}"` : `Added to "${pl.title}"`);
+                                }
+                            } catch (err) {
+                                item.style.pointerEvents = '';
+                                if (typeof showToast === 'function') showToast(err.message || 'SoundCloud playlist update failed');
+                            }
+                        });
+                        createSc.before(item);
+                    });
+                }).catch(err => {
+                    if (!loadingItem.isConnected) return;
+                    loadingItem.textContent = err.message || 'Failed to load';
+                });
+            }
+        }
+
         document.body.appendChild(menu);
         const rect = btn.getBoundingClientRect();
         menu.style.position = 'fixed';
-        
+
         let top = rect.bottom + window.scrollY + 5;
         if (top + menu.offsetHeight > window.innerHeight + window.scrollY) {
             top = rect.top + window.scrollY - menu.offsetHeight - 5;
         }
-        
+
         menu.style.top = `${top}px`;
         menu.style.left = `${rect.right - 180 + window.scrollX}px`;
 
@@ -3651,7 +3798,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 div.addEventListener('click', () => {
                     document.querySelectorAll('.result-item').forEach(el => el.classList.remove('active'));
                     div.classList.add('active');
-                    selectArtist(item.artistKey);
+                    if (isSoundCloudEnabled && item.tracks.every(isSoundCloudTrack)) {
+                        searchAndOpenSoundCloudArtist(item.name);
+                    } else {
+                        selectArtist(item.artistKey);
+                    }
                 });
             } else if (searchType === 'soundcloud' && item.type === 'artist') {
                 const avatar = item.avatar || item.cover || DEFAULT_COVER;
@@ -3886,6 +4037,7 @@ document.addEventListener('DOMContentLoaded', () => {
         searchResults.addEventListener('scroll', () => {
             if (searchResults.scrollHeight - searchResults.scrollTop - searchResults.clientHeight < 60) {
                 appendMoreResults();
+                loadMoreSoundCloudLikes();
             }
         });
     }
@@ -3961,14 +4113,18 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Set artist header details
-        detailTitle.textContent = artist.name;
-        detailArtist.textContent = "Artist Profile";
-        detailArtist.classList.remove('clickable-artist');
+        if (detailTitle) detailTitle.textContent = artist.name;
+        if (detailArtist) {
+            detailArtist.textContent = "Artist Profile";
+            detailArtist.classList.remove('clickable-artist');
+        }
         const albumCount = artistAlbums.length;
-        detailMeta.textContent = `${albumCount} Album${albumCount !== 1 ? 's' : ''} • ${artist.tracks.length} Song${artist.tracks.length !== 1 ? 's' : ''}`;
+        if (detailMeta) detailMeta.textContent = `${albumCount} Album${albumCount !== 1 ? 's' : ''} • ${artist.tracks.length} Song${artist.tracks.length !== 1 ? 's' : ''}`;
         const artistCover = artist.tracks[0]?.cover || DEFAULT_COVER;
-        detailCover.src = artistCover;
-        detailCover.style.borderRadius = '50%'; // circular cover for artist profiles
+        if (detailCover) {
+            detailCover.src = artistCover;
+            detailCover.style.borderRadius = '50%'; // circular cover for artist profiles
+        }
 
         loadArtistDescription(artist.name);
 
@@ -4256,6 +4412,174 @@ document.addEventListener('DOMContentLoaded', () => {
     let songListTouchStartY = 0;
     let songListTouchTargetSong = null;
 
+    function createSongRowElement(song, displayIdx, playlistContext = null, isPlaylistViewOverride = null) {
+        if (song.globalIndex === undefined || typeof song.globalIndex !== 'number' || !allSongs[song.globalIndex]) {
+            const reg = registerSoundCloudTrack(song);
+            if (reg && typeof reg.globalIndex === 'number') {
+                song.globalIndex = reg.globalIndex;
+            } else {
+                let idx = allSongs.findIndex(s => s.path === song.path || (s.id && s.id === song.id));
+                if (idx === -1) {
+                    song.globalIndex = allSongs.length;
+                    allSongs.push(song);
+                } else {
+                    song.globalIndex = idx;
+                }
+            }
+        }
+
+        const isTrackPlaying = (currentlyPlayingIndex === song.globalIndex);
+        const isMobileDevice = isAndroidApp || window.innerWidth <= 900;
+        const songDiv = document.createElement('div');
+        songDiv.className = `song-item ${isTrackPlaying ? 'playing' : ''}`;
+        songDiv.setAttribute('data-global-index', song.globalIndex);
+        if (!isMobileDevice) {
+            songDiv.style.animation = 'fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both';
+            songDiv.style.animationDelay = `${((displayIdx - 1) % 20) * 20}ms`;
+        }
+
+        songDiv.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showTrackContextMenu(e, song);
+        });
+
+        const isPlaylistView = isPlaylistViewOverride !== null ? isPlaylistViewOverride : (currentSelectedPlaylistName !== null);
+        const downloadBtnHTML = (isSoundCloudTrack(song) && !song.isDownloadedLocally)
+            ? `<button class="song-action-btn download-btn" title="Download to Library" data-path="${song.path}">
+                   <i class="fa-solid fa-download"></i>
+               </button>`
+            : '';
+        const moreBtnHTML = `
+            <button class="song-action-btn more-btn" title="More options" data-path="${song.path}">
+                <i class="fa-solid fa-ellipsis-vertical"></i>
+            </button>
+        `;
+        const actionButtonHTML = isPlaylistView
+            ? `<div class="song-actions">
+                   ${downloadBtnHTML}
+                   <button class="song-action-btn remove-btn" title="Remove from Playlist" data-path="${song.path}">
+                       <i class="fa-solid fa-trash-can"></i>
+                   </button>
+                   ${moreBtnHTML}
+               </div>`
+            : `<div class="song-actions">
+                   ${downloadBtnHTML}
+                   <button class="song-action-btn add-btn" title="Add to Playlist">
+                       <i class="fa-solid fa-plus"></i>
+                   </button>
+                   ${moreBtnHTML}
+               </div>`;
+
+        const flacBadgeHTML = getFormatBadgeHTML(song);
+
+        const initialDur = (song.duration && !isNaN(song.duration) && song.duration > 0)
+            ? formatTime(song.duration)
+            : (durationCache[song.src] || '--:--');
+
+        songDiv.innerHTML = `
+            <div class="song-index">
+                <span class="song-index-num">${displayIdx}</span>
+                <span class="song-index-play"><i class="fa-solid ${isTrackPlaying && isPlaying ? 'fa-volume-high' : 'fa-play'}"></i></span>
+            </div>
+            <div class="song-main-info">
+                <div class="song-title">
+                    <span class="song-title-text">${escapeHtml(song.title)}</span>
+                    ${flacBadgeHTML}
+                </div>
+                <div class="song-artist">${formatArtistLinks(song.artist)}</div>
+            </div>
+            <div class="song-album">${escapeHtml(song.album || '')}</div>
+            <div class="song-duration" id="duration-${song.globalIndex}">${initialDur}</div>
+            ${actionButtonHTML}
+        `;
+
+        songDiv.addEventListener('click', (e) => {
+            if (songListDidLongPress) {
+                songListDidLongPress = false;
+                return;
+            }
+            if (e.target.closest('.song-actions') || e.target.closest('.action-btn')) return;
+
+            const artistLink = e.target.closest('.artist-link');
+            if (artistLink) {
+                selectArtistByName(artistLink.dataset.name);
+                return;
+            }
+
+            if (currentlyPlayingIndex !== -1 && currentlyPlayingIndex === song.globalIndex) {
+                if (isPlaying && !bgAudio.paused && !isTrackLoading) {
+                    togglePlayPause();
+                    return;
+                }
+                playTrack(song, 0, true);
+                return;
+            }
+
+            const activeContext = playlistContext || currentPlaylist;
+            if (isShuffle) {
+                originalQueue = [...activeContext];
+                const remainingSongs = activeContext.filter(s => s.globalIndex !== song.globalIndex);
+                shuffleArray(remainingSongs);
+                playQueue = [song, ...remainingSongs];
+                playQueueIndex = 0;
+            } else {
+                originalQueue = [];
+                playQueue = [...activeContext];
+                currentPlaylist = [...activeContext];
+                playQueueIndex = activeContext.findIndex(s => s.globalIndex === song.globalIndex);
+                if (playQueueIndex < 0) playQueueIndex = 0;
+            }
+            playTrack(song);
+        });
+
+        if (isPlaylistView) {
+            const removeBtn = songDiv.querySelector('.remove-btn');
+            if (removeBtn) {
+                removeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    const pathToRemove = removeBtn.getAttribute('data-path');
+                    if (currentSelectedPlaylistName && playlists[currentSelectedPlaylistName]) {
+                        playlists[currentSelectedPlaylistName] = playlists[currentSelectedPlaylistName].filter(p => p !== pathToRemove);
+                        savePlaylists();
+                        selectPlaylist(currentSelectedPlaylistName);
+                        renderLibraryPanel();
+                    }
+                });
+            }
+        } else {
+            const addBtn = songDiv.querySelector('.add-btn');
+            if (addBtn) {
+                addBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    showAddToPlaylistMenu(addBtn, song);
+                });
+            }
+        }
+
+        const moreBtn = songDiv.querySelector('.more-btn');
+        if (moreBtn) {
+            moreBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                showTrackContextMenu(e, song);
+            });
+        }
+
+        const dlBtn = songDiv.querySelector('.download-btn');
+        if (dlBtn) {
+            dlBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                downloadSoundCloudSong(song, dlBtn);
+            });
+        }
+
+        fetchAudioDuration(song);
+        return songDiv;
+    }
+
     function appendMoreSongs() {
         if (renderedSongsCount >= currentPlaylist.length) return;
 
@@ -4263,173 +4587,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         nextBatch.forEach((song, batchIdx) => {
             const absoluteIdx = renderedSongsCount + batchIdx;
-
-            // Guarantee song is registered in allSongs with valid globalIndex
-            if (song.globalIndex === undefined || typeof song.globalIndex !== 'number' || !allSongs[song.globalIndex]) {
-                const reg = registerSoundCloudTrack(song);
-                if (reg && typeof reg.globalIndex === 'number') {
-                    song.globalIndex = reg.globalIndex;
-                } else {
-                    let idx = allSongs.findIndex(s => s.path === song.path || (s.id && s.id === song.id));
-                    if (idx === -1) {
-                        song.globalIndex = allSongs.length;
-                        allSongs.push(song);
-                    } else {
-                        song.globalIndex = idx;
-                    }
-                }
-            }
-
-            const isTrackPlaying = (currentlyPlayingIndex === song.globalIndex);
-            const isMobileDevice = isAndroidApp || window.innerWidth <= 900;
-            const songDiv = document.createElement('div');
-            songDiv.className = `song-item ${isTrackPlaying ? 'playing' : ''}`;
-            songDiv.setAttribute('data-global-index', song.globalIndex);
-            if (!isMobileDevice) {
-                songDiv.style.animation = 'fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both';
-                songDiv.style.animationDelay = `${batchIdx * 25}ms`;
-            }
-            
-            songDiv.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                showTrackContextMenu(e, song);
-            });
-            
-            const isPlaylistView = (currentSelectedPlaylistName !== null);
-            const downloadBtnHTML = (isSoundCloudTrack(song) && !song.isDownloadedLocally)
-                ? `<button class="song-action-btn download-btn" title="Download to Library" data-path="${song.path}">
-                       <i class="fa-solid fa-download"></i>
-                   </button>`
-                : '';
-            const moreBtnHTML = `
-                <button class="song-action-btn more-btn" title="More options" data-path="${song.path}">
-                    <i class="fa-solid fa-ellipsis-vertical"></i>
-                </button>
-            `;
-            const actionButtonHTML = isPlaylistView
-                ? `<div class="song-actions">
-                       ${downloadBtnHTML}
-                       <button class="song-action-btn remove-btn" title="Remove from Playlist" data-path="${song.path}">
-                           <i class="fa-solid fa-trash-can"></i>
-                       </button>
-                       ${moreBtnHTML}
-                   </div>`
-                : `<div class="song-actions">
-                       ${downloadBtnHTML}
-                       <button class="song-action-btn add-btn" title="Add to Playlist">
-                           <i class="fa-solid fa-plus"></i>
-                       </button>
-                       ${moreBtnHTML}
-                   </div>`;
-
-            const flacBadgeHTML = getFormatBadgeHTML(song);
-
-            const initialDur = (song.duration && !isNaN(song.duration) && song.duration > 0)
-                ? formatTime(song.duration)
-                : (durationCache[song.src] || '--:--');
-
-            songDiv.innerHTML = `
-                <div class="song-index">
-                    <span class="song-index-num">${absoluteIdx + 1}</span>
-                    <span class="song-index-play"><i class="fa-solid ${isTrackPlaying && isPlaying ? 'fa-volume-high' : 'fa-play'}"></i></span>
-                </div>
-                <div class="song-main-info">
-                    <div class="song-title">
-                        <span class="song-title-text">${escapeHtml(song.title)}</span>
-                        ${flacBadgeHTML}
-                    </div>
-                    <div class="song-artist">${formatArtistLinks(song.artist)}</div>
-                </div>
-                <div class="song-album">${escapeHtml(song.album)}</div>
-                <div class="song-duration" id="duration-${song.globalIndex}">${initialDur}</div>
-                ${actionButtonHTML}
-            `;
-
-            // Play track on click (entire row / background / title / album)
-            songDiv.addEventListener('click', (e) => {
-                if (songListDidLongPress) {
-                    songListDidLongPress = false;
-                    return;
-                }
-                if (e.target.closest('.song-actions') || e.target.closest('.action-btn')) return;
-                
-                const artistLink = e.target.closest('.artist-link');
-                if (artistLink) {
-                    selectArtistByName(artistLink.dataset.name);
-                    return;
-                }
-
-                // If currently playing or loading, handle play/pause
-                if (currentlyPlayingIndex !== -1 && currentlyPlayingIndex === song.globalIndex) {
-                    if (isPlaying && !bgAudio.paused && !isTrackLoading) {
-                        togglePlayPause();
-                        return;
-                    }
-                    // If paused, errored or stuck, force reload and play
-                    playTrack(song, 0, true);
-                    return;
-                }
-
-                if (isShuffle) {
-                    originalQueue = [...currentPlaylist];
-                    const clickedSong = currentPlaylist[absoluteIdx] || song;
-                    const remainingSongs = currentPlaylist.filter((_, idx) => idx !== absoluteIdx);
-                    shuffleArray(remainingSongs);
-                    playQueue = [clickedSong, ...remainingSongs];
-                    playQueueIndex = 0;
-                } else {
-                    originalQueue = [];
-                    playQueue = [...currentPlaylist];
-                    playQueueIndex = absoluteIdx;
-                }
-                playTrack(song);
-            });
-
-            // Bind click for add/remove playlist buttons
-            if (isPlaylistView) {
-                const removeBtn = songDiv.querySelector('.remove-btn');
-                if (removeBtn) {
-                    removeBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        const pathToRemove = removeBtn.getAttribute('data-path');
-                        playlists[currentSelectedPlaylistName] = (playlists[currentSelectedPlaylistName] || []).filter(p => p !== pathToRemove);
-                        savePlaylists();
-                        selectPlaylist(currentSelectedPlaylistName); // reload
-                        renderLibraryPanel(); // update count in left panel
-                    });
-                }
-            } else {
-                const addBtn = songDiv.querySelector('.add-btn');
-                if (addBtn) {
-                    addBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        showAddToPlaylistMenu(addBtn, song);
-                    });
-                }
-            }
-
-            const moreBtn = songDiv.querySelector('.more-btn');
-            if (moreBtn) {
-                moreBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    showTrackContextMenu(e, song);
-                });
-            }
-
-            const dlBtn = songDiv.querySelector('.download-btn');
-            if (dlBtn) {
-                dlBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    downloadSoundCloudSong(song, dlBtn);
-                });
-            }
-
+            const songDiv = createSongRowElement(song, absoluteIdx + 1, currentPlaylist);
             songListContainer.appendChild(songDiv);
-            fetchAudioDuration(song);
         });
 
         renderedSongsCount += nextBatch.length;
@@ -5185,37 +5344,65 @@ document.addEventListener('DOMContentLoaded', () => {
         updateIslandQueue();
     });
 
+    async function toggleTrackLike(song) {
+        if (!song) return;
+
+        if (isSoundCloudTrack(song)) {
+            const scId = String(song.id || extractSoundCloudId(song.path) || '');
+            if (!scId) {
+                if (typeof showToast === 'function') showToast('This SoundCloud track has no id');
+                return;
+            }
+            const willBeLiked = !scLikedIds.has(scId);
+            if (willBeLiked) scLikedIds.add(scId); else scLikedIds.delete(scId);
+            saveScLikedIds();
+            updateLikeButtonState();
+            try {
+                const res = willBeLiked
+                    ? await fetch('/api/soundcloud/like', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ trackId: scId })
+                    })
+                    : await fetch(`/api/soundcloud/like/${encodeURIComponent(scId)}`, { method: 'DELETE' });
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok || d.success === false) throw new Error(d.error || `SoundCloud ${res.status}`);
+                if (typeof showToast === 'function') showToast(willBeLiked ? 'Liked on SoundCloud' : 'Unliked on SoundCloud');
+            } catch (err) {
+                if (willBeLiked) scLikedIds.delete(scId); else scLikedIds.add(scId);
+                saveScLikedIds();
+                updateLikeButtonState();
+                if (typeof showToast === 'function') showToast(err.message || 'SoundCloud like failed');
+            }
+            return;
+        }
+
+        if (!playlists['Liked']) playlists['Liked'] = [];
+        const targetPath = song.path;
+        if (!targetPath) return;
+
+        const isCurrentlyLiked = playlists['Liked'].includes(targetPath);
+        if (isCurrentlyLiked) {
+            playlists['Liked'] = playlists['Liked'].filter(p => p !== targetPath);
+        } else {
+            playlists['Liked'].push(targetPath);
+        }
+        savePlaylists();
+        updateLikeButtonState();
+
+        if (currentSelectedPlaylistName === 'Liked') selectPlaylist('Liked');
+        renderLibraryPanel();
+        if (typeof showToast === 'function') {
+            showToast(isCurrentlyLiked ? 'Removed from Liked Songs' : 'Added to Liked Songs');
+        }
+    }
+
     if (likeBtn) {
         likeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             const currentSong = allSongs[currentlyPlayingIndex] || (playQueue && playQueue[playQueueIndex]);
             if (!currentSong) return;
-            
-            if (!playlists['Liked']) {
-                playlists['Liked'] = [];
-            }
-
-            if (isSoundCloudTrack(currentSong)) {
-                registerSoundCloudTrack(currentSong);
-            }
-
-            const targetPath = currentSong.path || (currentSong.id ? `soundcloud:${currentSong.id}` : null);
-            if (!targetPath) return;
-            
-            const idx = playlists['Liked'].findIndex(p => p === targetPath || (currentSong.id && p === `soundcloud:${currentSong.id}`));
-            if (idx !== -1) {
-                playlists['Liked'].splice(idx, 1);
-            } else {
-                playlists['Liked'].push(targetPath);
-            }
-            savePlaylists();
-            updateLikeButtonState();
-            
-            // If currently viewing "Liked" playlist, reload it immediately
-            if (currentSelectedPlaylistName === 'Liked') {
-                selectPlaylist('Liked');
-            }
-            renderLibraryPanel(); // update count in left panel list
+            toggleTrackLike(currentSong);
         });
     }
 
@@ -5521,9 +5708,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const cleanName = artistName.trim();
         const artistKey = cleanName.toLowerCase();
 
-        // 1. Check local indexed artists
+        // 1. Check local indexed artists. An artist whose tracks are all
+        //    SoundCloud is not an offline artist — the index picks them up the
+        //    moment one of their tracks is played.
         const artist = artists.find(a => a.artistKey === artistKey || (a.name && a.name.toLowerCase() === artistKey));
-        if (artist) {
+        const artistIsOffline = artist && artist.tracks.some(t => !isSoundCloudTrack(t));
+        if (artist && artistIsOffline) {
             // Highlight and switch search scope to Artist
             searchType = 'artist';
             selectedTypeText.textContent = '▼ Artist';
@@ -5559,6 +5749,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return split.some(a => a.toLowerCase() === artistKey);
         });
         if (matchedSongs.length > 0) {
+            const onlySoundCloud = isSoundCloudEnabled && matchedSongs.every(isSoundCloudTrack);
+            if (onlySoundCloud) {
+                await searchAndOpenSoundCloudArtist(cleanName);
+                return;
+            }
             currentSelectedPlaylistName = null;
             currentPlaylist = [...matchedSongs];
             const cover = matchedSongs[0]?.cover || DEFAULT_COVER;
@@ -6649,6 +6844,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function updateDatadomeStatusLine(state) {
+        const dot = document.getElementById('soundcloud-datadome-dot');
+        const msg = document.getElementById('soundcloud-datadome-msg');
+        if (!dot || !msg) return;
+        const map = {
+            saved: ['connected', 'DataDome cookie saved'],
+            missing: ['error', 'DataDome cookie not set — likes and playlists will fail'],
+            error: ['error', 'DataDome cookie: could not verify']
+        };
+        const [cls, text] = map[state] || map.error;
+        dot.className = 'soundcloud-status-dot ' + cls;
+        msg.textContent = text;
+        msg.title = text;
+    }
+
     async function syncSoundCloudStatus() {
         const toggleEl = document.getElementById('toggle-soundcloud');
         const statusContainer = document.getElementById('soundcloud-status-container');
@@ -6702,6 +6912,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (statusMsg) statusMsg.textContent = 'Enter OAuth token to connect';
                     if (disconnectBtn) disconnectBtn.classList.add('hidden');
                 }
+
+                const cookieInput = document.getElementById('soundcloud-cookie-input');
+                if (cookieInput && !cookieInput.value) {
+                    cookieInput.placeholder = data.hasDatadomeCookie
+                        ? '•••••••• (DataDome cookie saved)'
+                        : 'Paste datadome cookie here';
+                }
+                updateDatadomeStatusLine(data.hasDatadomeCookie ? 'saved' : 'missing');
             } else {
                 if (optionsDiv) optionsDiv.classList.add('hidden');
                 if (statusContainer) statusContainer.classList.add('hidden');
@@ -6764,6 +6982,24 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             card.addEventListener('click', () => {
                 openSoundCloudPlaylist(item);
+            });
+        } else if (type === 'track') {
+            const cover = item.cover || item.artwork_url || item.artworkUrl || DEFAULT_COVER;
+            const title = item.title || 'SoundCloud Track';
+            const author = item.artist || (typeof item.user === 'string' ? item.user : item.user?.username) || 'SoundCloud';
+            const dur = (item.duration && !isNaN(item.duration) && item.duration > 0) ? formatTime(item.duration) : '';
+            card.innerHTML = `
+                <img src="${cover}" class="sc-card-cover" alt="${escapeHtml(title)}" onerror="this.src='${DEFAULT_COVER}'">
+                <div class="sc-card-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+                <div class="sc-card-subtitle">${escapeHtml(author)}${dur ? ` • ${dur}` : ''}</div>
+            `;
+            card.addEventListener('click', () => {
+                const reg = registerSoundCloudTrack(item) || item;
+                currentPlaylist = [reg];
+                playQueue = [reg];
+                playQueueIndex = 0;
+                originalQueue = [];
+                playTrack(reg);
             });
         }
 
@@ -7055,14 +7291,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const art = data.artist;
-            const tracks = data.tracks || art.tracks || [];
+            const topTracks = (data.topTracks || art.topTracks || []).map(registerSoundCloudTrack).filter(Boolean);
+            const tracks = (data.tracks || art.tracks || []).map(registerSoundCloudTrack).filter(Boolean);
             const albums = data.albums || art.albums || [];
-            const playlists = data.playlists || art.playlists || [];
+            const artistPlaylists = data.playlists || art.playlists || [];
+            const likes = (data.likes || art.likes || []).map(registerSoundCloudTrack).filter(Boolean);
 
-            tracks.forEach(registerSoundCloudTrack);
-
+            const primary = topTracks.length ? topTracks : tracks;
             currentSelectedPlaylistName = null;
-            currentPlaylist = [...tracks];
+            currentPlaylist = [...primary];
 
             const avatarUrl = art.avatar || art.cover || DEFAULT_COVER;
             const artistName = art.name || art.username || 'SoundCloud Artist';
@@ -7071,11 +7308,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             renderPlaylistView(artistName, "SoundCloud Artist", metaInfo, avatarUrl);
 
-            // Circular avatar in header
             if (detailCover) detailCover.style.borderRadius = '50%';
             if (detailArtist) detailArtist.classList.remove('clickable-artist');
 
-            // Render bio/description if available
             const rawDesc = (art.description || '').trim();
             if (rawDesc) {
                 renderDescriptionContent(rawDesc, [], art.followersCount, null, art.permalink_url);
@@ -7084,28 +7319,68 @@ document.addEventListener('DOMContentLoaded', () => {
                 detailDescription.innerHTML = '';
             }
 
-            // If the artist has albums or playlists, display a horizontal discography shelf right above the tracks
-            const allReleases = [...albums, ...playlists];
-            if (allReleases.length > 0 && songListContainer) {
-                const shelf = document.createElement('div');
-                shelf.className = 'sc-artist-shelf';
-                shelf.style.padding = '8px 12px 14px 12px';
-                shelf.style.borderBottom = '1px solid rgba(255, 255, 255, 0.08)';
-                shelf.style.marginBottom = '10px';
-                shelf.innerHTML = `
-                    <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.76rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
-                        <span><i class="fa-solid fa-compact-disc"></i> Discography & Playlists (${allReleases.length})</span>
-                    </div>
-                    <div class="sc-cards-scroll" style="padding: 0;"></div>
-                `;
-                const scrollRow = shelf.querySelector('.sc-cards-scroll');
-                enableHorizontalScroll(scrollRow);
-                allReleases.forEach(rel => {
-                    const isAlb = rel.type === 'album' || rel.isAlbum;
-                    scrollRow.appendChild(createSoundCloudCard(rel, isAlb ? 'album' : 'playlist'));
+            if (!songListContainer) return;
+
+            // renderPlaylistView already painted primary tracks. Replace them
+            // with the section layout, then freeze the scroll loader so it
+            // does not append currentPlaylist a second time.
+            songListContainer.innerHTML = '';
+
+            const addDivider = (icon, label, first) => {
+                const div = document.createElement('div');
+                div.className = 'sc-section-divider';
+                if (first) {
+                    div.style.marginTop = '0';
+                    div.style.borderTop = 'none';
+                }
+                div.innerHTML = `<i class="${icon}"></i><span>${escapeHtml(label)}</span>`;
+                songListContainer.appendChild(div);
+            };
+
+            const addCardRow = (items, type) => {
+                const row = document.createElement('div');
+                row.className = 'sc-cards-scroll';
+                enableHorizontalScroll(row);
+                items.forEach(item => row.appendChild(createSoundCloudCard(item, type)));
+                songListContainer.appendChild(row);
+            };
+
+            if (topTracks.length) {
+                addDivider('fa-solid fa-fire', 'Popular Tracks', true);
+                topTracks.slice(0, 10).forEach((track, i) => {
+                    songListContainer.appendChild(createSongRowElement(track, i + 1, topTracks, false));
                 });
-                songListContainer.prepend(shelf);
             }
+            if (albums.length) {
+                addDivider('fa-solid fa-compact-disc', `Albums & EPs (${albums.length})`, !topTracks.length);
+                addCardRow(albums, 'album');
+            }
+            if (artistPlaylists.length) {
+                addDivider('fa-solid fa-list', `Playlists (${artistPlaylists.length})`, !topTracks.length && !albums.length);
+                addCardRow(artistPlaylists, 'playlist');
+            }
+            if (likes.length) {
+                addDivider('fa-solid fa-heart', `Liked by ${artistName}`, !topTracks.length && !albums.length && !artistPlaylists.length);
+                addCardRow(likes, 'track');
+            }
+            if (tracks.length) {
+                addDivider('fa-solid fa-clock', 'Latest Releases', !topTracks.length && !albums.length && !artistPlaylists.length && !likes.length);
+                tracks.forEach((trk, i) => {
+                    songListContainer.appendChild(createSongRowElement(trk, i + 1, tracks, false));
+                });
+            }
+
+            if (!topTracks.length && !albums.length && !artistPlaylists.length && !likes.length && !tracks.length) {
+                songListContainer.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fa-brands fa-soundcloud" style="color: var(--accent);"></i>
+                        <p>Nothing here yet</p>
+                        <span>${escapeHtml(artistName)} has no public tracks.</span>
+                    </div>
+                `;
+            }
+
+            renderedSongsCount = currentPlaylist.length;
         } catch (err) {
             console.error('[SoundCloud] Failed to open artist:', err);
             if (typeof showToast === 'function') showToast(`Failed to open artist: ${err.message}`);
@@ -7308,6 +7583,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const likesData = await likesRes.json();
                 const tracks = likesData.tracks || [];
                 tracks.forEach(registerSoundCloudTrack);
+                tracks.forEach(t => { if (t && t.id != null) scLikedIds.add(String(t.id)); });
+                saveScLikedIds();
+                updateLikeButtonState();
+                scLikesNextHref = likesData.next_href || null;
+                scLikesLoading = false;
 
                 let userPlaylists = [];
                 if (soundCloudSubTab === 'all') {
@@ -7379,10 +7659,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const playAllBtn = headerDiv.querySelector('#sc-load-all-likes-btn');
                 if (playAllBtn) {
                     playAllBtn.addEventListener('click', () => {
-                        currentPlaylist = [...tracks];
-                        renderPlaylistView("SoundCloud Likes", "SoundCloud Favorites", `${tracks.length} tracks`, tracks[0]?.cover || DEFAULT_COVER);
-                        if (tracks.length > 0) {
-                            playTrack(tracks[0].globalIndex);
+                        currentPlaylist = [...activeResults];
+                        renderPlaylistView("SoundCloud Likes", "SoundCloud Favorites", `${activeResults.length} tracks`, activeResults[0]?.cover || DEFAULT_COVER);
+                        if (activeResults.length > 0) {
+                            playTrack(activeResults[0].globalIndex);
                         }
                     });
                 }
@@ -7402,6 +7682,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 activeResults = tracks;
                 renderedResultsCount = 0;
                 appendMoreResults();
+                if (searchResults && searchResults.scrollHeight <= searchResults.clientHeight + 60) {
+                    loadMoreSoundCloudLikes();
+                }
             } else if (soundCloudSubTab === 'playlists') {
                 const plRes = await fetch('/api/soundcloud/user/playlists');
                 const plData = await plRes.json();
@@ -7547,6 +7830,40 @@ document.addEventListener('DOMContentLoaded', () => {
             const isPassword = soundCloudTokenInput.type === 'password';
             soundCloudTokenInput.type = isPassword ? 'text' : 'password';
             soundCloudTokenToggleBtn.innerHTML = isPassword ? '<i class="fa-regular fa-eye-slash"></i>' : '<i class="fa-regular fa-eye"></i>';
+        });
+    }
+
+    const soundCloudCookieInput = document.getElementById('soundcloud-cookie-input');
+    const soundCloudCookieSaveBtn = document.getElementById('soundcloud-cookie-save-btn');
+    if (soundCloudCookieSaveBtn && soundCloudCookieInput) {
+        soundCloudCookieSaveBtn.addEventListener('click', async () => {
+            const cookie = soundCloudCookieInput.value.trim();
+            soundCloudCookieSaveBtn.disabled = true;
+            soundCloudCookieSaveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                const res = await fetch('/api/soundcloud/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ datadomeCookie: cookie })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to save cookie');
+                }
+                if (typeof showToast === 'function') {
+                    showToast(cookie ? 'SoundCloud cookie saved' : 'SoundCloud cookie cleared');
+                }
+                if (cookie) {
+                    soundCloudCookieInput.value = '';
+                    soundCloudCookieInput.placeholder = '•••••••• (DataDome cookie active)';
+                }
+                await syncSoundCloudStatus();
+            } catch (err) {
+                alert(`Error saving cookie: ${err.message}`);
+            } finally {
+                soundCloudCookieSaveBtn.disabled = false;
+                soundCloudCookieSaveBtn.textContent = 'SAVE';
+            }
         });
     }
 

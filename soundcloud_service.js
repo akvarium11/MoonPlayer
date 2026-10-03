@@ -111,6 +111,21 @@ class SoundCloudService {
         return { 'Authorization': `OAuth ${token}` };
     }
 
+    getMutateHeaders() {
+        const headers = {
+            ...this.getAuthHeader(),
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Origin': 'https://soundcloud.com',
+            'Referer': 'https://soundcloud.com/'
+        };
+        if (this.config.datadomeCookie && this.config.datadomeCookie.trim()) {
+            headers['Cookie'] = `datadome=${this.config.datadomeCookie.trim()}`;
+        }
+        return headers;
+    }
+
     async verifyToken(token) {
         if (!token || typeof token !== 'string') {
             throw new Error('OAuth token is required');
@@ -179,7 +194,14 @@ class SoundCloudService {
             isSoundCloud: true,
             permalink_url: t.permalink_url || '',
             likes_count: t.likes_count || 0,
-            genre: t.genre || ''
+            genre: t.genre || '',
+            userId: t.user ? t.user.id : null,
+            user: t.user ? {
+                id: t.user.id,
+                username: t.user.username || '',
+                avatar_url: t.user.avatar_url || '',
+                permalink_url: t.user.permalink_url || ''
+            } : null
         };
 
         this.trackCache.set(String(t.id), trackObj);
@@ -483,20 +505,40 @@ class SoundCloudService {
         const userData = await resp.json();
         const artist = this.formatArtist(userData);
 
-        // Fetch artist tracks, albums, playlists in parallel
-        const [tracksRes, albumsRes, playlistsRes] = await Promise.allSettled([
+        const [topRes, tracksRes, albumsRes, playlistsRes, likesRes] = await Promise.allSettled([
+            fetch(`https://api-v2.soundcloud.com/users/${artistId}/toptracks?limit=10`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] }),
             fetch(`https://api-v2.soundcloud.com/users/${artistId}/tracks?limit=30`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] }),
-            fetch(`https://api-v2.soundcloud.com/users/${artistId}/albums?limit=15`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] }),
-            fetch(`https://api-v2.soundcloud.com/users/${artistId}/playlists?limit=15`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] })
+            fetch(`https://api-v2.soundcloud.com/users/${artistId}/albums?limit=20`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] }),
+            fetch(`https://api-v2.soundcloud.com/users/${artistId}/playlists?limit=20`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] }),
+            fetch(`https://api-v2.soundcloud.com/users/${artistId}/likes?limit=30`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] })
         ]);
 
+        const rawTop = topRes.status === 'fulfilled' ? (topRes.value.collection || topRes.value || []) : [];
         const rawTracks = tracksRes.status === 'fulfilled' ? (tracksRes.value.collection || tracksRes.value || []) : [];
         const rawAlbums = albumsRes.status === 'fulfilled' ? (albumsRes.value.collection || albumsRes.value || []) : [];
         const rawPlaylists = playlistsRes.status === 'fulfilled' ? (playlistsRes.value.collection || playlistsRes.value || []) : [];
+        const rawLikes = likesRes.status === 'fulfilled'
+            ? (likesRes.value.collection || likesRes.value || []).map(i => i.track || i).filter(Boolean)
+            : [];
 
-        artist.tracks = rawTracks.map(t => this.formatTrack(t, artist.avatar)).filter(Boolean);
+        const dummyTop = { tracks: rawTop };
+        const dummyTracks = { tracks: rawTracks };
+        const dummyLikes = { tracks: rawLikes };
+        await Promise.allSettled([
+            this.resolvePlaylistStubs(dummyTop),
+            this.resolvePlaylistStubs(dummyTracks),
+            this.resolvePlaylistStubs(dummyLikes)
+        ]);
+
+        artist.topTracks = (dummyTop.tracks || []).map(t => this.formatTrack(t, artist.avatar)).filter(Boolean);
+        artist.tracks = (dummyTracks.tracks || []).map(t => this.formatTrack(t, artist.avatar)).filter(Boolean);
         artist.albums = rawAlbums.map(a => this.formatPlaylist(a)).filter(Boolean);
         artist.playlists = rawPlaylists.map(p => this.formatPlaylist(p)).filter(Boolean);
+        artist.likes = (dummyLikes.tracks || []).map(t => this.formatTrack(t)).filter(Boolean);
+
+        if (artist.topTracks.length === 0 && artist.tracks.length > 0) {
+            artist.topTracks = [...artist.tracks].sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+        }
 
         return artist;
     }
@@ -535,7 +577,7 @@ class SoundCloudService {
         return null;
     }
 
-    async getUserLikes(limit = 50, offset = 0) {
+    async getUserLikes(limit = 50, offset = 0, nextHref = null) {
         if (!this.config.enabled || !this.config.oauthToken) {
             throw new Error('SoundCloud is disabled or OAuth token is not configured');
         }
@@ -544,9 +586,17 @@ class SoundCloudService {
         }
 
         const userId = this.currentUser.id;
-        let url = `https://api-v2.soundcloud.com/users/${userId}/likes?limit=${limit}`;
-        if (offset > 0) {
-            url += `&offset=${offset}`;
+        let url;
+        if (nextHref) {
+            let parsed;
+            try { parsed = new URL(nextHref); } catch { parsed = null; }
+            if (!parsed || parsed.protocol !== 'https:' || parsed.hostname !== 'api-v2.soundcloud.com') {
+                throw new Error('Invalid SoundCloud likes page');
+            }
+            url = parsed.toString();
+        } else {
+            url = `https://api-v2.soundcloud.com/users/${userId}/likes?limit=${limit}`;
+            if (offset > 0) url += `&offset=${offset}`;
         }
 
         const resp = await fetch(url, { headers: this.getAuthHeader() });
@@ -593,6 +643,144 @@ class SoundCloudService {
         const data = await resp.json();
         const playlists = Array.isArray(data) ? data : (data.collection || []);
         return playlists.map(p => this.formatPlaylist(p)).filter(Boolean);
+    }
+
+    async createPlaylist(title, sharing = 'private', tracks = []) {
+        if (!this.config.enabled || !this.config.oauthToken) {
+            throw new Error('SoundCloud is disabled or OAuth token is not configured');
+        }
+        const cleanTracks = (tracks || []).map(t => {
+            const rawId = typeof t === 'object' ? (t.id || t.path) : t;
+            const num = Number(String(rawId).replace(/^soundcloud:/i, ''));
+            return isNaN(num) ? null : num;
+        }).filter(Boolean);
+
+        const resp = await fetch('https://api-v2.soundcloud.com/playlists', {
+            method: 'POST',
+            headers: { ...this.getMutateHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                playlist: {
+                    title: (title || 'New Playlist').trim(),
+                    sharing: sharing || 'private',
+                    tracks: cleanTracks
+                }
+            })
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => '');
+            if (resp.status === 403 && errText.includes('captcha')) {
+                throw new Error('SoundCloud blocked this action. Likes and playlist edits from this player are blocked by SoundCloud — a new cookie will not help. Saving offline still works.');
+            }
+            throw new Error(`Failed to create playlist on SoundCloud (${resp.status}): ${errText || 'Unknown error'}`);
+        }
+        return this.formatPlaylist(await resp.json());
+    }
+
+    async addTrackToPlaylist(playlistId, trackId) {
+        if (!this.config.enabled || !this.config.oauthToken) {
+            throw new Error('SoundCloud is disabled or OAuth token is not configured');
+        }
+        const cleanPlaylistId = String(playlistId).replace(/^soundcloud:/i, '').trim();
+        const cleanTrackId = Number(String(trackId).replace(/^soundcloud:/i, '').trim());
+        if (!cleanTrackId || isNaN(cleanTrackId)) throw new Error('Invalid track ID');
+
+        const currentPl = await this.getPlaylist(cleanPlaylistId);
+        if (!currentPl) throw new Error(`Playlist ${playlistId} not found`);
+
+        const existingTrackIds = (currentPl.tracks || []).map(t => t.id).filter(Boolean);
+        if (!existingTrackIds.includes(cleanTrackId)) existingTrackIds.push(cleanTrackId);
+
+        const resp = await fetch(`https://api-v2.soundcloud.com/playlists/${cleanPlaylistId}`, {
+            method: 'PUT',
+            headers: { ...this.getMutateHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ playlist: { tracks: existingTrackIds } })
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => '');
+            if (resp.status === 403 && errText.includes('captcha')) {
+                throw new Error('SoundCloud blocked this action. Likes and playlist edits from this player are blocked by SoundCloud — a new cookie will not help. Saving offline still works.');
+            }
+            throw new Error(`Failed to add track to SoundCloud playlist (${resp.status}): ${errText || 'Unknown error'}`);
+        }
+        return this.formatPlaylist(await resp.json());
+    }
+
+    async removeTrackFromPlaylist(playlistId, trackId) {
+        if (!this.config.enabled || !this.config.oauthToken) {
+            throw new Error('SoundCloud is disabled or OAuth token is not configured');
+        }
+        const cleanPlaylistId = String(playlistId).replace(/^soundcloud:/i, '').trim();
+        const cleanTrackId = Number(String(trackId).replace(/^soundcloud:/i, '').trim());
+
+        const currentPl = await this.getPlaylist(cleanPlaylistId);
+        if (!currentPl) throw new Error(`Playlist ${playlistId} not found`);
+
+        const remainingTrackIds = (currentPl.tracks || []).map(t => t.id).filter(id => id !== cleanTrackId);
+
+        const resp = await fetch(`https://api-v2.soundcloud.com/playlists/${cleanPlaylistId}`, {
+            method: 'PUT',
+            headers: { ...this.getMutateHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ playlist: { tracks: remainingTrackIds } })
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => '');
+            if (resp.status === 403 && errText.includes('captcha')) {
+                throw new Error('SoundCloud blocked this action. Likes and playlist edits from this player are blocked by SoundCloud — a new cookie will not help. Saving offline still works.');
+            }
+            throw new Error(`Failed to remove track from playlist (${resp.status}): ${errText || 'Unknown error'}`);
+        }
+        return { success: true };
+    }
+
+    async likeTrack(trackId) {
+        if (!this.config.enabled || !this.config.oauthToken) {
+            throw new Error('SoundCloud is disabled or OAuth token is not configured');
+        }
+        if (!this.currentUser) {
+            await this.verifyToken(this.config.oauthToken);
+        }
+        const userId = this.currentUser.id;
+        const cleanId = String(trackId).replace(/^soundcloud:/i, '').trim();
+        const url = `https://api-v2.soundcloud.com/users/${userId}/track_likes/${cleanId}`;
+        const resp = await fetch(url, { method: 'PUT', headers: this.getMutateHeaders() });
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => '');
+            if (resp.status === 403 && errText.includes('captcha')) {
+                throw new Error('SoundCloud blocked this like. SoundCloud blocks likes from this player — a new cookie will not help. Use the offline Liked list for local tracks.');
+            }
+            throw new Error(`Failed to like track (${resp.status}): ${errText || 'Unknown error'}`);
+        }
+        if (this.currentUser) {
+            this.currentUser.likes_count = (this.currentUser.likes_count || 0) + 1;
+        }
+        return { success: true };
+    }
+
+    async unlikeTrack(trackId) {
+        if (!this.config.enabled || !this.config.oauthToken) {
+            throw new Error('SoundCloud is disabled or OAuth token is not configured');
+        }
+        if (!this.currentUser) {
+            await this.verifyToken(this.config.oauthToken);
+        }
+        const userId = this.currentUser.id;
+        const cleanId = String(trackId).replace(/^soundcloud:/i, '').trim();
+        const url = `https://api-v2.soundcloud.com/users/${userId}/track_likes/${cleanId}`;
+        const resp = await fetch(url, { method: 'DELETE', headers: this.getMutateHeaders() });
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => '');
+            if (resp.status === 403 && errText.includes('captcha')) {
+                throw new Error('SoundCloud blocked this unlike. SoundCloud blocks likes from this player — a new cookie will not help.');
+            }
+            throw new Error(`Failed to unlike track (${resp.status}): ${errText || 'Unknown error'}`);
+        }
+        if (this.currentUser && this.currentUser.likes_count > 0) {
+            this.currentUser.likes_count -= 1;
+        }
+        return { success: true };
     }
 
     async getTrackMediaStreamUrl(trackId, forceFresh = false) {

@@ -380,7 +380,7 @@
                                 </label>
                             </div>
 
-                            <div id="soundcloud-status-container" style="display: flex; align-items: center; justify-content: space-between; width: 100%; font-size: 0.75rem; margin-top: 10px; padding: 8px 12px; background: rgba(255, 255, 255, 0.04); border-radius: 10px; border: 1px solid var(--card-border);">
+                            <div id="soundcloud-status-container" style="display: flex; flex-direction: column; gap: 6px; width: 100%; font-size: 0.75rem; margin-top: 10px; padding: 8px 12px; background: rgba(255, 255, 255, 0.04); border-radius: 10px; border: 1px solid var(--card-border);">
                                 <div id="soundcloud-status-text" style="display: flex; align-items: center; gap: 8px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">
                                     <span class="soundcloud-status-dot" id="soundcloud-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #eab308; display: inline-block; flex-shrink: 0;"></span>
                                     <span id="soundcloud-status-msg" style="overflow: hidden; text-overflow: ellipsis;">Not connected — Enter OAuth token</span>
@@ -392,6 +392,10 @@
                                     <button id="soundcloud-disconnect-btn" class="settings-action-btn delete-action hidden" style="padding: 4px 8px; font-size: 0.7rem; margin-top: 0; min-width: auto;" title="Disconnect Account">
                                         <i class="fa-solid fa-right-from-bracket"></i>
                                     </button>
+                                </div>
+                                <div id="soundcloud-datadome-status" style="display: flex; align-items: center; gap: 8px; color: var(--text-secondary); overflow: hidden; white-space: nowrap;">
+                                    <span class="soundcloud-status-dot" id="soundcloud-datadome-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #eab308; display: inline-block; flex-shrink: 0;"></span>
+                                    <span id="soundcloud-datadome-msg" style="overflow: hidden; text-overflow: ellipsis;">DataDome cookie not set</span>
                                 </div>
                             </div>
 
@@ -408,6 +412,20 @@
                                     <div style="font-size: 0.68rem; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">
                                         Allows fetching likes, playlists, search, streaming, and downloads.<br>
                                         To find your token: On PC open <b>soundcloud.com</b> &rarr; F12 &rarr; Application &rarr; Cookies &rarr; copy <code style="background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px;">oauth_token</code>.
+                                    </div>
+                                </div>
+
+                                <div class="setting-item flex-column" style="margin-bottom: 0; width: 100%; align-items: flex-start; gap: 4px; margin-top: 6px;">
+                                    <label for="soundcloud-cookie-input" style="font-size: 0.75rem; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
+                                        <i class="fa-solid fa-shield-halved" style="color: var(--text-muted);"></i>
+                                        <span>DataDome Cookie</span>
+                                    </label>
+                                    <div style="display: flex; gap: 6px; width: 100%;">
+                                        <input type="password" id="soundcloud-cookie-input" placeholder="Paste datadome cookie here" autocomplete="off" style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); border-radius: 8px; padding: 7px 10px; color: #ffffff; font-family: inherit; font-size: 0.75rem; outline: none;">
+                                        <button id="soundcloud-cookie-save-btn" class="settings-action-btn" style="padding: 7px 12px; font-size: 0.72rem; margin-top: 0; flex: 0; min-width: 60px; font-weight: 600;">SAVE</button>
+                                    </div>
+                                    <div style="font-size: 0.68rem; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">
+                                        Needed to like tracks and edit playlists on your SoundCloud account. DevTools &rarr; Cookies &rarr; <code style="background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px;">datadome</code>.
                                     </div>
                                 </div>
                             </div>
