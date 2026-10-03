@@ -647,7 +647,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let isEqEnabled = localStorage.getItem('moonplayer_eq_enabled') !== 'false';
     let currentEqPreset = localStorage.getItem('moonplayer_eq_preset') || 'Flat';
-    let eqPreamp = parseFloat(localStorage.getItem('moonplayer_eq_preamp')) || 0;
+    let eqPreamp = Number.isFinite(parseFloat(localStorage.getItem('moonplayer_eq_preamp')))
+        ? parseFloat(localStorage.getItem('moonplayer_eq_preamp')) : 0;
     let customEqPresets = {};
     try {
         customEqPresets = JSON.parse(localStorage.getItem('moonplayer_eq_custom_presets') || '{}');
@@ -666,6 +667,62 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {}
     } else if (EQ_PRESETS[currentEqPreset]) {
         eqValues = [...EQ_PRESETS[currentEqPreset]];
+    }
+
+    // The whole equalizer (bands, preset, preamp, custom presets) is one file
+    // on disk. localStorage only holds the last known state so playback starts
+    // with the right gains before the file round-trips.
+    let eqSaveTimer = null;
+
+    function persistEqState() {
+        localStorage.setItem('moonplayer_eq_enabled', isEqEnabled);
+        localStorage.setItem('moonplayer_eq_preset', currentEqPreset);
+        localStorage.setItem('moonplayer_eq_preamp', eqPreamp);
+        localStorage.setItem('moonplayer_eq_values', JSON.stringify(eqValues));
+        localStorage.setItem('moonplayer_eq_custom_presets', JSON.stringify(customEqPresets));
+        clearTimeout(eqSaveTimer);
+        eqSaveTimer = setTimeout(() => {
+            fetch('/api/equalizer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    enabled: isEqEnabled,
+                    preset: currentEqPreset,
+                    values: eqValues,
+                    preamp: eqPreamp,
+                    customPresets: customEqPresets
+                })
+            }).catch((err) => console.error('Failed to save equalizer:', err));
+        }, 300);
+    }
+
+    function applyLoadedEq(cfg) {
+        if (typeof cfg.enabled === 'boolean') isEqEnabled = cfg.enabled;
+        if (typeof cfg.preset === 'string' && cfg.preset) currentEqPreset = cfg.preset;
+        if (Number.isFinite(Number(cfg.preamp))) eqPreamp = Number(cfg.preamp);
+        if (cfg.customPresets && typeof cfg.customPresets === 'object') customEqPresets = cfg.customPresets;
+        if (Array.isArray(cfg.values) && cfg.values.length === 10) {
+            eqValues = cfg.values.map(v => Number.isFinite(Number(v)) ? Number(v) : 0);
+        }
+        persistEqState();
+        initEqBandsUI();
+        if (audioContext) applyEqGains();
+    }
+
+    async function loadEqConfig() {
+        try {
+            const res = await fetch('/api/equalizer');
+            if (!res.ok) return;
+            const cfg = await res.json();
+            if (cfg && Array.isArray(cfg.values)) {
+                applyLoadedEq(cfg);
+            } else if (localStorage.getItem('moonplayer_eq_values')) {
+                // First run after the move to a file: keep what was saved before.
+                persistEqState();
+            }
+        } catch (err) {
+            console.error('Failed to load equalizer:', err);
+        }
     }
 
     let audioContext = null;
@@ -1285,6 +1342,32 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Parse metadata using jsmediatags, wrapped in Promise
+    // Shrink an embedded cover to a small JPEG data URL. Full-size base64
+    // covers kept on every song object were the bulk of the WebView2 RAM.
+    const COVER_MAX_PX = 300;
+    function shrinkCoverArt(bytes, mime) {
+        return new Promise((resolve) => {
+            const blob = new Blob([bytes], { type: mime || 'image/jpeg' });
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            const done = (result) => { URL.revokeObjectURL(url); resolve(result); };
+            img.onload = () => {
+                try {
+                    const scale = Math.min(1, COVER_MAX_PX / Math.max(img.width, img.height));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round(img.width * scale));
+                    canvas.height = Math.max(1, Math.round(img.height * scale));
+                    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                    done(canvas.toDataURL('image/jpeg', 0.75));
+                } catch (e) {
+                    done(null);
+                }
+            };
+            img.onerror = () => done(null);
+            img.src = url;
+        });
+    }
+
     function parseFileMetadata(file) {
         return new Promise((resolve) => {
             // Set 5-second timeout in case parsing freezes
@@ -1293,9 +1376,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 5000);
 
             window.jsmediatags.read(file, {
-                onSuccess: function (tag) {
+                onSuccess: async function (tag) {
                     clearTimeout(timeoutId);
-                    
+
                     const tags = tag.tags || {};
                     let title = tags.title ? tags.title.trim() : "";
                     let artist = tags.artist ? tags.artist.trim() : "";
@@ -1321,18 +1404,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         album = pathInfo.album || "Unknown Album";
                     }
 
-                    // Parse embedded picture
+                    // Parse embedded picture, shrunk to a thumbnail
                     if (tags.picture) {
                         try {
-                            const pic = tags.picture;
-                            const bytes = new Uint8Array(pic.data);
-                            let binary = "";
-                            const len = bytes.byteLength;
-                            const chunk = 8192;
-                            for (let i = 0; i < len; i += chunk) {
-                                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-                            }
-                            cover = `data:${pic.format};base64,${window.btoa(binary)}`;
+                            cover = await shrinkCoverArt(new Uint8Array(tags.picture.data), tags.picture.format) || DEFAULT_COVER;
                         } catch (imgErr) {
                             console.error("Error reading cover art:", imgErr);
                         }
@@ -2456,7 +2531,8 @@ document.addEventListener('DOMContentLoaded', () => {
             menu.appendChild(divider);
         }
 
-        // Add to Playlist option
+        // Add to Playlist option. Hover opens the grouped picker: offline
+        // playlists on top, the user's SoundCloud playlists below.
         const addToPlaylistOption = document.createElement('div');
         addToPlaylistOption.className = 'playlist-context-menu-item has-submenu';
         addToPlaylistOption.innerHTML = `
@@ -2465,79 +2541,19 @@ document.addEventListener('DOMContentLoaded', () => {
             <i class="fa-solid fa-chevron-right" style="margin-left: auto; font-size: 0.7rem; color: var(--text-secondary);"></i>
         `;
 
-        // Create the submenu
         const submenu = document.createElement('div');
         submenu.className = 'playlist-context-submenu';
-
-        const playlistNames = Object.keys(playlists);
-        if (playlistNames.length === 0) {
-            const emptyItem = document.createElement('div');
-            emptyItem.className = 'playlist-context-menu-item';
-            emptyItem.style.color = 'var(--text-muted)';
-            emptyItem.style.cursor = 'default';
-            emptyItem.textContent = 'No playlists created';
-            submenu.appendChild(emptyItem);
-        } else {
-            playlistNames.forEach(name => {
-                const item = document.createElement('div');
-                item.className = 'playlist-context-menu-item';
-                
-                const hasSong = playlists[name].includes(song.path);
-                item.innerHTML = `
-                    <i class="fa-solid ${hasSong ? 'fa-check' : 'fa-music'}" style="${hasSong ? 'color: var(--accent);' : ''}"></i>
-                    <span>${escapeHtml(name)}</span>
-                `;
-                
-                item.addEventListener('click', (evt) => {
-                    evt.stopPropagation();
-                    if (isSoundCloudTrack(song)) {
-                        registerSoundCloudTrack(song);
-                    }
-                    if (hasSong) {
-                        playlists[name] = playlists[name].filter(p => p !== song.path);
-                    } else {
-                        playlists[name].push(song.path);
-                    }
-                    savePlaylists();
-                    menu.remove();
-                    if (currentSelectedPlaylistName === name) {
-                        selectPlaylist(name);
-                    }
-                    renderLibraryPanel();
-                });
-                submenu.appendChild(item);
-            });
-        }
-
-        const divider = document.createElement('div');
-        divider.className = 'playlist-context-menu-divider';
-        submenu.appendChild(divider);
-
-        const createOption = document.createElement('div');
-        createOption.className = 'playlist-context-menu-item';
-        createOption.innerHTML = `
-            <i class="fa-solid fa-plus"></i>
-            <span>Create New Playlist...</span>
-        `;
-        createOption.addEventListener('click', async (evt) => {
-            evt.stopPropagation();
-            menu.remove();
-            const name = await showCustomPrompt("New Playlist", "Playlist Name");
-            if (name === null) return;
-            const trimmedName = name.trim();
-            if (!trimmedName) return;
-            if (playlists[trimmedName]) {
-                alert("Playlist already exists!");
-                return;
-            }
-            playlists[trimmedName] = [song.path];
-            savePlaylists();
-            renderLibraryPanel();
-            alert(`Created playlist "${trimmedName}" and added track!`);
-        });
-        submenu.appendChild(createOption);
-
+        submenu.style.maxHeight = '70vh';
+        submenu.style.overflowY = 'auto';
+        // The SoundCloud list arrives after the menu opens, so re-fit once it
+        // lands instead of trusting the height measured on hover.
+        buildPlaylistPicker(submenu, song, () => placeSubmenu(addToPlaylistOption, submenu));
         addToPlaylistOption.appendChild(submenu);
+
+        addToPlaylistOption.addEventListener('mouseenter', () => {
+            placeSubmenu(addToPlaylistOption, submenu);
+        });
+
         menu.appendChild(addToPlaylistOption);
 
         // Add to queue option
@@ -2776,16 +2792,6 @@ document.addEventListener('DOMContentLoaded', () => {
         menu.style.left = `${x}px`;
         menu.style.top = `${y}px`;
 
-        // Position the submenu left or right dynamically
-        addToPlaylistOption.addEventListener('mouseenter', () => {
-            const rect = addToPlaylistOption.getBoundingClientRect();
-            if (rect.right + 180 > window.innerWidth) {
-                submenu.classList.add('submenu-left');
-            } else {
-                submenu.classList.remove('submenu-left');
-            }
-        });
-
         // Close context menu handler
         setTimeout(() => {
             const closeMenu = (evt) => {
@@ -2944,12 +2950,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Position the submenu left or right dynamically
         addToPlaylistOption.addEventListener('mouseenter', () => {
-            const rect = addToPlaylistOption.getBoundingClientRect();
-            if (rect.right + 180 > window.innerWidth) {
-                submenu.classList.add('submenu-left');
-            } else {
-                submenu.classList.remove('submenu-left');
-            }
+            placeSubmenu(addToPlaylistOption, submenu);
         });
 
         // Close context menu handler
@@ -3147,13 +3148,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 50);
     }
 
-    function showAddToPlaylistMenu(btn, song) {
-        const existingMenu = document.querySelector('.playlist-context-menu');
-        if (existingMenu) existingMenu.remove();
+    // Keeps a hover submenu inside the viewport. It sits flush against its
+    // item, so the side is chosen from the item's own edge rather than the
+    // submenu's measured box (that box is still on the wrong side when this
+    // runs). The height is capped to the viewport and the top is shifted so
+    // the whole list stays on screen, with a margin below the last row.
+    function placeSubmenu(item, submenu) {
+        const itemRect = item.getBoundingClientRect();
+        const margin = 16;
+        const width = submenu.offsetWidth || 200;
 
-        const menu = document.createElement('div');
-        menu.className = 'playlist-context-menu';
+        submenu.classList.toggle('submenu-left', itemRect.right + width > window.innerWidth - margin);
 
+        const cap = window.innerHeight - margin * 2;
+        submenu.style.maxHeight = `${Math.max(120, cap)}px`;
+
+        const height = Math.min(submenu.scrollHeight, cap);
+        let top = -8;
+        if (itemRect.top + top + height > window.innerHeight - margin) {
+            top = window.innerHeight - margin - height - itemRect.top;
+        }
+        const minTop = margin - itemRect.top;
+        submenu.style.top = `${Math.max(minTop, top)}px`;
+    }
+
+    // Fills a container with the grouped playlist picker: offline playlists on
+    // top, the user's SoundCloud playlists below. Shared by the hover submenu
+    // and the standalone "+" menu so the two can't drift apart.
+    // onPlaced runs after the async SoundCloud list arrives, so the standalone
+    // menu can re-measure itself.
+    function buildPlaylistPicker(container, song, onPlaced) {
         const sectionLabel = (text) => {
             const el = document.createElement('div');
             el.className = 'playlist-context-menu-item';
@@ -3162,7 +3186,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return el;
         };
 
-        menu.appendChild(sectionLabel('Offline'));
+        container.appendChild(sectionLabel('Offline'));
 
         const playlistNames = Object.keys(playlists);
         if (playlistNames.length === 0) {
@@ -3171,7 +3195,7 @@ document.addEventListener('DOMContentLoaded', () => {
             emptyItem.style.color = 'var(--text-muted)';
             emptyItem.style.cursor = 'default';
             emptyItem.textContent = 'No playlists created';
-            menu.appendChild(emptyItem);
+            container.appendChild(emptyItem);
         } else {
             playlistNames.forEach(name => {
                 const item = document.createElement('div');
@@ -3193,19 +3217,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         playlists[name].push(song.path);
                     }
                     savePlaylists();
-                    menu.remove();
+                    container.remove();
                     if (currentSelectedPlaylistName === name) {
                         selectPlaylist(name);
                     }
                     renderLibraryPanel();
                 });
-                menu.appendChild(item);
+                container.appendChild(item);
             });
         }
 
         const divider = document.createElement('div');
         divider.className = 'playlist-context-menu-divider';
-        menu.appendChild(divider);
+        container.appendChild(divider);
 
         const createOption = document.createElement('div');
         createOption.className = 'playlist-context-menu-item';
@@ -3214,7 +3238,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <span>Create New Playlist...</span>
         `;
         createOption.addEventListener('click', async () => {
-            menu.remove();
+            container.remove();
             const name = await showCustomPrompt("New Playlist", "Playlist Name");
             if (name === null) return;
             const trimmedName = name.trim();
@@ -3231,28 +3255,28 @@ document.addEventListener('DOMContentLoaded', () => {
             renderLibraryPanel();
             alert(`Created playlist "${trimmedName}" and added track!`);
         });
-        menu.appendChild(createOption);
+        container.appendChild(createOption);
 
         if (isSoundCloudEnabled && isSoundCloudTrack(song)) {
             const scId = song.id || extractSoundCloudId(song.path);
             if (scId) {
                 const scDivider = document.createElement('div');
                 scDivider.className = 'playlist-context-menu-divider';
-                menu.appendChild(scDivider);
-                menu.appendChild(sectionLabel('SoundCloud'));
+                container.appendChild(scDivider);
+                container.appendChild(sectionLabel('SoundCloud'));
 
                 const loadingItem = document.createElement('div');
                 loadingItem.className = 'playlist-context-menu-item';
                 loadingItem.style.color = 'var(--text-muted)';
                 loadingItem.style.cursor = 'default';
                 loadingItem.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Loading...</span>';
-                menu.appendChild(loadingItem);
+                container.appendChild(loadingItem);
 
                 const createSc = document.createElement('div');
                 createSc.className = 'playlist-context-menu-item';
                 createSc.innerHTML = '<i class="fa-brands fa-soundcloud" style="color: #ff5500;"></i><span>New SoundCloud Playlist...</span>';
                 createSc.addEventListener('click', async () => {
-                    menu.remove();
+                    container.remove();
                     const name = await showCustomPrompt("New SoundCloud Playlist", "Playlist Name");
                     if (name === null) return;
                     const trimmed = name.trim();
@@ -3270,7 +3294,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (typeof showToast === 'function') showToast(err.message || 'Failed to create SoundCloud playlist');
                     }
                 });
-                menu.appendChild(createSc);
+
+                // Same divider the offline group has before its "create" button.
+                const scCreateDivider = document.createElement('div');
+                scCreateDivider.className = 'playlist-context-menu-divider';
+                container.appendChild(scCreateDivider);
+                container.appendChild(createSc);
 
                 fetch('/api/soundcloud/user/playlists').then(r => r.json()).then(d => {
                     if (!loadingItem.isConnected) return;
@@ -3283,6 +3312,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         empty.style.cursor = 'default';
                         empty.textContent = d.success ? 'No SoundCloud playlists' : (d.error || 'Failed to load');
                         createSc.before(empty);
+                        if (typeof onPlaced === 'function') onPlaced();
                         return;
                     }
                     const scNum = Number(String(scId).replace(/^soundcloud:/i, ''));
@@ -3306,7 +3336,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     });
                                 const rd = await res.json();
                                 if (!rd.success) throw new Error(rd.error || 'Failed');
-                                menu.remove();
+                                container.remove();
                                 if (typeof showToast === 'function') {
                                     showToast(has ? `Removed from "${pl.title}"` : `Added to "${pl.title}"`);
                                 }
@@ -3317,24 +3347,44 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         createSc.before(item);
                     });
+                    if (typeof onPlaced === 'function') onPlaced();
                 }).catch(err => {
                     if (!loadingItem.isConnected) return;
                     loadingItem.textContent = err.message || 'Failed to load';
                 });
             }
         }
+    }
+
+    function showAddToPlaylistMenu(btn, song) {
+        const existingMenu = document.querySelector('.playlist-context-menu');
+        if (existingMenu) existingMenu.remove();
+
+        const menu = document.createElement('div');
+        menu.className = 'playlist-context-menu';
 
         document.body.appendChild(menu);
         const rect = btn.getBoundingClientRect();
         menu.style.position = 'fixed';
+        menu.style.maxHeight = '70vh';
+        menu.style.overflowY = 'auto';
 
-        let top = rect.bottom + window.scrollY + 5;
-        if (top + menu.offsetHeight > window.innerHeight + window.scrollY) {
-            top = rect.top + window.scrollY - menu.offsetHeight - 5;
-        }
+        // The SoundCloud list loads after the menu opens, so keep the whole
+        // menu inside the viewport instead of trusting the height measured now.
+        const place = () => {
+            const height = Math.min(menu.scrollHeight, window.innerHeight * 0.7);
+            let top = rect.bottom + 5;
+            if (top + height > window.innerHeight) {
+                top = Math.max(8, rect.top - height - 5);
+            }
+            let left = rect.right - 180;
+            left = Math.max(8, Math.min(left, window.innerWidth - menu.offsetWidth - 8));
+            menu.style.top = `${top}px`;
+            menu.style.left = `${left}px`;
+        };
 
-        menu.style.top = `${top}px`;
-        menu.style.left = `${rect.right - 180 + window.scrollX}px`;
+        buildPlaylistPicker(menu, song, place);
+        place();
 
         setTimeout(() => {
             const closeMenu = (e) => {
@@ -5368,6 +5418,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const d = await res.json().catch(() => ({}));
                 if (!res.ok || d.success === false) throw new Error(d.error || `SoundCloud ${res.status}`);
                 if (typeof showToast === 'function') showToast(willBeLiked ? 'Liked on SoundCloud' : 'Unliked on SoundCloud');
+                refreshSoundCloudHome();
             } catch (err) {
                 if (willBeLiked) scLikedIds.delete(scId); else scLikedIds.add(scId);
                 saveScLikedIds();
@@ -6425,8 +6476,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Set preset to Custom
                 currentEqPreset = 'Custom';
                 if (selectedEqPresetText) selectedEqPresetText.textContent = '▼ Custom';
-                localStorage.setItem('moonplayer_eq_preset', 'Custom');
-                localStorage.setItem('moonplayer_eq_values', JSON.stringify(eqValues));
+                persistEqState();
                 updatePresetDeleteBtn();
 
                 initAudioContext();
@@ -6435,40 +6485,46 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Initialize Preamp
+        // Initialize Preamp (slider is a static node — bind the handler once)
         if (eqSliderPreamp && eqPreampVal) {
             eqSliderPreamp.value = eqPreamp;
             eqPreampVal.textContent = formatDbValue(eqPreamp);
             updateDbValClass(eqPreampVal, eqPreamp);
 
-            eqSliderPreamp.addEventListener('input', (e) => {
-                eqPreamp = parseFloat(e.target.value);
-                eqPreampVal.textContent = formatDbValue(eqPreamp);
-                updateDbValClass(eqPreampVal, eqPreamp);
-                localStorage.setItem('moonplayer_eq_preamp', eqPreamp);
+            if (!eqSliderPreamp.dataset.bound) {
+                eqSliderPreamp.dataset.bound = '1';
+                eqSliderPreamp.addEventListener('input', (e) => {
+                    eqPreamp = parseFloat(e.target.value);
+                    eqPreampVal.textContent = formatDbValue(eqPreamp);
+                    updateDbValClass(eqPreampVal, eqPreamp);
+                    persistEqState();
 
-                initAudioContext();
-                applyEqGains();
-                drawEqCurve();
-            });
+                    initAudioContext();
+                    applyEqGains();
+                    drawEqCurve();
+                });
+            }
         }
 
-        // Initialize Toggle
+        // Initialize Toggle (static node — bind once)
         if (toggleEqCheckbox && eqStatusLabel) {
             toggleEqCheckbox.checked = isEqEnabled;
             eqStatusLabel.textContent = isEqEnabled ? 'ENABLED' : 'DISABLED';
             eqStatusLabel.classList.toggle('disabled', !isEqEnabled);
 
-            toggleEqCheckbox.addEventListener('change', (e) => {
-                isEqEnabled = e.target.checked;
-                localStorage.setItem('moonplayer_eq_enabled', isEqEnabled);
-                eqStatusLabel.textContent = isEqEnabled ? 'ENABLED' : 'DISABLED';
-                eqStatusLabel.classList.toggle('disabled', !isEqEnabled);
+            if (!toggleEqCheckbox.dataset.bound) {
+                toggleEqCheckbox.dataset.bound = '1';
+                toggleEqCheckbox.addEventListener('change', (e) => {
+                    isEqEnabled = e.target.checked;
+                    persistEqState();
+                    eqStatusLabel.textContent = isEqEnabled ? 'ENABLED' : 'DISABLED';
+                    eqStatusLabel.classList.toggle('disabled', !isEqEnabled);
 
-                initAudioContext();
-                applyEqGains();
-                drawEqCurve();
-            });
+                    initAudioContext();
+                    applyEqGains();
+                    drawEqCurve();
+                });
+            }
         }
 
         // Render presets list in dropdown
@@ -6546,7 +6602,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedEqPresetText) {
             selectedEqPresetText.textContent = `▼ ${name}`;
         }
-        localStorage.setItem('moonplayer_eq_preset', name);
 
         let targetGains = null;
         if (EQ_PRESETS[name]) {
@@ -6557,7 +6612,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (targetGains) {
             eqValues = [...targetGains];
-            localStorage.setItem('moonplayer_eq_values', JSON.stringify(eqValues));
 
             // Update UI sliders and readouts
             EQ_FREQUENCIES.forEach((_, idx) => {
@@ -6589,6 +6643,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         updatePresetDeleteBtn();
+        persistEqState();
     }
 
     // Toggle preset dropdown
@@ -6613,7 +6668,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 eqSliderPreamp.value = 0;
                 eqPreampVal.textContent = formatDbValue(0);
                 updateDbValClass(eqPreampVal, 0);
-                localStorage.setItem('moonplayer_eq_preamp', 0);
             }
             selectEqPreset('Flat');
             if (typeof showToast === 'function') {
@@ -6681,7 +6735,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const name = (eqPresetPromptInput ? eqPresetPromptInput.value.trim() : '');
             if (!name) return;
             customEqPresets[name] = [...eqValues];
-            localStorage.setItem('moonplayer_eq_custom_presets', JSON.stringify(customEqPresets));
             eqPresetPromptModal.classList.remove('visible');
             renderPresetDropdownList();
             selectEqPreset(name);
@@ -6709,7 +6762,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (customEqPresets[currentEqPreset]) {
                 const deletedName = currentEqPreset;
                 delete customEqPresets[currentEqPreset];
-                localStorage.setItem('moonplayer_eq_custom_presets', JSON.stringify(customEqPresets));
                 selectEqPreset('Flat');
                 renderPresetDropdownList();
                 if (typeof showToast === 'function') {
@@ -6719,8 +6771,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Initialize EQ UI
+    // Initialize EQ UI, then replace it with the on-disk config once it loads
     initEqBandsUI();
+    loadEqConfig();
 
     // ==========================================
     // DISCORD RICH PRESENCE SETTINGS BINDINGS
@@ -6909,16 +6962,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }).catch(() => {});
                 } else {
                     if (statusDot) statusDot.className = 'soundcloud-status-dot error';
-                    if (statusMsg) statusMsg.textContent = 'Enter OAuth token to connect';
+                    if (statusMsg) statusMsg.textContent = 'Sign in to connect';
                     if (disconnectBtn) disconnectBtn.classList.add('hidden');
                 }
 
-                const cookieInput = document.getElementById('soundcloud-cookie-input');
-                if (cookieInput && !cookieInput.value) {
-                    cookieInput.placeholder = data.hasDatadomeCookie
-                        ? '•••••••• (DataDome cookie saved)'
-                        : 'Paste datadome cookie here';
-                }
                 updateDatadomeStatusLine(data.hasDatadomeCookie ? 'saved' : 'missing');
             } else {
                 if (optionsDiv) optionsDiv.classList.add('hidden');
@@ -7396,6 +7443,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Re-render the SoundCloud home so a fresh like shows up immediately.
+    // Only when that home is what's on screen: the SoundCloud tab, an empty
+    // search box, and a sub-tab that lists likes. An active search stays put.
+    function refreshSoundCloudHome() {
+        if (searchType !== 'soundcloud') return;
+        if (!searchInput || searchInput.value.trim()) return;
+        if (soundCloudSubTab !== 'all' && soundCloudSubTab !== 'tracks') return;
+        renderSoundCloudPanel('');
+    }
+
     async function renderSoundCloudPanel(query) {
         if (!isSoundCloudEnabled) {
             searchResults.innerHTML = `
@@ -7726,9 +7783,55 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // SoundCloud Event Listeners in Settings
+    const soundCloudSignInBtn = document.getElementById('soundcloud-signin-btn');
+    const soundCloudSignInStatus = document.getElementById('soundcloud-signin-status');
+    const tauriInvoke = window.__TAURI_INTERNALS__?.invoke || window.__TAURI__?.core?.invoke;
+
+    if (soundCloudSignInBtn && typeof tauriInvoke === 'function') {
+        soundCloudSignInBtn.classList.remove('hidden');
+        soundCloudSignInBtn.addEventListener('click', async () => {
+            soundCloudSignInBtn.disabled = true;
+            soundCloudSignInBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Waiting for sign-in…';
+            if (soundCloudSignInStatus) {
+                soundCloudSignInStatus.textContent = 'A SoundCloud window opened. Sign in there — this can take a minute.';
+                soundCloudSignInStatus.classList.remove('hidden');
+            }
+
+            try {
+                const session = await tauriInvoke('soundcloud_login');
+                const res = await fetch('/api/soundcloud/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        enabled: true,
+                        oauthToken: session?.oauthToken || '',
+                        datadomeCookie: session?.datadomeCookie || ''
+                    })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to save the SoundCloud session');
+                }
+                await syncSoundCloudStatus();
+                if (soundCloudSignInStatus) soundCloudSignInStatus.classList.add('hidden');
+                if (typeof showToast === 'function') {
+                    showToast(`SoundCloud connected: ${data.config?.user?.username || 'Success'}`);
+                }
+            } catch (err) {
+                const message = err?.message || String(err);
+                if (soundCloudSignInStatus) {
+                    soundCloudSignInStatus.textContent = message.includes('cancelled')
+                        ? 'Sign-in cancelled.'
+                        : `Sign-in failed: ${message}`;
+                }
+            } finally {
+                soundCloudSignInBtn.disabled = false;
+                soundCloudSignInBtn.innerHTML = '<i class="fa-brands fa-soundcloud"></i> Sign in with SoundCloud';
+            }
+        });
+    }
+
     const toggleSoundCloud = document.getElementById('toggle-soundcloud');
-    const soundCloudTokenInput = document.getElementById('soundcloud-token-input');
-    const soundCloudTokenSaveBtn = document.getElementById('soundcloud-token-save-btn');
     const soundCloudRefreshBtn = document.getElementById('soundcloud-refresh-btn');
 
     if (toggleSoundCloud) {
@@ -7746,43 +7849,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (err) {
                 console.error('SoundCloud toggle error:', err);
-            }
-        });
-    }
-
-    if (soundCloudTokenSaveBtn && soundCloudTokenInput) {
-        soundCloudTokenSaveBtn.addEventListener('click', async () => {
-            const token = soundCloudTokenInput.value.trim();
-            if (!token) {
-                if (typeof showToast === 'function') showToast('Please enter an OAuth token');
-                return;
-            }
-
-            soundCloudTokenSaveBtn.disabled = true;
-            soundCloudTokenSaveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-
-            try {
-                const res = await fetch('/api/soundcloud/config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ enabled: true, oauthToken: token })
-                });
-                const data = await res.json();
-                if (!data.success) {
-                    throw new Error(data.error || 'Failed to save token');
-                }
-
-                soundCloudTokenInput.value = '';
-                await syncSoundCloudStatus();
-                if (typeof showToast === 'function') {
-                    showToast(`SoundCloud connected: ${data.config?.user?.username || 'Success'}`);
-                }
-            } catch (err) {
-                alert(`SoundCloud connection error: ${err.message}`);
-                await syncSoundCloudStatus();
-            } finally {
-                soundCloudTokenSaveBtn.disabled = false;
-                soundCloudTokenSaveBtn.textContent = 'SAVE';
             }
         });
     }
@@ -7809,7 +7875,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify({ enabled: false, oauthToken: '' })
                 });
                 soundCloudUser = null;
-                if (soundCloudTokenInput) soundCloudTokenInput.value = '';
                 await syncSoundCloudStatus();
                 if (typeof showToast === 'function') {
                     showToast('SoundCloud disconnected');
@@ -7818,51 +7883,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Disconnect error:', err);
             } finally {
                 soundCloudDisconnectBtn.disabled = false;
-            }
-        });
-    }
-
-    const soundCloudTokenToggleBtn = document.getElementById('soundcloud-token-toggle-visibility-btn');
-    if (soundCloudTokenToggleBtn && soundCloudTokenInput) {
-        soundCloudTokenToggleBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const isPassword = soundCloudTokenInput.type === 'password';
-            soundCloudTokenInput.type = isPassword ? 'text' : 'password';
-            soundCloudTokenToggleBtn.innerHTML = isPassword ? '<i class="fa-regular fa-eye-slash"></i>' : '<i class="fa-regular fa-eye"></i>';
-        });
-    }
-
-    const soundCloudCookieInput = document.getElementById('soundcloud-cookie-input');
-    const soundCloudCookieSaveBtn = document.getElementById('soundcloud-cookie-save-btn');
-    if (soundCloudCookieSaveBtn && soundCloudCookieInput) {
-        soundCloudCookieSaveBtn.addEventListener('click', async () => {
-            const cookie = soundCloudCookieInput.value.trim();
-            soundCloudCookieSaveBtn.disabled = true;
-            soundCloudCookieSaveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-            try {
-                const res = await fetch('/api/soundcloud/config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ datadomeCookie: cookie })
-                });
-                const data = await res.json();
-                if (!data.success) {
-                    throw new Error(data.error || 'Failed to save cookie');
-                }
-                if (typeof showToast === 'function') {
-                    showToast(cookie ? 'SoundCloud cookie saved' : 'SoundCloud cookie cleared');
-                }
-                if (cookie) {
-                    soundCloudCookieInput.value = '';
-                    soundCloudCookieInput.placeholder = '•••••••• (DataDome cookie active)';
-                }
-                await syncSoundCloudStatus();
-            } catch (err) {
-                alert(`Error saving cookie: ${err.message}`);
-            } finally {
-                soundCloudCookieSaveBtn.disabled = false;
-                soundCloudCookieSaveBtn.textContent = 'SAVE';
             }
         });
     }
@@ -8079,6 +8099,35 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Blur the background once into a bitmap. A live CSS filter:blur() on a
+    // full-viewport layer forces WebView2 to keep a large offscreen buffer.
+    let bgBlurTimer = null;
+    function applyBlurredBg(srcUrl, blurPx) {
+        if (!customBgEl) return;
+        const blur = Math.max(0, Number(blurPx) || 0);
+        if (blur === 0) {
+            customBgEl.style.backgroundImage = `url('${srcUrl}')`;
+            customBgEl.style.filter = 'none';
+            return;
+        }
+        const img = new Image();
+        img.onload = () => {
+            if (srcUrl !== currentBgObjectURL) return;
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(window.innerWidth / 2));
+            canvas.height = Math.max(1, Math.round(window.innerHeight / 2));
+            const ctx = canvas.getContext('2d');
+            const cover = Math.max(canvas.width / img.width, canvas.height / img.height);
+            const dw = img.width * cover;
+            const dh = img.height * cover;
+            ctx.filter = `blur(${blur / 2}px)`;
+            ctx.drawImage(img, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
+            customBgEl.style.backgroundImage = `url('${canvas.toDataURL('image/jpeg', 0.8)}')`;
+            customBgEl.style.filter = 'none';
+        };
+        img.src = srcUrl;
+    }
+
     // Apply custom background image on load
     let currentBgObjectURL = null;
     async function initBgImage() {
@@ -8089,7 +8138,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentBgObjectURL = URL.createObjectURL(imageBlob);
                 customBgEl.style.backgroundImage = `url('${currentBgObjectURL}')`;
                 customBgEl.style.opacity = bgOpacity;
-                customBgEl.style.filter = `blur(${bgBlur}px)`;
+                applyBlurredBg(currentBgObjectURL, bgBlur);
                 document.body.classList.add('has-custom-bg');
                 document.documentElement.classList.add('has-custom-bg');
                 
@@ -8132,7 +8181,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (customBgEl) {
                     customBgEl.style.backgroundImage = `url('${currentBgObjectURL}')`;
                     customBgEl.style.opacity = bgOpacity;
-                    customBgEl.style.filter = `blur(${bgBlur}px)`;
+                    applyBlurredBg(currentBgObjectURL, bgBlur);
                 }
 
                 document.body.classList.add('has-custom-bg');
@@ -8204,8 +8253,9 @@ document.addEventListener('DOMContentLoaded', () => {
             bgBlur = val;
             localStorage.setItem('moonplayer_bg_blur', val);
             
-            if (customBgEl && customBgEl.style.backgroundImage !== 'none') {
-                customBgEl.style.filter = `blur(${val}px)`;
+            if (customBgEl && currentBgObjectURL) {
+                clearTimeout(bgBlurTimer);
+                bgBlurTimer = setTimeout(() => applyBlurredBg(currentBgObjectURL, val), 150);
             }
             if (bgBlurVal) bgBlurVal.textContent = `${val}px`;
             bgBlurSlider.style.setProperty('--value', `${(val / 40) * 100}%`);
@@ -8332,7 +8382,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.jsmediatags.read(absoluteUrl, {
                 onSuccess: function (tag) {
                     clearTimeout(timeoutId);
-                    
+
                     const tags = tag.tags || {};
                     let title = tags.title ? tags.title.trim() : "";
                     let artist = tags.artist ? tags.artist.trim() : "";
@@ -8356,20 +8406,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         album = pathInfo.album || "Unknown Album";
                     }
 
-                    if (tags.picture) {
-                        try {
-                            const pic = tags.picture;
-                            const bytes = new Uint8Array(pic.data);
-                            let binary = "";
-                            const len = bytes.byteLength;
-                            const chunk = 8192;
-                            for (let i = 0; i < len; i += chunk) {
-                                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-                            }
-                            cover = `data:${pic.format};base64,${window.btoa(binary)}`;
-                        } catch (imgErr) {
-                            console.error("Error reading cover art:", imgErr);
-                        }
+                    if (tags.picture && song.path) {
+                        cover = `/api/cover?path=${encodeURIComponent(song.path)}`;
                     }
 
                     const ext = (song.name || song.path || song.url || '').split('?')[0].split('.').pop().toLowerCase();
@@ -8483,6 +8521,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (cached) {
                     if (!cached.format && song.format) {
                         cached.format = song.format;
+                    }
+                    // Old cache entries stored the whole embedded picture as a
+                    // base64 string. Drop those and point at the cover endpoint.
+                    if (typeof cached.cover === 'string' && cached.cover.startsWith('data:')) {
+                        cached.cover = song.folderCoverUrl || (song.path ? `/api/cover?path=${encodeURIComponent(song.path)}` : DEFAULT_COVER);
+                        cacheMetadata(song.path, cached).catch(() => {});
                     }
                     if ((!cached.duration || isNaN(cached.duration) || Number(cached.duration) <= 0) && song.duration && Number(song.duration) > 0) {
                         cached.duration = Number(song.duration);

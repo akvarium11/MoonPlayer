@@ -42,6 +42,7 @@ function getWritableDir() {
 
 const DATA_DIR = getWritableDir();
 const CONFIG_FILE = path.join(DATA_DIR, 'music_folders.json');
+const EQ_CONFIG_FILE = path.join(DATA_DIR, 'equalizer.json');
 
 // Helper to read configured folders
 function getFolders() {
@@ -61,6 +62,32 @@ function getFolders() {
     } catch (e) {
         console.error("Failed to read config file:", e);
         return [];
+    }
+}
+
+// Equalizer config lives in the same writable dir as the folder list,
+// so it survives rebuilds and is never committed with the repo.
+function getEqualizerConfig() {
+    try {
+        if (!fs.existsSync(EQ_CONFIG_FILE)) return null;
+        const parsed = JSON.parse(fs.readFileSync(EQ_CONFIG_FILE, 'utf8'));
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (e) {
+        console.error("Failed to read equalizer config:", e);
+        return null;
+    }
+}
+
+function saveEqualizerConfig(config) {
+    try {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
+        fs.writeFileSync(EQ_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+        return true;
+    } catch (e) {
+        console.error("Failed to save equalizer config:", e);
+        return false;
     }
 }
 
@@ -273,6 +300,22 @@ app.get('/api/folders', (req, res) => {
     res.json(getFolders());
 });
 
+// API: Equalizer config (bands, preset, preamp, custom presets) as one file
+app.get('/api/equalizer', (req, res) => {
+    res.json(getEqualizerConfig() || {});
+});
+
+app.post('/api/equalizer', (req, res) => {
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return res.status(400).json({ error: 'Invalid equalizer config' });
+    }
+    if (!saveEqualizerConfig(body)) {
+        return res.status(500).json({ error: 'Failed to save equalizer config' });
+    }
+    res.json({ success: true });
+});
+
 // API: Add a folder
 app.post('/api/folders', (req, res) => {
     let { folderPath } = req.body;
@@ -481,6 +524,53 @@ app.get('/api/flac-cover', (req, res) => {
     }
 
     res.status(404).send('No embedded cover found');
+});
+
+// API: Embedded cover art for any audio file, downscaled to a small JPEG.
+// The browser used to base64-encode every embedded picture into the JS heap
+// (often hundreds of MB); serving a thumbnail by URL lets the renderer decode
+// only the covers actually on screen.
+app.get('/api/cover', async (req, res) => {
+    const filePath = req.query.path;
+    if (!filePath) {
+        return res.status(400).send('Path is required');
+    }
+
+    const resolvedPath = path.resolve(filePath);
+    const folders = getFolders();
+    const soundcloudDir = path.join(DATA_DIR, 'soundcloud');
+
+    const isAllowed = folders.some(folder => {
+        const resolvedFolder = path.resolve(folder);
+        const relative = path.relative(resolvedFolder, resolvedPath);
+        return relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+    }) || soundcloudService.isDownloadedPath(resolvedPath) ||
+       resolvedPath.toLowerCase().startsWith(soundcloudDir.toLowerCase());
+
+    if (!isAllowed) {
+        return res.status(403).send('Access denied');
+    }
+
+    try {
+        const mm = await import('music-metadata');
+        const { common } = await mm.parseFile(resolvedPath, { duration: false, skipCovers: false });
+        const pic = common.picture && common.picture[0];
+        if (!pic || !pic.data) {
+            return res.status(404).send('No embedded cover found');
+        }
+
+        const sharp = require('sharp');
+        const jpeg = await sharp(pic.data)
+            .resize(300, 300, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 75 })
+            .toBuffer();
+
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.send(jpeg);
+    } catch (e) {
+        return res.status(404).send('No embedded cover found');
+    }
 });
 
 // API: Discord RPC Status

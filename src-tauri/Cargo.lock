@@ -2125,6 +2125,8 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "webview2-com",
+ "windows",
  "windows-sys 0.59.0",
 ]
 

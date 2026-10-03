@@ -51,7 +51,9 @@ android/build/
 android/app/build/
 android/local.properties
 android/.cxx/
-android/app/.cxx/
 *.apk
 *.aab
+
+# Examples & scratch folders
+sc_examples/
 

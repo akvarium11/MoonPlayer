@@ -2929,14 +2929,12 @@ body.is-android .result-play-overlay {
     z-index: 1; /* Behind main-container (z-index: 10) but above body background */
     pointer-events: none;
     opacity: 0;
-    filter: blur(0px);
-    transition: opacity 0.4s ease, filter 0.4s ease;
+    filter: none;
+    transition: opacity 0.4s ease;
     transform: translate3d(0, 0, 0);
     -webkit-transform: translate3d(0, 0, 0);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
-    contain: paint;
-    will-change: transform;
 }
 
 .bg-settings-wrapper {
@@ -3743,7 +3741,6 @@ body.is-android .result-play-overlay {
     display: none;
     z-index: 10001;
     animation: menuFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    margin-left: 4px;
 }
 
 .playlist-context-menu-item.has-submenu:hover .playlist-context-submenu {
@@ -3753,25 +3750,6 @@ body.is-android .result-play-overlay {
 .playlist-context-submenu.submenu-left {
     left: auto !important;
     right: 100% !important;
-    margin-left: 0 !important;
-    margin-right: 4px !important;
-}
-
-/* Invisible hover bridge to prevent submenu closing when moving cursor over the gap */
-.playlist-context-submenu::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -10px;
-    width: 10px;
-    height: 100%;
-    background: transparent;
-}
-
-.playlist-context-submenu.submenu-left::before {
-    left: auto;
-    right: -10px;
-    width: 10px;
 }
 
 /* Playlist Title Edit Icon Styles */
@@ -4040,7 +4018,7 @@ body.is-android .result-play-overlay {
 
 .eq-slider-track-wrap {
     position: relative;
-    height: 170px;
+    height: 289px;
     width: 32px;
     display: flex;
     justify-content: center;
@@ -4061,7 +4039,7 @@ body.is-android .result-play-overlay {
 /* Custom Vertical Range Slider via Rotate */
 .eq-slider {
     position: absolute;
-    width: 154px;
+    width: 262px;
     height: 6px;
     transform: rotate(-90deg);
     -webkit-appearance: none;

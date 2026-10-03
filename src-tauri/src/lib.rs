@@ -2,8 +2,9 @@ use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
 #[cfg(windows)]
@@ -12,6 +13,12 @@ use std::os::windows::io::AsRawHandle;
 use std::os::windows::process::CommandExt;
 
 const SERVER_PORT: u16 = 7644;
+const LOGIN_WINDOW: &str = "soundcloud-login";
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
+const LOGIN_POLL_INTERVAL: Duration = Duration::from_secs(4);
+
+/// Labels for social-login popups must be unique, so each one gets a number.
+static NEXT_POPUP: AtomicU64 = AtomicU64::new(1);
 
 #[cfg(windows)]
 #[derive(Clone, Copy)]
@@ -349,9 +356,306 @@ fn escape_html(input: &str) -> String {
         .replace('\n', "<br>")
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SoundCloudLogin {
+    oauth_token: String,
+    datadome_cookie: Option<String>,
+}
+
+/// Opens a SoundCloud sign-in window in the app's own WebView and returns the
+/// session cookies once the user has logged in. The caller persists them.
+///
+/// The wait runs on its own thread. A sync command is executed on Tauri's async
+/// worker, and sleeping there stalls the runtime the window needs to paint and
+/// to handle its close button.
+#[tauri::command]
+async fn soundcloud_login(app: AppHandle) -> Result<SoundCloudLogin, String> {
+    if let Some(existing) = app.get_webview_window(LOGIN_WINDOW) {
+        let _ = existing.show();
+        let _ = existing.set_focus();
+    } else {
+        open_login_window(&app)?;
+    }
+
+    tauri::async_runtime::spawn_blocking(move || wait_for_sign_in(app))
+        .await
+        .map_err(|err| format!("sign-in task failed: {err}"))?
+}
+
+fn wait_for_sign_in(app: AppHandle) -> Result<SoundCloudLogin, String> {
+    // Give the page time to paint before the first cookie read touches it.
+    std::thread::sleep(Duration::from_secs(3));
+
+    let deadline = Instant::now() + LOGIN_TIMEOUT;
+    loop {
+        let window = match app.get_webview_window(LOGIN_WINDOW) {
+            Some(window) => window,
+            // The user closed the window. Leave the app running.
+            None => return Err("sign-in cancelled".to_string()),
+        };
+
+        match read_session_cookies(&window) {
+            Ok(Some(login)) => {
+                let _ = window.close();
+                return Ok(login);
+            }
+            Ok(None) => {}
+            Err(err) => {
+                log::warn!("soundcloud cookie read failed: {err}");
+            }
+        }
+
+        if Instant::now() >= deadline {
+            if let Some(window) = app.get_webview_window(LOGIN_WINDOW) {
+                let _ = window.close();
+            }
+            return Err("sign-in timed out".to_string());
+        }
+        std::thread::sleep(LOGIN_POLL_INTERVAL);
+    }
+}
+
+fn open_login_window(app: &AppHandle) -> Result<(), String> {
+    let url: tauri::Url = "https://soundcloud.com/signin"
+        .parse()
+        .map_err(|err| format!("bad sign-in url: {err}"))?;
+
+    // The popup handler outlives this function, so it needs its own handle.
+    let app_handle = app.clone();
+
+    WebviewWindowBuilder::new(app, LOGIN_WINDOW, WebviewUrl::External(url))
+        .title("Sign in to SoundCloud")
+        .inner_size(960.0, 760.0)
+        .resizable(true)
+        .decorations(true)
+        .closable(true)
+        .minimizable(true)
+        .center()
+        // Social logins (Google, Apple, Facebook) navigate off soundcloud.com
+        // and open popups. Unlike the main window, both are allowed here.
+        .on_navigation(|nav_url| {
+            let url = nav_url.as_str();
+            url.starts_with("https://") || url.starts_with("http://") || url.starts_with("about:")
+        })
+        .on_new_window(move |url, features| open_login_popup(&app_handle, url, features))
+        .build()
+        .map_err(|err| format!("could not open sign-in window: {err}"))?;
+
+    Ok(())
+}
+
+/// SoundCloud's social buttons call `window.open`. WebView2 has no window of
+/// its own, so the page only sees a popup when the app builds one and hands it
+/// back. Returning `Allow` makes `window.open` come back null, which is the
+/// "Please enable popup windows" error.
+fn open_login_popup(
+    app: &AppHandle,
+    url: tauri::Url,
+    features: tauri::webview::NewWindowFeatures,
+) -> tauri::webview::NewWindowResponse<tauri::Wry> {
+    let scheme = url.scheme();
+    if scheme != "https" && scheme != "http" {
+        return tauri::webview::NewWindowResponse::Deny;
+    }
+
+    let label = format!(
+        "soundcloud-popup-{}",
+        NEXT_POPUP.fetch_add(1, Ordering::Relaxed)
+    );
+    let (width, height) = features
+        .size()
+        .map(|size| (size.width, size.height))
+        .unwrap_or((520.0, 720.0));
+
+    // Popups chain (Google opens a second window), so each one needs the same
+    // handler. The handle is cloned per window so the closure stays 'static.
+    let app_handle = app.clone();
+
+    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::External(url))
+        .title("SoundCloud sign-in")
+        .inner_size(width, height)
+        .resizable(true)
+        .decorations(true)
+        .closable(true)
+        .minimizable(true)
+        .center()
+        .on_navigation(|nav_url| {
+            let url = nav_url.as_str();
+            url.starts_with("https://") || url.starts_with("http://") || url.starts_with("about:")
+        })
+        .on_new_window(move |url, features| open_login_popup(&app_handle, url, features));
+
+    // The popup has to come from the opener's WebView2 environment, or
+    // WebView2 refuses it and the page sees no window.
+    #[cfg(windows)]
+    {
+        builder = builder.with_environment(features.opener().environment.clone());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = features;
+    }
+
+    match builder.build() {
+        Ok(window) => tauri::webview::NewWindowResponse::Create { window },
+        Err(err) => {
+            log::warn!("soundcloud popup failed: {err}");
+            tauri::webview::NewWindowResponse::Deny
+        }
+    }
+}
+
+#[cfg(windows)]
+fn read_session_cookies(
+    window: &tauri::WebviewWindow,
+) -> Result<Option<SoundCloudLogin>, String> {
+    use webview2_com::GetCookiesCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_2;
+    use windows::core::{Interface, PCWSTR};
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let tx = std::sync::Arc::new(std::sync::Mutex::new(tx));
+
+    window
+        .with_webview(move |platform| {
+            let report = |result: Result<Vec<(String, String)>, String>| {
+                if let Ok(tx) = tx.lock() {
+                    let _ = tx.send(result);
+                }
+            };
+
+            let controller = platform.controller();
+            let webview = match unsafe { controller.CoreWebView2() } {
+                Ok(webview) => webview,
+                Err(err) => return report(Err(err.to_string())),
+            };
+            let webview2 = match webview.cast::<ICoreWebView2_2>() {
+                Ok(webview2) => webview2,
+                Err(err) => return report(Err(err.to_string())),
+            };
+            let manager = match unsafe { webview2.CookieManager() } {
+                Ok(manager) => manager,
+                Err(err) => return report(Err(err.to_string())),
+            };
+
+            let tx_handler = std::sync::Arc::clone(&tx);
+            let handler = GetCookiesCompletedHandler::create(Box::new(move |hr, list| {
+                let report = |result: Result<Vec<(String, String)>, String>| {
+                    if let Ok(tx) = tx_handler.lock() {
+                        let _ = tx.send(result);
+                    }
+                };
+                if hr.is_err() {
+                    report(Err(format!("GetCookies failed: {hr:?}")));
+                    return Ok(());
+                }
+                let Some(list) = list else {
+                    report(Ok(Vec::new()));
+                    return Ok(());
+                };
+                report(read_cookie_list(&list));
+                Ok(())
+            }));
+
+            let uri: Vec<u16> = "https://soundcloud.com\0".encode_utf16().collect();
+            if let Err(err) = unsafe { manager.GetCookies(PCWSTR(uri.as_ptr()), &handler) } {
+                report(Err(err.to_string()));
+            }
+        })
+        .map_err(|err| format!("webview unavailable: {err}"))?;
+
+    rx.recv_timeout(Duration::from_secs(15))
+        .map_err(|_| "cookie read timed out".to_string())?
+        .map(pick_session_cookies)
+}
+
+#[cfg(windows)]
+fn read_cookie_list(
+    list: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2CookieList,
+) -> Result<Vec<(String, String)>, String> {
+    use windows::core::PWSTR;
+
+    let mut count = 0u32;
+    unsafe { list.Count(&mut count) }.map_err(|err| err.to_string())?;
+
+    let mut cookies = Vec::with_capacity(count as usize);
+    for index in 0..count {
+        let cookie = unsafe { list.GetValueAtIndex(index) }.map_err(|err| err.to_string())?;
+
+        let mut name = PWSTR::null();
+        let mut value = PWSTR::null();
+        let name_res = unsafe { cookie.Name(&mut name) };
+        let value_res = unsafe { cookie.Value(&mut value) };
+
+        let name_str = wide_to_string(name.0);
+        let value_str = wide_to_string(value.0);
+        free_task_mem(name.0);
+        free_task_mem(value.0);
+
+        name_res.map_err(|err| err.to_string())?;
+        value_res.map_err(|err| err.to_string())?;
+
+        if let (Some(name), Some(value)) = (name_str, value_str) {
+            cookies.push((name, value));
+        }
+    }
+    Ok(cookies)
+}
+
+#[cfg(windows)]
+fn wide_to_string(ptr: *const u16) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    let mut len = 0usize;
+    while unsafe { *ptr.add(len) } != 0 {
+        len += 1;
+    }
+    Some(String::from_utf16_lossy(unsafe {
+        std::slice::from_raw_parts(ptr, len)
+    }))
+}
+
+#[cfg(windows)]
+fn free_task_mem(ptr: *mut u16) {
+    if !ptr.is_null() {
+        unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(ptr.cast())) }
+    }
+}
+
+#[cfg(not(windows))]
+fn read_session_cookies(
+    _window: &tauri::WebviewWindow,
+) -> Result<Option<SoundCloudLogin>, String> {
+    Err("SoundCloud sign-in window requires the Windows desktop app".to_string())
+}
+
+fn pick_session_cookies(cookies: Vec<(String, String)>) -> Option<SoundCloudLogin> {
+    let mut oauth_token = None;
+    let mut datadome_cookie = None;
+
+    for (name, value) in cookies {
+        if value.is_empty() {
+            continue;
+        }
+        match name.as_str() {
+            "oauth_token" if oauth_token.is_none() => oauth_token = Some(value),
+            "datadome" if datadome_cookie.is_none() => datadome_cookie = Some(value),
+            _ => {}
+        }
+    }
+
+    oauth_token.map(|oauth_token| SoundCloudLogin {
+        oauth_token,
+        datadome_cookie,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![soundcloud_login])
         .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -412,9 +716,13 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|_window, event| {
+        .on_window_event(|window, event| {
+            // Only the main window owns the backend. Closing the sign-in
+            // window must not kill the server and freeze the app.
             if let tauri::WindowEvent::Destroyed = event {
-                stop_server();
+                if window.label() == "main" {
+                    stop_server();
+                }
             }
         })
         .build(tauri::generate_context!())

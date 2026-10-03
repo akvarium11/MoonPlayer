@@ -21,9 +21,12 @@ if (!fs.existsSync(distDir)) {
 
 // 1. Copy NSIS installer to dist
 if (fs.existsSync(nsisDir)) {
-    const setupFiles = fs.readdirSync(nsisDir).filter(f => f.endsWith('-setup.exe'));
+    const setupFiles = fs.readdirSync(nsisDir)
+        .filter(f => f.endsWith('-setup.exe'))
+        .map(f => ({ name: f, mtime: fs.statSync(path.join(nsisDir, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime);
     if (setupFiles.length > 0) {
-        const nsisSrc = path.join(nsisDir, setupFiles[0]);
+        const nsisSrc = path.join(nsisDir, setupFiles[0].name);
         console.log(`[Packaging] Copying installer to dist/${path.basename(nsisDst)}...`);
         fs.copyFileSync(nsisSrc, nsisDst);
     }
