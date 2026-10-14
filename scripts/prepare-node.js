@@ -19,3 +19,23 @@ if (!fs.existsSync(targetFile)) {
 } else {
     console.log('[Prepare] bin/node.exe is ready.');
 }
+
+const webviewDll = path.join(targetDir, 'WebView2Loader.dll');
+if (!fs.existsSync(webviewDll)) {
+    // Search common location if not yet in bin
+    const candidates = [
+        path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'TeamsMeetingAdd-in', '1.25.24601', 'x64', 'runtimes', 'win-x64', 'native', 'WebView2Loader.dll')
+    ];
+    for (const cand of candidates) {
+        if (fs.existsSync(cand)) {
+            try {
+                fs.copyFileSync(cand, webviewDll);
+                console.log('[Prepare] Successfully bundled WebView2Loader.dll.');
+                break;
+            } catch (e) {
+                console.warn('[Prepare] Failed to copy WebView2Loader.dll:', e.message);
+            }
+        }
+    }
+}
+

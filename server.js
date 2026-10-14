@@ -1,3 +1,17 @@
+// Intercept require('electron') when running in standalone Node to prevent devDependency stub from attempting downloads
+if (!process.versions || !process.versions.electron) {
+    const Module = require('module');
+    const origRequire = Module.prototype.require;
+    Module.prototype.require = function(id) {
+        if (id === 'electron') {
+            const err = new Error("Cannot find module 'electron'");
+            err.code = 'MODULE_NOT_FOUND';
+            throw err;
+        }
+        return origRequire.apply(this, arguments);
+    };
+}
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -27,13 +41,15 @@ function getWritableDir() {
     if (process.env.MOONPLAYER_DATA_DIR) {
         return process.env.MOONPLAYER_DATA_DIR;
     }
-    try {
-        const electron = require('electron');
-        const app = electron.app || (electron.remote && electron.remote.app);
-        if (app && app.getPath) {
-            return app.getPath('userData');
-        }
-    } catch (e) {}
+    if (process.versions && process.versions.electron) {
+        try {
+            const electron = require('electron');
+            const app = electron.app || (electron.remote && electron.remote.app);
+            if (app && app.getPath) {
+                return app.getPath('userData');
+            }
+        } catch (e) {}
+    }
     if (process.platform === 'win32' && process.env.APPDATA) {
         return path.join(process.env.APPDATA, 'MoonPlayer');
     }

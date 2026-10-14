@@ -300,9 +300,9 @@ fn start_server(app_handle: &tauri::AppHandle) -> Result<(), String> {
         *proc_guard = Some(ServerProcess { child });
     }
 
-    // Wait up to 12 seconds for the server to bind
+    // Wait up to 15 seconds for the server to bind
     let start_time = Instant::now();
-    let timeout = Duration::from_secs(12);
+    let timeout = Duration::from_secs(15);
     let mut ready = false;
 
     while start_time.elapsed() < timeout {
@@ -346,6 +346,7 @@ fn stop_server() {
     }
 }
 
+#[allow(dead_code)]
 fn escape_html(input: &str) -> String {
     input
         .replace('&', "&amp;")
@@ -673,18 +674,7 @@ pub fn run() {
 
             // 2. Configure target URL
             let server_url = format!("http://localhost:{}", SERVER_PORT);
-            let target_url: tauri::Url = match &server_res {
-                Ok(_) => server_url.parse().expect("Valid server URL"),
-                Err(err) => {
-                    log::error!("MoonPlayer server error: {}", err);
-                    let escaped = escape_html(err);
-                    let err_page = format!(
-                        "data:text/html;charset=utf-8,<!DOCTYPE html><html><head><meta charset='utf-8'><title>MoonPlayer Error</title><style>body{{background:%23070708;color:%23fff;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;padding:24px;box-sizing:border-box;}}div{{max-width:640px;background:%23111114;border:1px solid %2327272a;border-radius:14px;padding:32px;box-shadow:0 12px 40px rgba(0,0,0,0.8);text-align:center;}}h2{{margin-top:0;color:%23f87171;font-size:20px;}}pre{{text-align:left;background:%23000;color:%23fca5a5;padding:12px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;}}p{{color:%23a1a1aa;font-size:14px;line-height:1.5;}}button{{margin-top:16px;background:%237c3aed;color:%23fff;border:none;padding:10px 24px;border-radius:8px;font-weight:600;cursor:pointer;}}button:hover{{background:%236d28d9;}}</style></head><body><div><h2>⚠️ MoonPlayer Startup Error</h2><p>The background server could not be started or did not respond on port {}:</p><pre>{}</pre><p>Please ensure that Node.js is installed or restart the app.</p><button onclick='location.reload()'>Retry</button></div></body></html>",
-                        SERVER_PORT, escaped
-                    );
-                    err_page.parse().expect("Valid error data URL")
-                }
-            };
+            let target_url: tauri::Url = server_url.parse().expect("Valid server URL");
 
             let app_opener = app.handle().clone();
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(target_url))
@@ -709,14 +699,37 @@ pub fn run() {
                 .build()?;
 
             let w_show = window.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(300));
-                let _ = w_show.show();
-            });
+            if let Err(ref err) = server_res {
+                log::error!("MoonPlayer server error: {}", err);
+                let escaped_js = err.replace('\\', "\\\\").replace('`', "\\`").replace('$', "\\$");
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(300));
+                    let _ = w_show.show();
+                    let _ = w_show.eval(&format!(
+                        "document.body.innerHTML = '<div style=\"max-width:640px;margin:50px auto;background:#111114;border:1px solid #27272a;border-radius:14px;padding:32px;color:#fff;font-family:sans-serif;text-align:center;\"><h2 style=\"color:#f87171;\">⚠️ MoonPlayer Startup Error</h2><pre style=\"text-align:left;background:#000;color:#fca5a5;padding:12px;border-radius:8px;font-size:12px;overflow:auto;white-space:pre-wrap;\">` + `{}` + `</pre><button onclick=\"location.reload()\" style=\"margin-top:16px;background:#7c3aed;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-weight:600;cursor:pointer;\">Retry</button></div>';",
+                        escaped_js
+                    ));
+                });
+            } else {
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(300));
+                    let _ = w_show.show();
+                });
+            }
 
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Focused(focused) = event {
+                if window.label() == "main" {
+                    if let Some(w) = window.app_handle().get_webview_window("main") {
+                        let _ = w.eval(&format!(
+                            "window.__moonplayer_set_window_focus && window.__moonplayer_set_window_focus({});",
+                            focused
+                        ));
+                    }
+                }
+            }
             // Only the main window owns the backend. Closing the sign-in
             // window must not kill the server and freeze the app.
             if let tauri::WindowEvent::Destroyed = event {

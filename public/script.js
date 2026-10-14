@@ -9,14 +9,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // On Android/mobile, disable snow by default for silky smooth 60/120 FPS
     let isSnowEnabled = savedSnowPref !== null ? (savedSnowPref === 'true') : !isAndroidApp;
 
-    if (isSnowEnabled) {
+    // Background power saving & visibility tracking
+    let isAppHidden = document.hidden;
+    let isAppFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+
+    if (isSnowEnabled && !isAppHidden) {
         for (let i = 0; i < snowflakeCount; i++) {
             createSnowflake();
         }
     }
 
     function createSnowflake() {
-        if (!snowContainer || !isSnowEnabled) return;
+        if (!snowContainer || !isSnowEnabled || isAppHidden || document.hidden) return;
         const snowflake = document.createElement('div');
         snowflake.classList.add('snowflake');
 
@@ -46,7 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         snowflake.addEventListener('animationend', () => {
             snowflake.remove();
-            createSnowflake();
+            if (!isAppHidden && !document.hidden && isSnowEnabled) {
+                createSnowflake();
+            }
         });
     }
 
@@ -969,6 +975,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function startVisualizerIfNeeded() {
+        if (isAppHidden || document.hidden) {
+            return;
+        }
         if (!isPlaying || !dynamicIsland || !dynamicIsland.classList.contains('expanded')) {
             return;
         }
@@ -1026,6 +1035,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastVisualizerDrawTime = 0;
 
     function drawVisualizer() {
+        if (isAppHidden || document.hidden) {
+            isVisualizerActive = false;
+            visualizerAnimationId = null;
+            return;
+        }
         if (!dynamicIsland || !dynamicIsland.classList.contains('expanded')) {
             stopVisualizer(true);
             return;
@@ -1037,7 +1051,8 @@ document.addEventListener('DOMContentLoaded', () => {
         visualizerAnimationId = requestAnimationFrame(drawVisualizer);
 
         const now = performance.now();
-        const minInterval = (isAndroidApp || window.innerWidth <= 900) ? 33 : 16;
+        // Background CPU optimization: throttle from 60 FPS (16ms) to 15 FPS (66ms) when unfocused
+        const minInterval = !isAppFocused ? 66 : ((isAndroidApp || window.innerWidth <= 900) ? 33 : 16);
         if (now - lastVisualizerDrawTime < minInterval) {
             return;
         }
@@ -5644,6 +5659,26 @@ document.addEventListener('DOMContentLoaded', () => {
     bgAudio.addEventListener('timeupdate', () => {
         const current = bgAudio.currentTime;
         const duration = bgAudio.duration;
+
+        // Crossfade trigger near the end of the track
+        if (isCrossfadeEnabled && duration > crossfadeDuration * 2) {
+            if (current >= duration - crossfadeDuration && !isCrossfadingTriggered) {
+                isCrossfadingTriggered = true;
+                if (isLoop === 'one') {
+                    playTrack(currentlyPlayingIndex);
+                } else if (isLoop === 'none' && playQueueIndex >= playQueue.length - 1) {
+                    // At end of queue without looping, let track finish to ended event
+                } else {
+                    handleNext();
+                }
+            }
+        }
+
+        // Background CPU optimization: skip all DOM updates when app is hidden/minimized
+        if (isAppHidden || document.hidden) {
+            return;
+        }
+
         currentTimeEl.textContent = formatTime(current);
 
         // Update lyrics display
@@ -5653,20 +5688,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const percent = (current / duration) * 100;
             progressSlider.value = percent;
             progressSlider.style.setProperty('--value', `${percent}%`);
-
-            // Crossfade trigger near the end of the track
-            if (isCrossfadeEnabled && duration > crossfadeDuration * 2) {
-                if (current >= duration - crossfadeDuration && !isCrossfadingTriggered) {
-                    isCrossfadingTriggered = true;
-                    if (isLoop === 'one') {
-                        playTrack(currentlyPlayingIndex);
-                    } else if (isLoop === 'none' && playQueueIndex >= playQueue.length - 1) {
-                        // At end of queue without looping, let track finish to ended event
-                    } else {
-                        handleNext();
-                    }
-                }
-            }
         }
     });
 
@@ -9304,6 +9325,60 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // ==========================================
+    // BACKGROUND & VISIBILITY POWER-SAVING ENGINE
+    // ==========================================
+    function updateAppPowerState() {
+        isAppHidden = document.hidden;
+        if (isAppHidden) {
+            document.body.classList.add('app-hidden');
+            if (visualizerAnimationId) {
+                cancelAnimationFrame(visualizerAnimationId);
+                visualizerAnimationId = null;
+            }
+            isVisualizerActive = false;
+        } else {
+            document.body.classList.remove('app-hidden');
+            if (isSnowEnabled && snowContainer && snowContainer.childElementCount < snowflakeCount) {
+                for (let i = snowContainer.childElementCount; i < snowflakeCount; i++) {
+                    createSnowflake();
+                }
+            }
+            if (isPlaying) {
+                startVisualizerIfNeeded();
+                // Immediately refresh time, slider and lyrics after returning from background
+                if (bgAudio) {
+                    const current = bgAudio.currentTime;
+                    if (currentTimeEl) currentTimeEl.textContent = formatTime(current);
+                    if (typeof updateLyricsDisplay === 'function') updateLyricsDisplay(current);
+                    if (bgAudio.duration > 0 && progressSlider) {
+                        const pct = (current / bgAudio.duration) * 100;
+                        progressSlider.value = pct;
+                        progressSlider.style.setProperty('--value', `${pct}%`);
+                    }
+                }
+            }
+        }
+    }
+
+    document.addEventListener('visibilitychange', updateAppPowerState);
+
+    window.addEventListener('blur', () => {
+        isAppFocused = false;
+    });
+
+    window.addEventListener('focus', () => {
+        isAppFocused = true;
+        updateAppPowerState();
+    });
+
+    window.__moonplayer_set_window_focus = function(focused) {
+        isAppFocused = !!focused;
+        if (focused) {
+            updateAppPowerState();
+        }
+    };
 
     // Auto trigger library scan
     setTimeout(() => {
