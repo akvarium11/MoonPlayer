@@ -53,6 +53,7 @@
     ctx: null,
     img: new Image(),
     imgReady: false,
+    currentThumb: null,
     currentShape: 0,
     nextShape: 1,
     morphProgress: 0,
@@ -200,7 +201,7 @@
     ctx.closePath();
     ctx.clip();
 
-    if (m3c.imgReady && m3c.img.naturalWidth > 0) {
+    if ((m3c.imgReady || (m3c.img && m3c.img.complete && m3c.img.naturalWidth > 0)) && m3c.img.naturalWidth > 0) {
       const iw = m3c.img.naturalWidth;
       const ih = m3c.img.naturalHeight;
       const minDim = Math.min(iw, ih);
@@ -1822,11 +1823,12 @@
     const allSongs = window.MoonPlayer ? window.MoonPlayer.getAllSongs() : [];
 
     if (typeof albumObj === 'string') {
-      const found = allAlbums.find((a) => (a.title && a.title.toLowerCase() === albumObj.toLowerCase()) || (a.name && a.name.toLowerCase() === albumObj.toLowerCase()) || (a.albumKey && a.albumKey.toLowerCase() === albumObj.toLowerCase()));
+      const albSearch = albumObj.trim().toLowerCase();
+      const found = allAlbums.find((a) => (a.albumKey && a.albumKey.toLowerCase() === albSearch) || (a.title && a.title.toLowerCase() === albSearch));
       if (found) {
         target = found;
       } else {
-        const albumTracks = allSongs.filter((s) => s.album && s.album.toLowerCase() === albumObj.toLowerCase());
+        const albumTracks = allSongs.filter((s) => s.album && s.album.trim().toLowerCase() === albSearch);
         target = {
           title: albumObj,
           artist: albumTracks.length > 0 ? albumTracks[0].artist : 'Unknown Artist',
@@ -1834,15 +1836,31 @@
           cover: albumTracks.length > 0 ? getTrackThumb(albumTracks[0]) : 'assets/icon.png'
         };
       }
-    } else if (albumObj && (!albumObj.tracks || albumObj.tracks.length === 0) && albumObj.title) {
-      const found = allAlbums.find((a) =>
-        (a.albumKey && albumObj.albumKey && a.albumKey === albumObj.albumKey) ||
-        (a.title && albumObj.title && a.title.toLowerCase() === albumObj.title.toLowerCase())
-      );
+    } else if (albumObj && typeof albumObj === 'object') {
+      const albKey = albumObj.albumKey;
+      const albTitle = (albumObj.title || albumObj.name || '').trim().toLowerCase();
+      const albArtist = (albumObj.artist || '').trim().toLowerCase();
+
+      let found = null;
+      if (albKey) {
+        found = allAlbums.find((a) => a.albumKey && a.albumKey === albKey);
+      }
+      if (!found && albTitle && albArtist) {
+        found = allAlbums.find((a) => a.title && a.title.toLowerCase() === albTitle && a.artist && a.artist.toLowerCase() === albArtist);
+      }
+      if (!found && albTitle) {
+        const titleMatches = allAlbums.filter((a) => a.title && a.title.toLowerCase() === albTitle);
+        if (titleMatches.length === 1) found = titleMatches[0];
+      }
+
       if (found && Array.isArray(found.tracks) && found.tracks.length > 0) {
         target = found;
-      } else {
-        const albumTracks = allSongs.filter((s) => s.album && s.album.toLowerCase() === albumObj.title.toLowerCase());
+      } else if (!albumObj.tracks || albumObj.tracks.length === 0) {
+        const albumTracks = allSongs.filter((s) => {
+          if (!s.album || s.album.trim().toLowerCase() !== albTitle) return false;
+          if (albArtist && s.artist && s.artist.trim().toLowerCase() !== albArtist) return false;
+          return true;
+        });
         if (albumTracks.length > 0) {
           target = { ...albumObj, tracks: albumTracks };
           if (!target.cover) target.cover = getTrackThumb(albumTracks[0]);
@@ -3321,7 +3339,8 @@
         }
       }
       if (thumb && thumb !== 'assets/icon.png' && !thumb.endsWith('icon.png')) {
-        if (m3c.img.src !== thumb) {
+        if (m3c.currentThumb !== thumb) {
+          m3c.currentThumb = thumb;
           m3c.imgReady = false;
           if (thumb.startsWith('data:')) {
             m3c.img.removeAttribute('crossorigin');
@@ -3331,9 +3350,12 @@
           m3c.img.src = thumb;
         }
       } else {
-        m3c.imgReady = false;
-        m3c.img.src = '';
-        renderM3Frame(0);
+        if (m3c.currentThumb !== null) {
+          m3c.currentThumb = null;
+          m3c.imgReady = false;
+          m3c.img.src = '';
+          renderM3Frame(0);
+        }
       }
 
       // Bottom-Left artwork playing breathing animation & M3 morph
@@ -4561,9 +4583,16 @@
     if (el.playbarTitle) {
       el.playbarTitle.addEventListener('click', () => {
         if (!state.currentTrack) return;
-        const alb = state.currentTrack.album;
+        const song = state.currentTrack;
+        const alb = song.album;
         if (alb && alb.toLowerCase() !== 'unknown album') {
-          openAlbum(alb);
+          openAlbum({
+            albumKey: song.albumKey,
+            title: alb,
+            artist: song.artist,
+            cover: song.folderCoverUrl || song.cover,
+            tracks: [song]
+          });
         } else {
           switchView('local');
           if (el.localSearchInput) {

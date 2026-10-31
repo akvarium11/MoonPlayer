@@ -4,7 +4,7 @@ const { execSync } = require('child_process');
 
 const rootDir = path.resolve(__dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
-const version = pkg.version || '2.5.0';
+const version = pkg.version || '3.0.0';
 
 const releaseDir = path.join(rootDir, 'src-tauri', 'target', 'release');
 const distDir = path.join(rootDir, 'dist');

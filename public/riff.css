@@ -429,7 +429,7 @@ body.is-playing .shape-triangle {
   max-width: 460px;
   opacity: 1;
   transform: scale(1);
-  overflow: hidden;
+  overflow: visible;
   white-space: nowrap;
   pointer-events: auto;
   transition: max-width 0.35s cubic-bezier(0.2, 0, 0, 1),
@@ -2445,9 +2445,9 @@ body.perf .my-wave-ambient-light {
 .track-title-marquee {
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: clip;
-  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 24px), transparent 100%);
-  mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 24px), transparent 100%);
+  text-overflow: ellipsis;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
 }
 .track-title {
   font-size: calc(14px * var(--font-scale, 1));
@@ -7248,35 +7248,58 @@ body.no-clip-fx .sidebar { background: color-mix(in srgb, var(--md-sys-color-sur
   text-overflow: ellipsis;
 }
 
-.main-content:has(#view-album.active) {
+.main-content:has(#view-album.active, #view-playlist-detail.active) {
+  background: transparent !important;
   overflow: hidden !important;
-  padding-bottom: 0 !important;
+  padding: 10px 18px 18px 12px !important;
 }
 
-#view-album {
+#view-album,
+#view-playlist-detail {
   position: relative;
   text-transform: none;
 }
-#view-album.active {
+
+#view-album.active,
+#view-playlist-detail.active {
   display: flex !important;
   flex-direction: column;
   height: 100%;
-  overflow: hidden;
-  box-sizing: border-box;
+  border-radius: 28px !important;
+  background: color-mix(in srgb, var(--md-sys-color-surface-container, #1E1F22) 58%, transparent) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(140%) !important;
+  backdrop-filter: blur(28px) saturate(140%) !important;
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-on-surface, #fff) 9%, transparent) !important;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.36) !important;
+  overflow: hidden !important;
+  position: relative !important;
+  padding: 20px 24px 20px 24px !important;
+  box-sizing: border-box !important;
 }
-#view-album > :not(#album-hero-fx) {
+
+body.perf #view-album.active,
+body.perf #view-playlist-detail.active {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  background: var(--md-sys-color-surface-container, #1E1F22) !important;
+}
+
+#view-album > :not(#album-hero-fx),
+#view-playlist-detail > :not(#playlist-hero-fx) {
   position: relative;
   z-index: 1;
 }
+
 #view-album > #album-hero-fx {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 70vh;
-  min-height: 400px;
+  height: 65vh;
+  min-height: 360px;
   pointer-events: none;
   z-index: 0;
+  border-radius: 28px 28px 0 0 !important;
 }
 .album-layout {
   display: grid;
@@ -8241,7 +8264,7 @@ body:not(.mode-riff) #riff-root {
 .playbar-left {
   display: flex !important;
   align-items: center !important;
-  gap: 10px !important;
+  gap: 12px !important;
   min-width: 0 !important;
   overflow: hidden !important;
   justify-content: flex-start !important;
@@ -8252,19 +8275,20 @@ body:not(.mode-riff) #riff-root {
 }
 
 .playbar-left #btn-toggle-fav {
-  margin-left: 0 !important;
+  margin-left: 14px !important;
   flex-shrink: 0 !important;
 }
 
 .track-meta {
   flex: 0 1 auto !important;
-  max-width: 260px !important;
+  max-width: clamp(240px, 32vw, 420px) !important;
   min-width: 0 !important;
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
   justify-content: center !important;
   gap: 2px !important;
+  padding-right: 8px !important;
 }
 
 .track-title {
@@ -8698,6 +8722,7 @@ body:not(.mode-riff) #riff-root {
   display: flex !important;
   align-items: center;
   gap: 4px;
+  overflow: visible !important;
 }
 
 #playbar-title, #playbar-artist {
@@ -9091,11 +9116,17 @@ body.riff-custom-bg-on :is(.m3-organic-bg, .bg-mesh-layer, #cover-bg, #bg-mesh-a
 
 /* Top bar controls turn to light glass as well, otherwise the solid search
    pill reads as a grey band across the photo. */
-body.riff-custom-bg-on.mode-riff :is(.search-box, .platform-btn) {
+body.riff-custom-bg-on.mode-riff .search-box {
   background: color-mix(in srgb, var(--md-sys-color-surface-container, #1E1F22) 52%, transparent) !important;
   -webkit-backdrop-filter: blur(20px) saturate(140%);
   backdrop-filter: blur(20px) saturate(140%);
   box-shadow: 0 2px 14px rgba(0, 0, 0, .22);
+}
+body.riff-custom-bg-on.mode-riff .platform-btn {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container, #1E1F22) 52%, transparent) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  backdrop-filter: blur(20px) saturate(140%);
+  box-shadow: none !important;
 }
 body.perf.riff-custom-bg-on.mode-riff :is(.search-box, .platform-btn) {
   -webkit-backdrop-filter: none !important;
@@ -9270,8 +9301,7 @@ body.riff-custom-bg-on.mode-riff .platform-btn.active {
   background: color-mix(in srgb, var(--md-sys-color-primary, #D0BCFF) 92%, transparent) !important;
   color: var(--md-sys-color-on-primary, #381E72) !important;
   font-weight: 700;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-primary, #D0BCFF) 60%, transparent),
-              0 2px 12px rgba(0, 0, 0, .28) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-primary, #D0BCFF) 60%, transparent) !important;
 }
 body.riff-custom-bg-on.mode-riff .platform-btn:not(.active) {
   color: var(--md-sys-color-on-surface-variant, #CAC4D0) !important;

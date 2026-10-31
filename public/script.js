@@ -393,28 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const artist1 = normalizeTrackString(rawArtist1);
             const artist2 = normalizeTrackString(rawArtist2);
 
-            if (title1 && title1 === title2 && artist1 && artist1 === artist2 && durMatch) return true;
-
-            const artistCompatible = !artist1 || !artist2 || artist1 === artist2 ||
-                artist1.includes(artist2) || artist2.includes(artist1) ||
-                (p1 && p1.includes(artist2)) || (p2 && p2.includes(artist1)) ||
-                (t1.permalink_url && t1.permalink_url.toLowerCase().includes(artist2)) ||
-                (t2.permalink_url && t2.permalink_url.toLowerCase().includes(artist1));
-
-            if (artistCompatible && durMatch) {
-                if (title1 && title2) {
-                    if (title1 === title2) return true;
-                    if (title1.includes(title2) || title2.includes(title1)) return true;
-                    if (title1.length >= 8 && title2.length >= 8 && (title1.slice(0, 8) === title2.slice(0, 8) || title1.slice(-8) === title2.slice(-8))) return true;
-                }
-            }
-
-            const isGeneric1 = GENERIC_TITLES.has(title1) || GENERIC_TITLES.has(rawTitle1);
-            const isGeneric2 = GENERIC_TITLES.has(title2) || GENERIC_TITLES.has(rawTitle2);
-            if (!isGeneric1 && !isGeneric2 && title1 && title2) {
-                if (title1 === title2 && dur1 > 0 && dur2 > 0 && durMatch) return true;
-                if ((title1.includes(title2) || title2.includes(title1)) && title1.length >= 6 && title2.length >= 6 && dur1 > 0 && dur2 > 0 && Math.abs(dur1 - dur2) <= 3) return true;
-            }
+            if (title1 && title2 && title1 === title2 && artist1 && artist2 && artist1 === artist2 && durMatch) return true;
         }
         return false;
     }
@@ -2914,17 +2893,20 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             viewAlbumOption.addEventListener('click', () => {
                 if (window.RiffUI && typeof window.RiffUI.openAlbum === 'function' && document.body.classList.contains('mode-riff')) {
-                    const foundAlb = albums.find(a => (song.albumKey && a.albumKey === song.albumKey) || (a.title && song.album && a.title.toLowerCase() === song.album.toLowerCase()));
+                    const normAlbum = song.album.trim().toLowerCase();
+                    const normArtist = (song.artist || '').trim().toLowerCase();
+                    const foundAlb = albums.find(a => (song.albumKey && a.albumKey === song.albumKey) || (a.title && a.title.toLowerCase() === normAlbum && (!normArtist || !a.artist || a.artist.toLowerCase() === normArtist)));
                     if (foundAlb) {
                         window.RiffUI.openAlbum(foundAlb);
                         menu.remove();
                         return;
                     } else if (song.album) {
                         window.RiffUI.openAlbum({
+                            albumKey: song.albumKey,
                             title: song.album,
                             artist: song.artist || 'Unknown Artist',
                             cover: song.folderCoverUrl || song.cover,
-                            tracks: allSongs.filter(s => s.album === song.album)
+                            tracks: allSongs.filter(s => s.album && s.album.trim().toLowerCase() === normAlbum && (!normArtist || !s.artist || s.artist.trim().toLowerCase() === normArtist))
                         });
                         menu.remove();
                         return;
@@ -6111,8 +6093,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (!albumName || albumName === 'Unknown Album' || albumName === 'Artist Profile') return;
-        const key = `${albumName.toLowerCase()}_${artistName.toLowerCase()}`;
-        selectAlbum(key);
+        const normAlb = albumName.trim().toLowerCase();
+        const normArt = (artistName || '').trim().toLowerCase();
+        const match = albums.find(a => (a.albumKey && normArt && a.albumKey === `${normAlb}:::${normArt}`) || (a.title && a.title.toLowerCase() === normAlb && (!normArt || !a.artist || a.artist.toLowerCase() === normArt)));
+        if (match) {
+            selectAlbum(match.albumKey);
+        }
     }
 
     // Helper: Search and open an artist on SoundCloud if not in local library

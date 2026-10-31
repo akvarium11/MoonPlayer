@@ -124,8 +124,8 @@ A sleek, modern desktop audio player featuring an interactive Dynamic Island, 10
 
 ### Option 1: Standalone Desktop App (Recommended for Windows)
 No runtime dependencies or Node.js required on user PCs:
-- **Installer**: Download **`MoonPlayer_2.5.0_x64-setup.exe`** from [Latest Release](https://github.com/akvarium11/MoonPlayer/releases/latest) for automatic installation with Start Menu and Desktop shortcuts.
-- **Portable**: Download **`MoonPlayer_2.5.0_portable.zip`**, extract anywhere, and launch `moonplayer.exe`.
+- **Installer**: Download **`MoonPlayer_3.0.0_x64-setup.exe`** from [Latest Release](https://github.com/akvarium11/MoonPlayer/releases/latest) for automatic installation with Start Menu and Desktop shortcuts.
+- **Portable**: Download **`MoonPlayer_3.0.0_portable.zip`**, extract anywhere, and launch `moonplayer.exe`.
 
 ---
 
@@ -364,8 +364,8 @@ This project is licensed under the **GPL-3.0 License** — see the [LICENSE](LIC
 
 ### Вариант 1: Десктопная версия для Windows (Рекомендуется)
 Не требует установки Node.js, Python или дополнительных программ:
-- **Установщик**: Скачайте **`MoonPlayer_2.5.0_x64-setup.exe`** из раздела [Releases](https://github.com/akvarium11/MoonPlayer/releases/latest) для быстрой установки с ярлыками в меню «Пуск» и на рабочем столе.
-- **Портативная версия**: Скачайте архив **`MoonPlayer_2.5.0_portable.zip`**, распакуйте в любую папку и запустите `moonplayer.exe`.
+- **Установщик**: Скачайте **`MoonPlayer_3.0.0_x64-setup.exe`** из раздела [Releases](https://github.com/akvarium11/MoonPlayer/releases/latest) для быстрой установки с ярлыками в меню «Пуск» и на рабочем столе.
+- **Портативная версия**: Скачайте архив **`MoonPlayer_3.0.0_portable.zip`**, распакуйте в любую папку и запустите `moonplayer.exe`.
 
 ---
 
