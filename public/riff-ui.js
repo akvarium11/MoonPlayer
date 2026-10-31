@@ -2335,8 +2335,8 @@
   // ---------------------------------------------------------------
   // Custom player background (own photo, blurred + darkened)
   // ---------------------------------------------------------------
-  const BG_DEFAULT_BLUR = 24;
-  const BG_DEFAULT_DARKEN = 55;
+  const BG_DEFAULT_BLUR = 18;
+  const BG_DEFAULT_DARKEN = 40;
   let riffBgObjectUrl = null;
 
   function getBackgroundSettings() {

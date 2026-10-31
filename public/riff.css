@@ -9060,16 +9060,56 @@ html.mode-riff.riff-custom-bg-on {
 body.mode-riff.riff-custom-bg-on #riff-root {
   background: transparent !important;
 }
-/* Let the photo breathe through the big surfaces, keep content readable. */
-body.riff-custom-bg-on.mode-riff :is(.app-layout, .main-content, .sidebar, .playbar, .titlebar, #rail-drawer) {
-  background: color-mix(in srgb, var(--md-sys-color-surface-container, #1E1F22) 68%, transparent) !important;
-  -webkit-backdrop-filter: blur(22px) saturate(135%);
-  backdrop-filter: blur(22px) saturate(135%);
-}
-body.riff-custom-bg-on.mode-riff :is(.content-view, .settings-view, #view-local, #view-playlists) {
+/* The photo IS the window background: the layout shells stop painting their
+   own tonal slabs, so there is no visible edge between the content area and
+   the page background. Only floating surfaces (cards, rows, playbar) keep a
+   surface of their own. */
+body.riff-custom-bg-on.mode-riff :is(
+  .app-layout,
+  .main-content,
+  #main-content,
+  #main-content > *,
+  .sidebar,
+  #sidebar,
+  .content-view,
+  .settings-view,
+  #view-local,
+  #view-playlists,
+  #rail-drawer
+) {
   background: transparent !important;
+  background-image: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
 }
-body.perf.riff-custom-bg-on.mode-riff :is(.app-layout, .main-content, .sidebar, .playbar, .titlebar, #rail-drawer) {
+
+/* One background only: the animated mesh/organic shapes would muddy the photo. */
+body.riff-custom-bg-on :is(.m3-organic-bg, .bg-mesh-layer, #cover-bg, #bg-mesh-a, #bg-mesh-b, .home-ambient) {
+  display: none !important;
+}
+
+/* Top bar controls turn to light glass as well, otherwise the solid search
+   pill reads as a grey band across the photo. */
+body.riff-custom-bg-on.mode-riff :is(.search-box, .platform-btn) {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container, #1E1F22) 52%, transparent) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  backdrop-filter: blur(20px) saturate(140%);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, .22);
+}
+body.perf.riff-custom-bg-on.mode-riff :is(.search-box, .platform-btn) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* The floating playbar still reads as a control strip over the photo. */
+body.riff-custom-bg-on.mode-riff .playbar {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container, #1E1F22) 46%, transparent) !important;
+  -webkit-backdrop-filter: blur(26px) saturate(140%);
+  backdrop-filter: blur(26px) saturate(140%);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .38);
+}
+body.perf.riff-custom-bg-on.mode-riff .playbar {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
