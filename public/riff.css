@@ -9259,3 +9259,79 @@ body.mode-riff.m3-cover-on #m3c-canvas {
   position: relative;
   z-index: 1;
 }
+
+/* ========================================================
+   PHOTO BACKGROUND POLISH v2 (2026-10)
+   ======================================================== */
+
+/* 1) The glass rule flattened the Local/SoundCloud toggle: keep the selected
+      source clearly tinted with the primary container. */
+body.riff-custom-bg-on.mode-riff .platform-btn.active {
+  background: color-mix(in srgb, var(--md-sys-color-primary, #D0BCFF) 92%, transparent) !important;
+  color: var(--md-sys-color-on-primary, #381E72) !important;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-primary, #D0BCFF) 60%, transparent),
+              0 2px 12px rgba(0, 0, 0, .28) !important;
+}
+body.riff-custom-bg-on.mode-riff .platform-btn:not(.active) {
+  color: var(--md-sys-color-on-surface-variant, #CAC4D0) !important;
+}
+
+/* 2) Round icon buttons (row actions, playbar right side) were still solid. */
+body.riff-custom-bg-on.mode-riff .btn-icon-pill:not(.pressed) {
+  background-color: color-mix(in srgb, var(--md-sys-color-surface-container, #1E1F22) 50%, transparent) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  backdrop-filter: blur(14px) saturate(135%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-on-surface) 9%, transparent);
+}
+body.perf.riff-custom-bg-on.mode-riff .btn-icon-pill {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+/* Primary CTA keeps its accent but not a flat slab. */
+body.riff-custom-bg-on.mode-riff .btn-pill-primary {
+  background-color: color-mix(in srgb, var(--md-sys-color-primary, #D0BCFF) 88%, transparent) !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+}
+
+/* 3) Card covers: a 12px radius on a 140px tile read as a square next to the
+      16px card. Bigger radii so album/playlist cards look consistently soft. */
+.riff-card-item {
+  border-radius: 20px !important;
+}
+.riff-card-cover,
+.riff-card-artist-avatar {
+  border-radius: 16px !important;
+}
+.riff-card-artist-avatar {
+  border-radius: 50% !important;
+}
+.playlists-grid .riff-card-item,
+#artist-albums-grid .riff-card-item {
+  border-radius: 22px !important;
+}
+#playlist-detail-cover,
+.playlist-cover-wrapper,
+.playlist-detail-header .playlist-cover-art,
+.playlist-detail-header .cover-single-img,
+.playlist-detail-header img {
+  border-radius: 22px !important;
+}
+#album-detail-cover,
+.album-cover-wrapper,
+#album-detail-cover img,
+.album-cover-wrapper img {
+  border-radius: 24px !important;
+}
+
+/* 4) Artist names inside track rows are real links now. */
+.track-row-artist.artist-link {
+  cursor: pointer;
+  text-decoration-color: transparent;
+  transition: color .18s ease, text-decoration-color .18s ease;
+}
+.track-row-artist.artist-link:hover {
+  color: var(--md-sys-color-primary, #D0BCFF);
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+}

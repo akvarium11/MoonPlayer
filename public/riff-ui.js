@@ -58,7 +58,13 @@
     morphProgress: 0,
     morphStartTime: 0,
     isMorphing: false,
-    animId: null
+    animId: null,
+    // 0 = plain rounded square (idle), 1 = fully organic M3 shape (playing)
+    stateProgress: 0,
+    stateTarget: 0,
+    stateAnimId: null,
+    stateAnimStart: 0,
+    stateAnimFrom: 0
   };
 
   m3c.img.crossOrigin = 'anonymous';
@@ -100,6 +106,55 @@
   }
 
   let m3ResizeTick = 0;
+  let m3SquareProfile = null;
+
+  // Rounded-square silhouette used as the idle state of the playbar cover.
+  // Same normalisation as RiffShapes profiles (max radius 160) so the two can
+  // be blended point by point.
+  function getSquareProfile() {
+    if (m3SquareProfile) return m3SquareProfile;
+    const K = (window.RiffShapes && window.RiffShapes.K) || 360;
+    const prof = new Float32Array(K);
+    const n = 5;
+    let max = 0;
+    for (let k = 0; k < K; k++) {
+      const theta = -Math.PI + (2 * Math.PI * k) / K;
+      const c = Math.abs(Math.cos(theta));
+      const s = Math.abs(Math.sin(theta));
+      const r = 1 / Math.pow(Math.pow(c, n) + Math.pow(s, n), 1 / n);
+      prof[k] = r;
+      if (r > max) max = r;
+    }
+    const scale = 160 / max;
+    for (let k = 0; k < K; k++) prof[k] *= scale;
+    m3SquareProfile = prof;
+    return prof;
+  }
+
+  // Animate between the square (idle) and organic (playing) silhouette.
+  function animateM3State(target) {
+    const goal = target ? 1 : 0;
+    if (m3c.stateTarget === goal && m3c.stateAnimId === null) return;
+    m3c.stateTarget = goal;
+    m3c.stateAnimFrom = m3c.stateProgress;
+    m3c.stateAnimStart = performance.now();
+    if (m3c.stateAnimId) return;
+    const DURATION = 460;
+    const step = () => {
+      const raw = Math.min(1, (performance.now() - m3c.stateAnimStart) / DURATION);
+      const eased = window.RiffShapes ? window.RiffShapes.ease(raw) : raw;
+      m3c.stateProgress = m3c.stateAnimFrom + (m3c.stateTarget - m3c.stateAnimFrom) * eased;
+      renderM3Frame(m3c.morphProgress);
+      if (raw < 1) {
+        m3c.stateAnimId = requestAnimationFrame(step);
+      } else {
+        m3c.stateAnimId = null;
+        m3c.stateProgress = m3c.stateTarget;
+        renderM3Frame(m3c.morphProgress);
+      }
+    };
+    m3c.stateAnimId = requestAnimationFrame(step);
+  }
 
   function renderM3Frame(tVal = 0) {
     if (!m3c.ctx || !window.RiffShapes || !window.RiffShapes.ready()) return;
@@ -120,6 +175,13 @@
     const K = window.RiffShapes.K || 360;
     const size = 120;
     const ctx = m3c.ctx;
+    // Blend the organic silhouette with the idle rounded square.
+    const squareProf = getSquareProfile();
+    const sp = window.RiffShapes.ease(Math.max(0, Math.min(1, m3c.stateProgress || 0)));
+    const radiusAt = (k) => {
+      const organic = (1 - t) * p1[k] + t * p2[k];
+      return squareProf[k] + (organic - squareProf[k]) * sp;
+    };
 
     ctx.save();
     ctx.clearRect(0, 0, size, size);
@@ -129,7 +191,7 @@
 
     for (let k = 0; k < K; k++) {
       const theta = -Math.PI + (2 * Math.PI * k) / K;
-      const r = (1 - t) * p1[k] + t * p2[k];
+      const r = radiusAt(k);
       const x = r * scale * Math.cos(theta);
       const y = r * scale * Math.sin(theta);
       if (k === 0) ctx.moveTo(x, y);
@@ -164,10 +226,12 @@
     const RING_W = 2.5;
     const cx = size / 2;
     const cy = size / 2;
+    // The ring only exists while the cover is in its playing (organic) state.
+    if (sp <= 0.02) return;
     const ringPoint = (phi, wave) => {
       const theta = phi;
       const k = Math.round((((theta + Math.PI) / (Math.PI * 2)) * K) % K);
-      const r = (((1 - t) * (p1[k] || 120) + t * (p2[k] || 120)) * scale) + RING_GAP + RING_W / 2 + wave;
+      const r = ((radiusAt(k) || 120) * scale) + RING_GAP + RING_W / 2 + wave;
       return [cx + Math.cos(phi) * r, cy + Math.sin(phi) * r];
     };
     const startPhi = -Math.PI / 2;
@@ -179,7 +243,7 @@
     // flickering shadow tracing the artwork outline.
     ctx.lineWidth = 2;
     ctx.strokeStyle = primary;
-    ctx.globalAlpha = 0.16;
+    ctx.globalAlpha = 0.16 * sp;
     ctx.beginPath();
     for (let s = 0; s <= STEPS; s++) {
       const [x, y] = ringPoint(startPhi + (Math.PI * 2 * s) / STEPS, 0);
@@ -187,7 +251,7 @@
     }
     ctx.stroke();
     if (p > 0) {
-      ctx.globalAlpha = 0.85;
+      ctx.globalAlpha = 0.85 * sp;
       ctx.beginPath();
       const playedSteps = Math.max(2, Math.round(p * STEPS));
       for (let s = 0; s <= playedSteps; s++) {
@@ -837,6 +901,26 @@
         </button>` : ''}
       </div>
     `;
+
+    // Artist name -> open the artist profile (must not start playback)
+    const artistEl = row.querySelector('.track-row-artist');
+    if (artistEl && track.artist) {
+      artistEl.classList.add('artist-link');
+      artistEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const user = track.user && (track.user.id || track.user.permalink_url) ? track.user : null;
+        if (user) {
+          openArtistProfile({
+            name: user.username || user.name || track.artist,
+            id: user.id,
+            avatar: user.avatar_url || user.avatar
+          });
+        } else {
+          openArtistProfile(track.artist);
+        }
+      });
+    }
 
     // Row Click -> Play Track (clicking anywhere starts playback, only action buttons stop)
     row.addEventListener('click', (e) => {
@@ -3180,6 +3264,17 @@
           }
         };
         el.playbarArtwork.onload = () => {
+          // In M3 mode the canvas draws the cover; letting onload reveal the
+          // <img> again flashed the square thumbnail for a frame.
+          if (document.body.classList.contains('m3-cover-on')) {
+            el.playbarArtwork.classList.add('hidden');
+            el.playbarArtwork.style.display = 'none';
+            if (el.m3cWrap) {
+              el.m3cWrap.classList.remove('hidden');
+              el.m3cWrap.style.display = 'flex';
+            }
+            return;
+          }
           el.playbarArtwork.classList.remove('hidden');
           el.playbarArtwork.style.display = 'block';
           if (el.m3cWrap) {
@@ -3193,7 +3288,9 @@
         };
         const isM3On = document.body.classList.contains('m3-cover-on');
         if (thumb && thumb !== 'assets/icon.png' && !thumb.endsWith('icon.png')) {
-          el.playbarArtwork.src = thumb;
+          if (el.playbarArtwork.getAttribute('src') !== thumb) {
+            el.playbarArtwork.src = thumb;
+          }
           if (isM3On) {
             el.playbarArtwork.classList.add('hidden');
             el.playbarArtwork.style.display = 'none';
@@ -3245,8 +3342,10 @@
       if (el.m3cWrap) el.m3cWrap.classList.toggle('playing', !!state.isPlaying);
       if (state.isPlaying) {
         startM3Morph();
+        animateM3State(1);
       } else {
         stopM3Morph();
+        animateM3State(0);
       }
 
       // Right Panel Now Playing Synchronize
