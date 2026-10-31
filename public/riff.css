@@ -9176,3 +9176,86 @@ body.perf.riff-custom-bg-on.mode-riff .playbar {
   transition: transform .25s cubic-bezier(.2, 0, 0, 1);
 }
 .track-row:hover .track-row-thumb { transform: scale(1.04); }
+
+/* ========================================================
+   CUSTOM BACKGROUND: GLASS SURFACES + PLAYBAR ARTWORK (2026-10)
+   ======================================================== */
+
+/* Every grey surface becomes translucent glass over the photo: cards, panels,
+   sheets, chips, fields. Same corner geometry, so the composition holds. */
+body.riff-custom-bg-on.mode-riff :is(
+  .riff-card-item, .mix-card, .sc-card, .album-card, .playlist-pick-item, .result-item,
+  .settings-card, .audio-menu-card, .cache-modal-card, .dialog-card, .modal-card,
+  .setting-item, .eq-section-10band, .eq-header-card, .sync-mode-card, .custom-lyrics-card,
+  .command-palette-card, .tools-install-card, .mesh-customizer-card, .download-modal-card,
+  .view-search-box, .pill-text-input, .custom-lyrics-textarea, .sync-track-banner,
+  .audio-tab, .format-chip, .quality-chip, .riff-eq-chip, .tools-row, .sp-modes,
+  .download-track-preview, .command-palette-field, .command-palette-key,
+  .m3-dropdown-trigger, .m3-dropdown-menu, .btn-pill-primary, .btn-outline-pill,
+  .nav-active-indicator, .track-row-thumb, .pill-text-input, .modal-content
+) {
+  background-color: color-mix(in srgb, var(--md-sys-color-surface-container, #1E1F22) 52%, transparent) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(135%);
+}
+
+/* The playing/hover row highlight was a solid slab; glass it too. */
+body.riff-custom-bg-on.mode-riff .track-row.playing {
+  background-color: color-mix(in srgb, var(--md-sys-color-surface-container-high, #28292C) 52%, transparent) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  backdrop-filter: blur(10px) saturate(130%);
+}
+
+/* Cards keep their tonal gradient, but see-through. */
+body.riff-custom-bg-on.mode-riff :is(.riff-card-item, .mix-card) {
+  background-image: linear-gradient(180deg,
+      color-mix(in srgb, var(--md-sys-color-on-surface) 9%, transparent) 0%,
+      transparent 46%) !important;
+  border-color: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent) !important;
+}
+
+/* Elevated sheets (settings, modals) need a hair more body to stay legible. */
+body.riff-custom-bg-on.mode-riff :is(.settings-card, .audio-menu-card, .dialog-card, .modal-card, .cache-modal-card, .modal-content, .download-modal-card) {
+  background-color: color-mix(in srgb, var(--md-sys-color-surface-container, #1E1F22) 64%, transparent) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+  backdrop-filter: blur(28px) saturate(140%);
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+}
+
+body.perf.riff-custom-bg-on.mode-riff :is(
+  .riff-card-item, .mix-card, .settings-card, .audio-menu-card, .dialog-card, .modal-card,
+  .setting-item, .eq-section-10band, .eq-header-card, .view-search-box, .search-box,
+  .platform-btn, .btn-pill-primary, .nav-active-indicator, .track-row-thumb
+) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* --- Bottom-left playing cover --------------------------------------
+   The "breathing" animation scaled the wrapper and swapped its drop-shadow
+   for a coloured one, so pausing snapped the artwork back (the flicker) and
+   the canvas cast a second, jagged shadow of the morph silhouette. Keep one
+   static, well-formed shadow and breathe only a soft glow behind the shape. */
+body.mode-riff.m3-cover-on #m3c-canvas {
+  filter: none !important;
+}
+
+#playbar-artwork-wrapper {
+  transition: background-color .2s ease, opacity .2s ease !important;
+  isolation: isolate;
+}
+#playbar-artwork-wrapper.playing,
+.artwork-wrapper.playing#playbar-artwork-wrapper {
+  animation: none !important;
+}
+/* No box-shadow and no rectangular rim: the cover is masked to a morphing
+   organic shape, so any rectangle behind it pokes out past the silhouette and
+   reads as a crooked outline. The shape + its thin progress ring are the only
+   chrome around the artwork. */
+/* No glow either: a rounded-rect halo behind an organic morphing shape reads
+   as a ghost outline at this size. */
+#playbar-artwork-wrapper > * {
+  position: relative;
+  z-index: 1;
+}

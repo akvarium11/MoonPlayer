@@ -74,13 +74,24 @@
   function initM3Canvas() {
     if (!el.m3cCanvas) return;
     m3c.canvas = el.m3cCanvas;
+    // Backing store must match the on-screen size: it used to be a fixed
+    // 120px bitmap blown down to 52 CSS px, which left aliased, jagged edges
+    // on the cover shape and its progress ring.
+    const rect = m3c.canvas.getBoundingClientRect();
+    const cssSize = Math.max(24, Math.round(rect.width || m3c.canvas.clientWidth || 52));
     const dpr = window.devicePixelRatio || 1;
-    const size = 120;
-    m3c.canvas.width = size * dpr;
-    m3c.canvas.height = size * dpr;
+    // 3x supersampling: at 52 CSS px the curve/ring would otherwise step.
+    const px = Math.round(cssSize * dpr * 3);
+    m3c.cssSize = cssSize;
+    if (m3c.canvas.width !== px || m3c.canvas.height !== px) {
+      m3c.canvas.width = px;
+      m3c.canvas.height = px;
+    }
     m3c.ctx = m3c.canvas.getContext('2d');
     if (m3c.ctx) {
-      m3c.ctx.scale(dpr, dpr);
+      // Drawing code works in a 120 x 120 unit space.
+      m3c.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      m3c.ctx.scale(px / 120, px / 120);
     }
     if (localStorage.getItem('riff_m3_cover') !== 'false') {
       document.body.classList.add('m3-cover-on');
@@ -88,8 +99,19 @@
     renderM3Frame(0);
   }
 
+  let m3ResizeTick = 0;
+
   function renderM3Frame(tVal = 0) {
     if (!m3c.ctx || !window.RiffShapes || !window.RiffShapes.ready()) return;
+    // Cheap periodic re-fit: the canvas is 52px in the Riff playbar but 120px
+    // elsewhere, so a mode/scale change must rebuild the backing store.
+    if (++m3ResizeTick % 60 === 0 && m3c.canvas) {
+      const live = Math.round(m3c.canvas.getBoundingClientRect().width || 0);
+      if (live > 8 && Math.abs(live - (m3c.cssSize || 0)) > 1) {
+        initM3Canvas();
+        return;
+      }
+    }
     const p1 = window.RiffShapes.profile(m3c.currentShape);
     const p2 = window.RiffShapes.profile(m3c.nextShape);
     if (!p1 || !p2) return;
@@ -152,30 +174,29 @@
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.lineWidth = RING_W;
-    ctx.setLineDash([0.1, 5]);
+    // A clean 2px ring: the previous version drew a dotted remainder plus a
+    // sine-waved progress arc, which at playbar size (52px) read as a crooked,
+    // flickering shadow tracing the artwork outline.
+    ctx.lineWidth = 2;
     ctx.strokeStyle = primary;
-    ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = 0.16;
     ctx.beginPath();
-    const restFrom = Math.round(p * STEPS);
-    for (let s = restFrom; s <= STEPS; s++) {
+    for (let s = 0; s <= STEPS; s++) {
       const [x, y] = ringPoint(startPhi + (Math.PI * 2 * s) / STEPS, 0);
-      if (s === restFrom) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      if (s === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
     if (p > 0) {
+      ctx.globalAlpha = 0.85;
       ctx.beginPath();
       const playedSteps = Math.max(2, Math.round(p * STEPS));
-      const phase = (performance.now() / 300);
       for (let s = 0; s <= playedSteps; s++) {
-        const phi = startPhi + (Math.PI * 2 * s) / STEPS;
-        const [x, y] = ringPoint(phi, Math.sin(phi * 24 + phase) * 1.5);
+        const [x, y] = ringPoint(startPhi + (Math.PI * 2 * s) / STEPS, 0);
         if (s === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
     }
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
 
