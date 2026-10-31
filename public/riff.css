@@ -9049,6 +9049,10 @@ body.riff-ui-scaled.mode-riff .playbar {
 }
 body.riff-custom-bg-on #riff-custom-bg { opacity: 1; }
 
+/* The classic UI has its own un-blurred #custom-bg layer on the same origin;
+   hide it in riff mode so the two backgrounds do not stack. */
+body.mode-riff #custom-bg { display: none !important; }
+
 body.mode-riff.riff-custom-bg-on,
 html.mode-riff.riff-custom-bg-on {
   background: #08080a !important;
