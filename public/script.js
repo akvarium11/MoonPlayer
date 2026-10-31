@@ -5085,6 +5085,74 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let isTrackLoading = false;
 
+    // ---------------------------------------------------------------
+    // Cross-fade volume handling
+    // ---------------------------------------------------------------
+    // playTrack() starts the incoming track at volume 0, then ramps it up. The
+    // ramp used to live only inside playTrack's play().then() success branch,
+    // so any other play path (the AbortError retry on a src swap, resuming
+    // through the play button) left the element silent at volume 0 until the
+    // user touched the volume slider. Track the pending target here and flush
+    // it from the audio element's own 'playing' event, which every play path
+    // goes through.
+    let pendingCrossfadeIn = null;
+
+    function stopCrossfadeRamp() {
+        if (crossfadeIntervalId) {
+            clearInterval(crossfadeIntervalId);
+            crossfadeIntervalId = null;
+        }
+    }
+
+    function rampVolumeTo(target) {
+        stopCrossfadeRamp();
+        const to = Math.max(0, Math.min(1, target));
+        const from = bgAudio.volume;
+        if (to <= 0) {
+            bgAudio.volume = 0;
+            return;
+        }
+        const stepMs = 50;
+        const steps = Math.max(1, Math.round((crossfadeDuration * 1000) / stepMs));
+        let step = 0;
+        crossfadeIntervalId = setInterval(() => {
+            step += 1;
+            if (step >= steps) {
+                stopCrossfadeRamp();
+                bgAudio.volume = to;
+            } else {
+                bgAudio.volume = from + (to - from) * (step / steps);
+            }
+        }, stepMs);
+    }
+
+    // Called by every play path; safe to call repeatedly.
+    function flushCrossfadeIn() {
+        if (pendingCrossfadeIn === null) return null;
+        const target = pendingCrossfadeIn;
+        pendingCrossfadeIn = null;
+        rampVolumeTo(target);
+        return target;
+    }
+
+    if (bgAudio) {
+        bgAudio.addEventListener('playing', () => {
+            const target = flushCrossfadeIn();
+            if (target === null || target <= 0) return;
+            // Safety net: never leave a playing track stuck at volume 0 if the
+            // ramp got cancelled by a pause/seek in the same tick.
+            setTimeout(() => {
+                if (!bgAudio.paused && bgAudio.volume === 0) bgAudio.volume = target;
+            }, crossfadeDuration * 1000 + 400);
+        });
+        bgAudio.addEventListener('pause', () => {
+            // A pause mid-ramp should not keep the volume at an intermediate
+            // value; the next play flushes the pending ramp again.
+            if (pendingCrossfadeIn === null) stopCrossfadeRamp();
+        });
+    }
+
+
     function playTrack(target, animateDirection = 0, forceReload = false) {
         let song;
         let globalIdx;
@@ -5243,12 +5311,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         bgAudio.loop = (isLoop === 'one');
 
-        // If crossfade, start new audio at 0 volume
+        // If crossfade, start new audio at 0 volume and let the 'playing'
+        // handler ramp it up once playback really starts.
         const targetVol = parseFloat(volumeSlider.value);
         if (isCrossfadeEnabled) {
+            pendingCrossfadeIn = isNaN(targetVol) ? 0.5 : targetVol;
             bgAudio.volume = 0;
         } else {
-            bgAudio.volume = targetVol;
+            pendingCrossfadeIn = null;
+            bgAudio.volume = isNaN(targetVol) ? 0.5 : targetVol;
         }
 
         const miniTrackTitleEl = document.getElementById('mini-track-title');
@@ -5395,24 +5466,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateMediaSessionPlaybackState('playing');
                     sendDiscordRpcActivity(song, true);
                     
-                    if (isCrossfadeEnabled) {
-                        const fadeInterval = 50; // ms
-                        const fadeSteps = (crossfadeDuration * 1000) / fadeInterval;
-                        let currentStep = 0;
-                        
-                        crossfadeIntervalId = setInterval(() => {
-                            currentStep++;
-                            const volume = targetVol * (currentStep / fadeSteps);
-                            if (volume >= targetVol || isNaN(volume)) {
-                                clearInterval(crossfadeIntervalId);
-                                crossfadeIntervalId = null;
-                                bgAudio.volume = targetVol;
-                            } else {
-                                bgAudio.volume = volume;
-                            }
-                        }, fadeInterval);
-                    }
-                    
+                    // Ramp the incoming track up from 0 (crossfade). Idempotent:
+                    // the element's own 'playing' listener may already have
+                    // started it, in which case this is a no-op.
+                    flushCrossfadeIn();
+
                     // Re-render views to highlight currently playing item
                     updateHighlighting();
                 }).catch(err => {
@@ -5608,6 +5666,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mute controls
     let lastVolume = 0.5;
     function setVolume(val) {
+        // A manual volume change overrides any in-flight cross-fade ramp.
+        pendingCrossfadeIn = null;
+        stopCrossfadeRamp();
         bgAudio.volume = val;
         volumeSlider.value = val;
         volumeSlider.style.setProperty('--value', `${val * 100}%`);
@@ -10043,7 +10104,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // UI Mode management
         getUIMode: () => localStorage.getItem('moonplayer_ui_mode') || 'moon',
-        setUIMode: (mode) => setPlayerUIMode(mode)
+        setUIMode: (mode) => setPlayerUIMode(mode),
+
+        // Custom background storage, shared by the classic and the Riff UI.
+        getCustomBackground: async () => {
+            try {
+                return await loadBgImage();
+            } catch (err) {
+                console.warn('[MoonPlayer] Could not read custom background:', err);
+                return null;
+            }
+        },
+        setCustomBackground: async (file) => {
+            const blob = await processBgImageFile(file);
+            await saveBgImage(blob);
+            // Keep the classic layer in sync so both UIs show the same image.
+            await initBgImage();
+            return blob;
+        },
+        clearCustomBackground: async () => {
+            await removeBgImage();
+            if (customBgEl) {
+                customBgEl.style.backgroundImage = 'none';
+                customBgEl.style.opacity = '0';
+            }
+            document.body.classList.remove('has-custom-bg');
+            document.documentElement.classList.remove('has-custom-bg');
+            if (bgRemoveBtn) bgRemoveBtn.classList.add('hidden');
+            if (bgSlidersContainer) bgSlidersContainer.classList.add('hidden');
+        }
     };
 
     // UI Mode Header Button in MoonPlayer

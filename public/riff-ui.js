@@ -1909,6 +1909,24 @@
       el.artistAvatarImg.style.display = 'block';
     }
 
+    // Hero backdrop: use the artist's own artwork, blurred and darkened, instead
+    // of the flat tonal gradient. The CSS layer already blurs/darkens/masks it;
+    // the inline scrim keeps the text readable over bright covers.
+    const heroBackdrop = document.getElementById('artist-hero-backdrop');
+    const hasArt = avatarUrl && !/assets\/icon\.(png|ico)$/i.test(avatarUrl);
+    if (heroBackdrop) {
+      if (hasArt) {
+        heroBackdrop.style.backgroundImage =
+          `linear-gradient(180deg, rgba(8, 8, 10, 0.10) 0%, rgba(8, 8, 10, 0.55) 55%, var(--md-sys-color-surface) 100%), url("${avatarUrl}")`;
+        heroBackdrop.style.backgroundColor = 'transparent';
+        heroBackdrop.classList.add('has-art');
+      } else {
+        heroBackdrop.style.backgroundImage = '';
+        heroBackdrop.style.backgroundColor = '';
+        heroBackdrop.classList.remove('has-art');
+      }
+    }
+
     // Artist albums
     const allAlbums = window.MoonPlayer ? window.MoonPlayer.getAlbums() : [];
     const artistAlbums = artist.albums && artist.albums.length > 0
@@ -2281,15 +2299,184 @@
   function setM3UIScale(scalePercent) {
     const scale = parseInt(scalePercent, 10);
     if (isNaN(scale)) return;
+    const z = scale / 100;
+    // CSS zoom pushed the right-hand columns outside the window: "#riff-root"
+    // is 100vw wide, so zooming it to 120% made it 120vw. Scale a layout box
+    // that is the inverse size instead, so the UI grows but everything still
+    // reflows inside the viewport.
+    document.body.style.setProperty('--riff-ui-scale', z.toString());
+    document.body.classList.toggle('riff-ui-scaled', scale !== 100);
+    // Inline + important: the stylesheet pins #riff-root to 100vw/100vh with
+    // !important, so a plain class rule loses the cascade for `height`.
     const riffRoot = document.getElementById('riff-root');
     if (riffRoot) {
-      riffRoot.style.zoom = (scale / 100);
+      if (scale === 100) {
+        ['width', 'height', 'max-height', 'transform', 'transform-origin', 'flex-shrink'].forEach((prop) =>
+          riffRoot.style.removeProperty(prop)
+        );
+      } else {
+        riffRoot.style.setProperty('width', `calc(100vw / ${z})`, 'important');
+        riffRoot.style.setProperty('height', `calc(100vh / ${z})`, 'important');
+        riffRoot.style.setProperty('max-height', `calc(100vh / ${z})`, 'important');
+        // body is a column flex container: without this the taller inverse box
+        // is simply shrunk back to 100vh and the scaling does nothing vertical.
+        riffRoot.style.setProperty('flex-shrink', '0', 'important');
+        riffRoot.style.setProperty('transform', `scale(${z})`, 'important');
+        riffRoot.style.setProperty('transform-origin', 'top left', 'important');
+      }
     }
     const valScale = document.getElementById('settings-val-scale');
     if (valScale) valScale.textContent = `${scale}%`;
     const sliderScale = document.getElementById('settings-slider-scale');
     if (sliderScale) sliderScale.value = scale;
     localStorage.setItem('moonplayer-riff-ui-scale', scale);
+  }
+
+  // ---------------------------------------------------------------
+  // Custom player background (own photo, blurred + darkened)
+  // ---------------------------------------------------------------
+  const BG_DEFAULT_BLUR = 24;
+  const BG_DEFAULT_DARKEN = 55;
+  let riffBgObjectUrl = null;
+
+  function getBackgroundSettings() {
+    const blur = parseInt(localStorage.getItem('riff-bg-blur'), 10);
+    const darken = parseInt(localStorage.getItem('riff-bg-darken'), 10);
+    return {
+      blur: Number.isFinite(blur) ? blur : BG_DEFAULT_BLUR,
+      darken: Number.isFinite(darken) ? darken : BG_DEFAULT_DARKEN
+    };
+  }
+
+  function applyBackgroundSettings() {
+    const layer = document.getElementById('riff-custom-bg');
+    if (!layer) return;
+    const { blur, darken } = getBackgroundSettings();
+    const brightness = Math.max(0.2, 1 - darken / 100);
+    layer.style.filter = `blur(${blur}px) saturate(1.15) brightness(${brightness.toFixed(2)})`;
+    layer.style.transform = `scale(${(1 + Math.min(blur, 40) / 300).toFixed(3)})`;
+  }
+
+  function paintRiffBackground(url) {
+    const layer = document.getElementById('riff-custom-bg');
+    const on = !!url;
+    document.body.classList.toggle('riff-custom-bg-on', on);
+    document.documentElement.classList.toggle('riff-custom-bg-on', on);
+    if (!layer) return;
+    if (!on) {
+      layer.style.backgroundImage = 'none';
+      return;
+    }
+    layer.style.backgroundImage = `url("${url}")`;
+    layer.style.backgroundSize = 'cover';
+    layer.style.backgroundPosition = 'center';
+    applyBackgroundSettings();
+  }
+
+  function syncBackgroundControls() {
+    const { blur, darken } = getBackgroundSettings();
+    const blurSlider = document.getElementById('riff-bg-blur');
+    const darkenSlider = document.getElementById('riff-bg-darken');
+    const blurVal = document.getElementById('riff-bg-blur-val');
+    const darkenVal = document.getElementById('riff-bg-darken-val');
+    const removeBtn = document.getElementById('riff-bg-remove');
+    const status = document.getElementById('riff-bg-status');
+    const hasBg = document.body.classList.contains('riff-custom-bg-on');
+    if (blurSlider) blurSlider.value = blur;
+    if (darkenSlider) darkenSlider.value = darken;
+    if (blurVal) blurVal.textContent = `${blur}px`;
+    if (darkenVal) darkenVal.textContent = `${darken}%`;
+    if (removeBtn) removeBtn.classList.toggle('hidden', !hasBg);
+    if (status) status.textContent = hasBg ? 'Custom photo' : 'None';
+  }
+
+  async function refreshRiffBackground() {
+    if (!window.MoonPlayer || typeof window.MoonPlayer.getCustomBackground !== 'function') {
+      syncBackgroundControls();
+      return;
+    }
+    let blob = null;
+    try {
+      blob = await window.MoonPlayer.getCustomBackground();
+    } catch (err) {
+      console.warn('[RiffUI] background read failed:', err);
+    }
+    if (riffBgObjectUrl) {
+      URL.revokeObjectURL(riffBgObjectUrl);
+      riffBgObjectUrl = null;
+    }
+    if (!blob) {
+      paintRiffBackground(null);
+      syncBackgroundControls();
+      return;
+    }
+    riffBgObjectUrl = URL.createObjectURL(blob);
+    paintRiffBackground(riffBgObjectUrl);
+    syncBackgroundControls();
+  }
+
+  function initBackgroundControls() {
+    const uploadBtn = document.getElementById('riff-bg-upload');
+    const fileInput = document.getElementById('riff-bg-file');
+    const removeBtn = document.getElementById('riff-bg-remove');
+    const blurSlider = document.getElementById('riff-bg-blur');
+    const darkenSlider = document.getElementById('riff-bg-darken');
+
+    if (uploadBtn && fileInput) {
+      uploadBtn.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        try {
+          showToast('Loading image...');
+          if (window.MoonPlayer && typeof window.MoonPlayer.setCustomBackground === 'function') {
+            await window.MoonPlayer.setCustomBackground(file);
+            await refreshRiffBackground();
+            showToast('Background updated');
+          }
+        } catch (err) {
+          console.error('[RiffUI] background upload failed:', err);
+          showToast('Could not load image: ' + (err && err.message ? err.message : err));
+        } finally {
+          fileInput.value = '';
+        }
+      });
+    }
+
+    if (removeBtn) {
+      removeBtn.addEventListener('click', async () => {
+        try {
+          if (window.MoonPlayer && typeof window.MoonPlayer.clearCustomBackground === 'function') {
+            await window.MoonPlayer.clearCustomBackground();
+          }
+          if (riffBgObjectUrl) {
+            URL.revokeObjectURL(riffBgObjectUrl);
+            riffBgObjectUrl = null;
+          }
+          paintRiffBackground(null);
+          syncBackgroundControls();
+          showToast('Background removed');
+        } catch (err) {
+          console.error('[RiffUI] background remove failed:', err);
+        }
+      });
+    }
+
+    if (blurSlider) {
+      blurSlider.addEventListener('input', () => {
+        localStorage.setItem('riff-bg-blur', blurSlider.value);
+        applyBackgroundSettings();
+        syncBackgroundControls();
+      });
+    }
+
+    if (darkenSlider) {
+      darkenSlider.addEventListener('input', () => {
+        localStorage.setItem('riff-bg-darken', darkenSlider.value);
+        applyBackgroundSettings();
+        syncBackgroundControls();
+      });
+    }
   }
 
   function setM3FontScale(scalePercent) {
@@ -4705,6 +4892,10 @@
     syncWithPlayer();
     updateVolumeFill();
     syncTrackDurations();
+    // Restore the saved UI scale before the first paint of the views.
+    setM3UIScale(localStorage.getItem('moonplayer-riff-ui-scale') || '100');
+    initBackgroundControls();
+    refreshRiffBackground();
     switchView('local');
 
     window.addEventListener('moonplayer-library-loading', (e) => {

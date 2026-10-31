@@ -1329,7 +1329,7 @@ body.perf .my-wave-ambient-light {
   cursor: pointer;
 }
 .mix-card:hover {
-  background: var(--md-sys-color-surface-container-high);
+  background-color: var(--md-sys-color-surface-container-high);
   transform: translateY(-4px);
 }
 .mix-card-badge {
@@ -1492,11 +1492,14 @@ body.perf .my-wave-ambient-light {
 .track-row:nth-child(7) { animation-delay: 180ms; }
 .track-row:nth-child(8) { animation-delay: 210ms; }
 .track-row:hover {
-  background: var(--md-sys-color-surface-container);
+  /* Use background-color only: the `background` shorthand also resets
+     background-image, which is what paints the --hl hover highlight - that
+     made the row look dead while hovering and flash once the pointer left. */
+  background-color: transparent;
   transition: background-color var(--transition-hover), transform 0.12s cubic-bezier(0.2, 0, 0, 1);
 }
 .track-row.playing {
-  background: var(--md-sys-color-surface-container-high);
+  background-color: var(--md-sys-color-surface-container-high);
 }
 .track-row-index {
   font-size: calc(12px * var(--font-scale, 1));
@@ -8885,7 +8888,7 @@ body:not(.mode-riff) #riff-root {
    ======================================================== */
 .pill-range,
 #riff-eq-preamp-slider,
-.audio-panel input[type="range"] {
+.audio-panel input[type="range"]:not(.eq-band-range) {
   -webkit-appearance: none !important;
   appearance: none !important;
   width: 100% !important;
@@ -8897,7 +8900,7 @@ body:not(.mode-riff) #riff-root {
 
 .pill-range::-webkit-slider-runnable-track,
 #riff-eq-preamp-slider::-webkit-slider-runnable-track,
-.audio-panel input[type="range"]::-webkit-slider-runnable-track {
+.audio-panel input[type="range"]:not(.eq-band-range)::-webkit-slider-runnable-track {
   width: 100% !important;
   height: 6px !important;
   background: linear-gradient(to right, var(--md-sys-color-primary, #D0BCFF) 0%, var(--md-sys-color-primary, #D0BCFF) var(--slider-pct, 50%), var(--md-sys-color-surface-container-highest, #333438) var(--slider-pct, 50%), var(--md-sys-color-surface-container-highest, #333438) 100%) !important;
@@ -8907,7 +8910,7 @@ body:not(.mode-riff) #riff-root {
 
 .pill-range::-webkit-slider-thumb,
 #riff-eq-preamp-slider::-webkit-slider-thumb,
-.audio-panel input[type="range"]::-webkit-slider-thumb {
+.audio-panel input[type="range"]:not(.eq-band-range)::-webkit-slider-thumb {
   -webkit-appearance: none !important;
   appearance: none !important;
   width: 16px !important;
@@ -8923,14 +8926,14 @@ body:not(.mode-riff) #riff-root {
 
 .pill-range:hover::-webkit-slider-thumb,
 #riff-eq-preamp-slider:hover::-webkit-slider-thumb,
-.audio-panel input[type="range"]:hover::-webkit-slider-thumb {
+.audio-panel input[type="range"]:not(.eq-band-range):hover::-webkit-slider-thumb {
   transform: scale(1.18) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6) !important;
 }
 
 .pill-range::-moz-range-track,
 #riff-eq-preamp-slider::-moz-range-track,
-.audio-panel input[type="range"]::-moz-range-track {
+.audio-panel input[type="range"]:not(.eq-band-range)::-moz-range-track {
   width: 100% !important;
   height: 6px !important;
   background: var(--md-sys-color-surface-container-highest, #333438) !important;
@@ -8939,7 +8942,7 @@ body:not(.mode-riff) #riff-root {
 
 .pill-range::-moz-range-thumb,
 #riff-eq-preamp-slider::-moz-range-thumb,
-.audio-panel input[type="range"]::-moz-range-thumb {
+.audio-panel input[type="range"]:not(.eq-band-range)::-moz-range-thumb {
   width: 16px !important;
   height: 16px !important;
   border-radius: 50% !important;
@@ -8999,3 +9002,133 @@ body.mode-riff.m3-cover-on .m3c-canvas {
   pointer-events: none !important;
   filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.4)) !important;
 }
+
+/* ========================================================
+   UI SCALE, CUSTOM BACKGROUND, CARD POLISH (2026-10)
+   ======================================================== */
+
+/* --- UI scale -------------------------------------------------------
+   #riff-root is hard-sized to 100vw/100vh with !important. Zooming it made
+   the layout wider than the window and pushed the right-hand columns out.
+   Scale an inverse-sized layout box so the UI grows but still reflows. */
+body.mode-riff #riff-root {
+  transform-origin: top left;
+}
+body.riff-ui-scaled.mode-riff #riff-root {
+  width: calc(100vw / var(--riff-ui-scale, 1)) !important;
+  height: calc(100vh / var(--riff-ui-scale, 1)) !important;
+  max-height: calc(100vh / var(--riff-ui-scale, 1)) !important;
+  transform: scale(var(--riff-ui-scale, 1)) !important;
+  will-change: transform;
+}
+/* Inner shells are pinned to 100vh, which does not follow the inverse-sized
+   root - at <100% they stopped short of the bottom and left a gap. Let flex
+   fill the root instead. */
+body.riff-ui-scaled.mode-riff :is(.app-layout, .main-content) {
+  height: auto !important;
+  max-height: none !important;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* The playbar is position:fixed, so it kept anchoring to the real viewport
+   instead of the scaled root and floated above the bottom edge. Absolute
+   inside #riff-root (position:relative) follows the scaled box. */
+body.riff-ui-scaled.mode-riff .playbar {
+  position: absolute !important;
+}
+
+/* --- Custom background photo --------------------------------------- */
+#riff-custom-bg {
+  inset: -4%;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  transform-origin: center;
+  transition: opacity .35s ease, filter .25s ease;
+  opacity: 0;
+}
+body.riff-custom-bg-on #riff-custom-bg { opacity: 1; }
+
+body.mode-riff.riff-custom-bg-on,
+html.mode-riff.riff-custom-bg-on {
+  background: #08080a !important;
+}
+body.mode-riff.riff-custom-bg-on #riff-root {
+  background: transparent !important;
+}
+/* Let the photo breathe through the big surfaces, keep content readable. */
+body.riff-custom-bg-on.mode-riff :is(.app-layout, .main-content, .sidebar, .playbar, .titlebar, #rail-drawer) {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container, #1E1F22) 68%, transparent) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+  backdrop-filter: blur(22px) saturate(135%);
+}
+body.riff-custom-bg-on.mode-riff :is(.content-view, .settings-view, #view-local, #view-playlists) {
+  background: transparent !important;
+}
+body.perf.riff-custom-bg-on.mode-riff :is(.app-layout, .main-content, .sidebar, .playbar, .titlebar, #rail-drawer) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Background controls inside Settings */
+.riff-bg-sliders {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 4%, transparent);
+}
+.riff-bg-sliders .setting-name { font-weight: 500; }
+
+/* --- Artist hero: blurred artwork instead of a flat gradient -------- */
+#artist-hero-backdrop.has-art {
+  background-size: cover !important;
+  background-position: center !important;
+  filter: blur(46px) saturate(1.35) brightness(0.62);
+  opacity: .95;
+}
+.artist-hero-card { position: relative; }
+
+/* --- Album / playlist / artist cards -------------------------------
+   Gradient surface + hairline instead of a flat square block, and the
+   cover gets a rim so it stops looking like a pasted JPEG. */
+.riff-card-item {
+  background-color: var(--md-sys-color-surface-container, #1e1f22);
+  background-image: linear-gradient(180deg,
+      color-mix(in srgb, var(--md-sys-color-on-surface) 7%, transparent) 0%,
+      transparent 46%);
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .20);
+  overflow: clip;
+  transition: transform .24s cubic-bezier(.2, 0, 0, 1), box-shadow .24s ease,
+              border-color .24s ease, background-color .24s ease;
+}
+.riff-card-item:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--md-sys-color-primary, #D0BCFF) 30%, transparent);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, .45);
+}
+.riff-card-cover,
+.riff-card-artist-avatar {
+  overflow: clip;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07), 0 6px 16px rgba(0, 0, 0, .35);
+  transition: transform .3s cubic-bezier(.2, 0, 0, 1), box-shadow .3s ease;
+}
+.riff-card-item:hover .riff-card-cover {
+  transform: scale(1.015);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .10), 0 10px 22px rgba(0, 0, 0, .45);
+}
+
+/* --- Track row highlight -------------------------------------------- */
+@media (hover: hover) {
+  :is(.mix-card, .track-row):hover { --hl: 8%; }
+}
+.track-row {
+  transition: --hl .18s ease, background-color .18s ease, transform .12s cubic-bezier(.2, 0, 0, 1),
+              border-radius .22s cubic-bezier(.2, 0, 0, 1) !important;
+}
+.track-row-thumb {
+  overflow: clip;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(255, 255, 255, .06);
+  transition: transform .25s cubic-bezier(.2, 0, 0, 1);
+}
+.track-row:hover .track-row-thumb { transform: scale(1.04); }

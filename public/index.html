@@ -1224,6 +1224,33 @@
                   </div>
                   <div class="setting-hints"><span>Animated mesh gradient ambient light behind artwork and player</span></div>
                 </div>
+
+                <div class="setting-item">
+                  <div class="setting-item-top">
+                    <span class="setting-name">Custom Background</span>
+                    <span class="setting-value" id="riff-bg-status">None</span>
+                  </div>
+                  <div class="setting-pill-row">
+                    <button type="button" class="btn-outline-pill" id="riff-bg-upload">
+                      <i class="fa-solid fa-image"></i> Choose photo
+                    </button>
+                    <button type="button" class="btn-outline-pill hidden" id="riff-bg-remove">Remove</button>
+                    <input type="file" id="riff-bg-file" accept="image/*" hidden>
+                  </div>
+                  <div class="riff-bg-sliders" id="riff-bg-sliders">
+                    <div class="setting-item-top">
+                      <span class="setting-name" style="font-size:12px;">Blur</span>
+                      <span class="setting-value" id="riff-bg-blur-val">24px</span>
+                    </div>
+                    <input type="range" class="m3-range" id="riff-bg-blur" min="0" max="60" step="2" value="24">
+                    <div class="setting-item-top" style="margin-top:10px;">
+                      <span class="setting-name" style="font-size:12px;">Darken</span>
+                      <span class="setting-value" id="riff-bg-darken-val">55%</span>
+                    </div>
+                    <input type="range" class="m3-range" id="riff-bg-darken" min="0" max="90" step="5" value="55">
+                  </div>
+                  <div class="setting-hints"><span>Photo is blurred and dimmed so the interface stays readable. Panels become glassy over it.</span></div>
+                </div>
               </div>
 
               <!-- AUDIO SECTION -->
