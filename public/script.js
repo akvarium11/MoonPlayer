@@ -143,23 +143,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // Helper: Update CSS variable for accent color in real-time
     function updateAccentColor(color) {
         cachedAccentColor = color;
-        document.documentElement.style.setProperty('--accent', color);
+        document.documentElement.style.setProperty('--accent', color, 'important');
         // Parse color for glow effect
         let r = 255, g = 255, b = 255;
-        if (color.startsWith('#')) {
+        if (color && color.startsWith('#')) {
             const hex = color.substring(1);
             if (hex.length === 3) {
-                r = parseInt(hex[0] + hex[0], 16);
-                g = parseInt(hex[1] + hex[1], 16);
-                b = parseInt(hex[2] + hex[2], 16);
+                const pr = parseInt(hex[0] + hex[0], 16);
+                const pg = parseInt(hex[1] + hex[1], 16);
+                const pb = parseInt(hex[2] + hex[2], 16);
+                r = Number.isNaN(pr) ? 255 : pr;
+                g = Number.isNaN(pg) ? 255 : pg;
+                b = Number.isNaN(pb) ? 255 : pb;
             } else if (hex.length === 6) {
-                r = parseInt(hex.substring(0, 2), 16);
-                g = parseInt(hex.substring(2, 4), 16);
-                b = parseInt(hex.substring(4, 6), 16);
+                const pr = parseInt(hex.substring(0, 2), 16);
+                const pg = parseInt(hex.substring(2, 4), 16);
+                const pb = parseInt(hex.substring(4, 6), 16);
+                r = Number.isNaN(pr) ? 255 : pr;
+                g = Number.isNaN(pg) ? 255 : pg;
+                b = Number.isNaN(pb) ? 255 : pb;
             }
         }
-        document.documentElement.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.25)`);
+        document.documentElement.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.25)`, 'important');
     }
+    window.updateAccentColor = updateAccentColor;
+    window.applyThemeColor = updateAccentColor;
 
     // ==========================================
     // 3. PRELOADER & DIRECT LOAD
@@ -210,6 +218,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 300);
         }, 3000);
     }
+
+    // Safety net: Guarantee preloader dismissal so clicks are never trapped
+    setTimeout(() => {
+        if (preloaderOverlay && preloaderOverlay.style.display !== 'none') {
+            preloaderOverlay.classList.add('hidden');
+            preloaderOverlay.style.pointerEvents = 'none';
+            setTimeout(() => {
+                if (preloaderOverlay) preloaderOverlay.style.display = 'none';
+            }, 300);
+        }
+        if (mainContainer) mainContainer.classList.add('visible');
+        if (islandContainer) islandContainer.classList.add('visible');
+    }, 2500);
 
     const interval = setInterval(() => {
         loadingPct += Math.floor(Math.random() * 15) + 5;
@@ -306,6 +327,181 @@ document.addEventListener('DOMContentLoaded', () => {
     let isShuffle = false;
     let isLoop = 'none'; // 'none', 'all', 'one'
 
+    // ==========================================
+    // TRACK NORMALIZATION & STREAM URL HELPERS
+    // ==========================================
+
+    // Titles that carry no information on their own. Declared here, at the top
+    // of this scope, because isSameTrack() reads it during the startup cache
+    // restore below - long before a later `const` would have been initialized
+    // (that threw a TDZ ReferenceError and aborted the whole app script).
+    const GENERIC_TITLES = new Set([
+        'intro', 'outro', 'interlude', 'skit', 'untitled', 'bonus track',
+        'track', 'audio', 'instrumental', 'prelude', 'intermission', 'track 1', 'track 2'
+    ]);
+
+    function normalizeTrackPath(p) {
+        if (!p || typeof p !== 'string') return '';
+        let norm = p.trim().replace(/\\/g, '/');
+        norm = norm.replace(/\/+/g, '/');
+        if (norm.endsWith('/')) norm = norm.slice(0, -1);
+        if (norm.startsWith('soundcloud:')) return norm.toLowerCase();
+        if (norm.includes('/api/stream') && norm.includes('path=')) {
+            try {
+                const urlObj = new URL(norm, 'http://localhost');
+                const qPath = urlObj.searchParams.get('path');
+                if (qPath) return normalizeTrackPath(qPath);
+            } catch(e) {}
+        }
+        return norm.toLowerCase();
+    }
+
+    function normalizeTrackString(s) {
+        if (!s) return '';
+        try {
+            return String(s).normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').trim();
+        } catch (e) {
+            return String(s).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').trim();
+        }
+    }
+
+    function isSameTrack(t1, t2) {
+        if (!t1 || !t2) return false;
+        if (t1 === t2) return true;
+        if (t1.id && t2.id && String(t1.id) === String(t2.id)) return true;
+        
+        const p1 = normalizeTrackPath(t1.path || t1.localPath || t1.src || t1.url);
+        const p2 = normalizeTrackPath(t2.path || t2.localPath || t2.src || t2.url);
+        if (p1 && p2 && p1 === p2) return true;
+        if (t1.localPath && t2.path && normalizeTrackPath(t1.localPath) === normalizeTrackPath(t2.path)) return true;
+        if (t2.localPath && t1.path && normalizeTrackPath(t2.localPath) === normalizeTrackPath(t1.path)) return true;
+
+        if (t1.title && t2.title) {
+            const rawTitle1 = String(t1.title).trim().toLowerCase();
+            const rawTitle2 = String(t2.title).trim().toLowerCase();
+            const rawArtist1 = String(t1.artist || '').trim().toLowerCase();
+            const rawArtist2 = String(t2.artist || '').trim().toLowerCase();
+            
+            const dur1 = typeof t1.duration === 'number' && !isNaN(t1.duration) ? t1.duration : 0;
+            const dur2 = typeof t2.duration === 'number' && !isNaN(t2.duration) ? t2.duration : 0;
+            const durMatch = (!dur1 || !dur2 || Math.abs(dur1 - dur2) <= 4);
+
+            if (rawTitle1 === rawTitle2 && rawArtist1 === rawArtist2 && durMatch) return true;
+
+            const title1 = normalizeTrackString(rawTitle1);
+            const title2 = normalizeTrackString(rawTitle2);
+            const artist1 = normalizeTrackString(rawArtist1);
+            const artist2 = normalizeTrackString(rawArtist2);
+
+            if (title1 && title1 === title2 && artist1 && artist1 === artist2 && durMatch) return true;
+
+            const artistCompatible = !artist1 || !artist2 || artist1 === artist2 ||
+                artist1.includes(artist2) || artist2.includes(artist1) ||
+                (p1 && p1.includes(artist2)) || (p2 && p2.includes(artist1)) ||
+                (t1.permalink_url && t1.permalink_url.toLowerCase().includes(artist2)) ||
+                (t2.permalink_url && t2.permalink_url.toLowerCase().includes(artist1));
+
+            if (artistCompatible && durMatch) {
+                if (title1 && title2) {
+                    if (title1 === title2) return true;
+                    if (title1.includes(title2) || title2.includes(title1)) return true;
+                    if (title1.length >= 8 && title2.length >= 8 && (title1.slice(0, 8) === title2.slice(0, 8) || title1.slice(-8) === title2.slice(-8))) return true;
+                }
+            }
+
+            const isGeneric1 = GENERIC_TITLES.has(title1) || GENERIC_TITLES.has(rawTitle1);
+            const isGeneric2 = GENERIC_TITLES.has(title2) || GENERIC_TITLES.has(rawTitle2);
+            if (!isGeneric1 && !isGeneric2 && title1 && title2) {
+                if (title1 === title2 && dur1 > 0 && dur2 > 0 && durMatch) return true;
+                if ((title1.includes(title2) || title2.includes(title1)) && title1.length >= 6 && title2.length >= 6 && dur1 > 0 && dur2 > 0 && Math.abs(dur1 - dur2) <= 3) return true;
+            }
+        }
+        return false;
+    }
+
+    function ensureTrackStreamUrl(song) {
+        if (!song) return;
+        const isLocal = song.path && !song.path.startsWith('soundcloud:');
+        if (isLocal) {
+            if (!song.src || !song.src.includes('path=') || song.src.includes('/api/soundcloud/')) {
+                const fileName = song.name || song.path.replace(/^.*[\\\/]/, '') || 'track';
+                song.src = `/api/stream/${encodeURIComponent(fileName)}?path=${encodeURIComponent(song.path)}`;
+                song.url = song.src;
+            }
+            return;
+        }
+        if (song.src && typeof song.src === 'string' && song.src.trim() !== '') return;
+        if (song.url && typeof song.url === 'string' && song.url.trim() !== '') {
+            song.src = song.url;
+            return;
+        }
+        if (song.path && song.path.startsWith('soundcloud:')) {
+            const scId = song.path.replace('soundcloud:', '');
+            song.src = `/api/soundcloud/stream/${scId}`;
+            song.url = song.src;
+            return;
+        }
+        if (song.id && (song.isSoundCloud || (song.format && song.format === 'soundcloud')) && (!song.path || song.path.startsWith('soundcloud:'))) {
+            song.src = `/api/soundcloud/stream/${song.id}`;
+            song.url = song.src;
+            return;
+        }
+    }
+
+    function deduplicateSongs(songList) {
+        if (!Array.isArray(songList) || songList.length <= 1) return songList || [];
+        const unique = [];
+        const seenIds = new Set();
+        const seenPaths = new Set();
+        const seenMetas = new Set();
+
+        const sorted = [...songList].sort((a, b) => {
+            const aIsLocal = (a && a.path && !a.path.startsWith('soundcloud:') && !a.isSoundCloud) ? 1 : 0;
+            const bIsLocal = (b && b.path && !b.path.startsWith('soundcloud:') && !b.isSoundCloud) ? 1 : 0;
+            return bIsLocal - aIsLocal;
+        });
+
+        for (const song of sorted) {
+            if (!song) continue;
+            ensureTrackStreamUrl(song);
+
+            const sId = song.id ? String(song.id) : null;
+            const sPath = normalizeTrackPath(song.path || song.localPath || song.src || song.url);
+            const normTitle = normalizeTrackString(song.title);
+            const normArtist = normalizeTrackString(song.artist);
+            const sMeta = (normTitle && normArtist) ? `${normTitle}:::${normArtist}` : null;
+
+            let isDup = false;
+            if (sId && seenIds.has(sId)) isDup = true;
+            if (!isDup && sPath && seenPaths.has(sPath)) isDup = true;
+            if (!isDup && sMeta && seenMetas.has(sMeta)) {
+                const match = unique.find(u => isSameTrack(u, song));
+                if (match) isDup = true;
+            }
+
+            if (isDup) {
+                const existing = unique.find(u => isSameTrack(u, song));
+                if (existing) {
+                    if (!existing.id && song.id) existing.id = song.id;
+                    if (!existing.soundCloudId && song.id) existing.soundCloudId = song.id;
+                    if (!existing.duration && song.duration) existing.duration = song.duration;
+                    if (song.isDownloadedLocally) existing.isDownloadedLocally = true;
+                }
+                continue;
+            }
+
+            if (sId) seenIds.add(sId);
+            if (sPath) seenPaths.add(sPath);
+            if (sMeta) seenMetas.add(sMeta);
+            unique.push(song);
+        }
+
+        unique.forEach((s, i) => {
+            s.globalIndex = i;
+        });
+        return unique;
+    }
+
     // Load playlists from localStorage
     function loadPlaylists() {
         const stored = localStorage.getItem('moonplayer_playlists');
@@ -330,6 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Save playlists to localStorage
     function savePlaylists() {
         localStorage.setItem('moonplayer_playlists', JSON.stringify(playlists));
+        if (window.MoonPlayer) window.MoonPlayer.emit('playlistsChange', playlists);
     }
 
     // Load playlists on startup
@@ -539,9 +736,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         saveSoundCloudCache();
 
-        let existing = allSongs.find(s => s.path === track.path || (track.id && s.id && String(s.id) === String(track.id)));
+        let existing = allSongs.find(s => s.path === track.path || (track.id && s.id && String(s.id) === String(track.id)) || isSameTrack(s, track));
         if (existing) {
-            Object.assign(existing, track);
+            const isLocal = existing.path && !existing.path.startsWith('soundcloud:') && !existing.isSoundCloud;
+            if (isLocal) {
+                if (!existing.id && track.id) existing.id = track.id;
+                if (!existing.soundCloudId && track.id) existing.soundCloudId = track.id;
+                if (!existing.cover || existing.cover === DEFAULT_COVER) existing.cover = track.cover;
+                existing.isDownloadedLocally = true;
+            } else {
+                Object.assign(existing, track);
+            }
             if (existing.globalIndex === undefined || typeof existing.globalIndex !== 'number') {
                 existing.globalIndex = allSongs.indexOf(existing);
             }
@@ -557,19 +762,28 @@ document.addEventListener('DOMContentLoaded', () => {
     function restoreSoundCloudTracksToAllSongs() {
         loadSoundCloudCache();
         soundCloudTracksCache.forEach((track) => {
-            let existing = allSongs.find(s => s.path === track.path || (track.id && s.id && String(s.id) === String(track.id)));
+            let existing = allSongs.find(s => isSameTrack(s, track));
             if (!existing) {
                 track.globalIndex = allSongs.length;
+                ensureTrackStreamUrl(track);
                 allSongs.push(track);
             } else {
+                if (!existing.id && track.id) existing.id = track.id;
+                if (!existing.soundCloudId && track.id) existing.soundCloudId = track.id;
                 track.globalIndex = existing.globalIndex !== undefined ? existing.globalIndex : allSongs.indexOf(existing);
             }
         });
     }
 
-    // Load cached SoundCloud tracks on startup and populate allSongs
-    loadSoundCloudCache();
-    restoreSoundCloudTracksToAllSongs();
+    // Load cached SoundCloud tracks on startup and populate allSongs.
+    // This runs before the rest of the startup wiring, so a bad cache entry
+    // must never be allowed to abort script evaluation (that left the whole
+    // UI dead: every listener and window.MoonPlayer stayed unbound).
+    try {
+        restoreSoundCloudTracksToAllSongs();
+    } catch (err) {
+        console.error('[MoonPlayer] SoundCloud cache restore failed:', err);
+    }
 
     // Playback Queue & Navigation index
     let playQueue = [];
@@ -734,7 +948,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let eqFilterNodes = [];
 
     function initAudioContext() {
-        if (audioContext) return;
+        if (audioContext) {
+            if (audioContext.state === 'suspended') {
+                audioContext.resume().catch(() => {});
+            }
+            return;
+        }
         try {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioContext.createAnalyser();
@@ -1526,7 +1745,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Helper: Filename parsing ("Artist - Title.mp3")
     function parseFilename(name) {
-        const withoutExt = name.substring(0, name.lastIndexOf('.')) || name;
+        if (!name || typeof name !== 'string') {
+            return { artist: "", title: "" };
+        }
+        const lastDot = name.lastIndexOf('.');
+        const withoutExt = (lastDot !== -1 ? name.substring(0, lastDot) : name) || name;
         const separatorIndex = withoutExt.indexOf(' - ');
         if (separatorIndex !== -1) {
             return {
@@ -1583,28 +1806,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // 8. DATA LIBRARY BUILDERS & GROUPERS
     // ==========================================
     function getSongAlbumKey(song) {
-        if (song.path) {
-            // Server song: get directory from path
-            const lastSlash = Math.max(song.path.lastIndexOf('/'), song.path.lastIndexOf('\\'));
-            if (lastSlash !== -1) {
-                return song.path.substring(0, lastSlash).toLowerCase();
-            }
-            return song.album.toLowerCase();
-        } else if (song.file && song.file.webkitRelativePath) {
-            // Client file: get directory from webkitRelativePath
-            const lastSlash = song.file.webkitRelativePath.lastIndexOf('/');
-            if (lastSlash !== -1) {
-                return song.file.webkitRelativePath.substring(0, lastSlash).toLowerCase();
-            }
-            return song.album.toLowerCase();
+        const rawAlbum = (song.album || '').trim();
+        if (rawAlbum && rawAlbum.toLowerCase() !== 'unknown album') {
+            const rawArtist = (song.albumArtist || song.artist || '').trim();
+            return rawArtist ? `${rawAlbum.toLowerCase()}:::${rawArtist.toLowerCase()}` : rawAlbum.toLowerCase();
         }
-        return song.album.toLowerCase();
+        // If song has no real album metadata, isolate it so songs without tags are never bundled into one fake massive album
+        if (song.path) {
+            return `single:::${song.path.toLowerCase()}`;
+        }
+        return `single:::${song.id || Math.random()}`;
     }
-
-    const GENERIC_TITLES = new Set([
-        'intro', 'outro', 'interlude', 'skit', 'untitled', 'bonus track', 
-        'track', 'audio', 'instrumental', 'prelude', 'intermission', 'track 1', 'track 2'
-    ]);
 
     function detectAndFixInvertedSongs(songs) {
         if (!Array.isArray(songs) || songs.length < 2) return { songs, fixedCount: 0, fixedSongs: [] };
@@ -1665,6 +1877,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildLibraries() {
+        allSongs = deduplicateSongs(allSongs);
         const fixResult = detectAndFixInvertedSongs(allSongs);
         if (fixResult.fixedSongs && fixResult.fixedSongs.length > 0) {
             fixResult.fixedSongs.forEach(song => {
@@ -1757,11 +1970,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Update the album title
             album.title = bestTitle;
-            
-            // Unify all tracks in this album to use this title
-            album.tracks.forEach(t => {
-                t.album = bestTitle;
-            });
 
             // If it's a split/compilation album, set artist to comma-separated list of unique artists
             if (album.tracks.length > 0) {
@@ -1794,32 +2002,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }).sort((a, b) => a.title.localeCompare(b.title));
 
         artists = Object.values(artistsMap).sort((a, b) => a.name.localeCompare(b.name));
+        if (window.MoonPlayer) window.MoonPlayer.emit('libraryLoaded', { allSongs, albums, artists });
     }
 
     // ==========================================
     // 9. FUZZY SEARCH (FUSE.JS) INITIALIZATION
     // ==========================================
+    let setupFuseTimeout = null;
     function setupFuseSearch() {
-        // Fuse instances depend on search category
-        // Album Search:
-        window.albumSearchFuse = new Fuse(albums, {
-            keys: ['title', 'artist'],
-            threshold: 0.45,
-            keysWeight: { title: 0.7, artist: 0.3 }
-        });
-
-        // Artist Search:
-        window.artistSearchFuse = new Fuse(artists, {
-            keys: ['name'],
-            threshold: 0.45
-        });
-
-        // Songs Search:
-        window.songSearchFuse = new Fuse(allSongs, {
-            keys: ['title', 'artist', 'album'],
-            threshold: 0.45,
-            keysWeight: { title: 0.6, artist: 0.3, album: 0.1 }
-        });
+        if (setupFuseTimeout) clearTimeout(setupFuseTimeout);
+        setupFuseTimeout = setTimeout(() => {
+            setupFuseTimeout = null;
+            try {
+                window.albumSearchFuse = new Fuse(albums, {
+                    keys: ['title', 'artist'],
+                    threshold: 0.45,
+                    keysWeight: { title: 0.7, artist: 0.3 }
+                });
+                window.artistSearchFuse = new Fuse(artists, {
+                    keys: ['name'],
+                    threshold: 0.45
+                });
+                window.songSearchFuse = new Fuse(allSongs, {
+                    keys: ['title', 'artist', 'album'],
+                    threshold: 0.45,
+                    keysWeight: { title: 0.6, artist: 0.3, album: 0.1 }
+                });
+            } catch (e) {
+                console.warn('[Search] Fuse init error:', e);
+            }
+        }, 50);
     }
 
     // ==========================================
@@ -2136,12 +2348,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (found) {
-                if (!allSongs.some(s => s.path === found.path)) {
+                let existingIdx = allSongs.findIndex(s => isSameTrack(s, found));
+                if (existingIdx !== -1) {
+                    found.globalIndex = existingIdx;
+                } else {
                     found.globalIndex = allSongs.length;
+                    ensureTrackStreamUrl(found);
                     allSongs.push(found);
-                } else if (found.globalIndex === undefined) {
-                    const existing = allSongs.find(s => s.path === found.path);
-                    found.globalIndex = existing.globalIndex !== undefined ? existing.globalIndex : allSongs.indexOf(existing);
                 }
             }
             return found;
@@ -2700,6 +2913,23 @@ document.addEventListener('DOMContentLoaded', () => {
             viewAlbumOption.title = 'Unknown Album';
         } else {
             viewAlbumOption.addEventListener('click', () => {
+                if (window.RiffUI && typeof window.RiffUI.openAlbum === 'function' && document.body.classList.contains('mode-riff')) {
+                    const foundAlb = albums.find(a => (song.albumKey && a.albumKey === song.albumKey) || (a.title && song.album && a.title.toLowerCase() === song.album.toLowerCase()));
+                    if (foundAlb) {
+                        window.RiffUI.openAlbum(foundAlb);
+                        menu.remove();
+                        return;
+                    } else if (song.album) {
+                        window.RiffUI.openAlbum({
+                            title: song.album,
+                            artist: song.artist || 'Unknown Artist',
+                            cover: song.folderCoverUrl || song.cover,
+                            tracks: allSongs.filter(s => s.album === song.album)
+                        });
+                        menu.remove();
+                        return;
+                    }
+                }
                 selectAlbumByNameAndArtist(song.album, song.artist, song.albumKey);
                 menu.remove();
             });
@@ -2724,10 +2954,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (artistsList.length === 1) {
+                if (window.RiffUI && typeof window.RiffUI.openArtistProfile === 'function' && document.body.classList.contains('mode-riff')) {
+                    window.RiffUI.openArtistProfile(artistsList[0]);
+                    return;
+                }
                 selectArtistByName(artistsList[0]);
             } else {
                 const selectedArtist = await showArtistSelectionModal(artistsList);
                 if (selectedArtist) {
+                    if (window.RiffUI && typeof window.RiffUI.openArtistProfile === 'function' && document.body.classList.contains('mode-riff')) {
+                        window.RiffUI.openArtistProfile(selectedArtist);
+                        return;
+                    }
                     selectArtistByName(selectedArtist);
                 }
             }
@@ -3127,12 +3365,7 @@ document.addEventListener('DOMContentLoaded', () => {
         menu.style.top = `${y}px`;
 
         addToPlaylistOption.addEventListener('mouseenter', () => {
-            const rect = addToPlaylistOption.getBoundingClientRect();
-            if (rect.right + 180 > window.innerWidth) {
-                submenu.classList.add('submenu-left');
-            } else {
-                submenu.classList.remove('submenu-left');
-            }
+            placeSubmenu(addToPlaylistOption, submenu);
         });
 
         setTimeout(() => {
@@ -4463,17 +4696,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let songListTouchTargetSong = null;
 
     function createSongRowElement(song, displayIdx, playlistContext = null, isPlaylistViewOverride = null) {
-        if (song.globalIndex === undefined || typeof song.globalIndex !== 'number' || !allSongs[song.globalIndex]) {
-            const reg = registerSoundCloudTrack(song);
-            if (reg && typeof reg.globalIndex === 'number') {
-                song.globalIndex = reg.globalIndex;
+        if (song.globalIndex === undefined || typeof song.globalIndex !== 'number' || !allSongs[song.globalIndex] || !isSameTrack(allSongs[song.globalIndex], song)) {
+            let existingIdx = allSongs.findIndex(s => isSameTrack(s, song));
+            if (existingIdx !== -1) {
+                song.globalIndex = existingIdx;
             } else {
-                let idx = allSongs.findIndex(s => s.path === song.path || (s.id && s.id === song.id));
-                if (idx === -1) {
-                    song.globalIndex = allSongs.length;
-                    allSongs.push(song);
+                const reg = registerSoundCloudTrack(song);
+                if (reg && typeof reg.globalIndex === 'number') {
+                    song.globalIndex = reg.globalIndex;
                 } else {
-                    song.globalIndex = idx;
+                    song.globalIndex = allSongs.length;
+                    ensureTrackStreamUrl(song);
+                    allSongs.push(song);
                 }
             }
         }
@@ -4857,21 +5091,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (typeof target === 'object' && target !== null) {
             song = target;
-            if (song.globalIndex === undefined || typeof song.globalIndex !== 'number' || !allSongs[song.globalIndex]) {
-                const reg = registerSoundCloudTrack(song);
-                if (reg && typeof reg.globalIndex === 'number') {
-                    song.globalIndex = reg.globalIndex;
+            let existingIdx = -1;
+            if (typeof target.globalIndex === 'number' && allSongs[target.globalIndex] &&
+                (allSongs[target.globalIndex].path === target.path || isSameTrack(allSongs[target.globalIndex], target))) {
+                existingIdx = target.globalIndex;
+            } else {
+                existingIdx = allSongs.findIndex(s => isSameTrack(s, song));
+            }
+
+            if (existingIdx !== -1) {
+                globalIdx = existingIdx;
+                song = allSongs[globalIdx];
+            } else {
+                const isLocal = !!(song.path && !song.path.startsWith('soundcloud:') && !song.isSoundCloud && song.source !== 'soundcloud');
+                if (isLocal) {
+                    song.globalIndex = allSongs.length;
+                    ensureTrackStreamUrl(song);
+                    allSongs.push(song);
+                    globalIdx = song.globalIndex;
                 } else {
-                    let idx = allSongs.findIndex(s => s.path === song.path || (s.id && s.id === song.id));
-                    if (idx === -1) {
-                        song.globalIndex = allSongs.length;
-                        allSongs.push(song);
+                    const reg = registerSoundCloudTrack(song);
+                    if (reg && typeof reg.globalIndex === 'number') {
+                        song = reg;
+                        globalIdx = reg.globalIndex;
                     } else {
-                        song.globalIndex = idx;
+                        song.globalIndex = allSongs.length;
+                        ensureTrackStreamUrl(song);
+                        allSongs.push(song);
+                        globalIdx = song.globalIndex;
                     }
                 }
             }
-            globalIdx = song.globalIndex;
         } else if (typeof target === 'number' && !isNaN(target) && target >= 0 && target < allSongs.length) {
             globalIdx = target;
             song = allSongs[globalIdx];
@@ -4883,14 +5133,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!song) return;
 
         // Ensure stream / src url exists
-        if (!song.src) {
-            if (song.url) song.src = song.url;
-            else if (song.path && song.path.startsWith('soundcloud:')) {
-                song.src = `/api/soundcloud/stream/${song.path.replace('soundcloud:', '')}`;
-            } else if (song.id) {
-                song.src = `/api/soundcloud/stream/${song.id}`;
-            }
-        }
+        ensureTrackStreamUrl(song);
         if (allSongs[globalIdx] && !allSongs[globalIdx].src) {
             allSongs[globalIdx].src = song.src;
         }
@@ -4975,14 +5218,30 @@ document.addEventListener('DOMContentLoaded', () => {
         playIcon.className = 'fa-solid fa-spinner fa-spin';
         updateHighlighting();
 
-        // Set source and play (cache-busting timestamp for SoundCloud to bypass dead sockets)
-        if (isSoundCloudTrack(song)) {
-            const baseSrc = (song.src || '').split('?')[0];
-            bgAudio.src = `${baseSrc}?t=${Date.now()}`;
+        // Set source and play (cache-busting timestamp for remote SoundCloud streams only; NEVER strip query on local tracks)
+        const isRemoteSoundCloud = (song.path && song.path.startsWith('soundcloud:')) ||
+                                   (song.src && song.src.includes('/api/soundcloud/stream/')) ||
+                                   (!song.path && isSoundCloudTrack(song));
+
+        const targetSrc = isRemoteSoundCloud ? `${(song.src || '').split('?')[0]}?t=${Date.now()}` : (song.src || '');
+        const currentAbsoluteSrc = bgAudio.src || '';
+        const targetAbsoluteSrc = targetSrc.startsWith('http') ? targetSrc : (window.location.origin + targetSrc);
+        const isSameSource = Boolean(currentAbsoluteSrc && targetAbsoluteSrc && (currentAbsoluteSrc === targetAbsoluteSrc));
+
+        if (isSameSource) {
+            try {
+                bgAudio.currentTime = 0;
+            } catch (e) {}
         } else {
-            bgAudio.src = song.src;
+            if (!bgAudio.paused) {
+                try { bgAudio.pause(); } catch (e) {}
+            }
+            try {
+                bgAudio.currentTime = 0;
+            } catch (e) {}
+            bgAudio.src = targetSrc;
         }
-        bgAudio.load();
+        bgAudio.loop = (isLoop === 'one');
 
         // If crossfade, start new audio at 0 volume
         const targetVol = parseFloat(volumeSlider.value);
@@ -5059,6 +5318,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Update Media Session Metadata
         updateMediaSessionMetadata(song);
+        if (window.MoonPlayer) window.MoonPlayer.emit('trackChange', song);
+        if (!window._playbackHistory) window._playbackHistory = [];
+        if (song && !window._playbackHistory.some(h => (h.id && h.id === song.id) || (h.path && h.path === song.path))) {
+            window._playbackHistory.unshift(song);
+            if (window._playbackHistory.length > 50) window._playbackHistory.pop();
+        }
         if (window.syncAndroidPlayback) {
             syncAndroidPlayback(song, 'playing');
         }
@@ -5097,67 +5362,116 @@ document.addEventListener('DOMContentLoaded', () => {
             window._trackLoadingTimeout = null;
         }
         window._trackLoadingTimeout = setTimeout(() => {
-            if (isTrackLoading && currentlyPlayingIndex === globalIdx && bgAudio.paused) {
+            if (isTrackLoading && currentlyPlayingIndex === globalIdx) {
                 console.warn('[playTrack] Loading watchdog timeout reached, resetting loading lock');
                 isTrackLoading = false;
-                playIcon.className = 'fa-solid fa-play';
+                if (!bgAudio.paused) {
+                    isPlaying = true;
+                    playIcon.className = 'fa-solid fa-pause';
+                    if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', true);
+                } else {
+                    isPlaying = false;
+                    playIcon.className = 'fa-solid fa-play';
+                    if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', false);
+                }
                 updateHighlighting();
             }
-        }, 7000);
+        }, 6000);
 
-        bgAudio.play().then(() => {
-            if (window._trackLoadingTimeout) {
-                clearTimeout(window._trackLoadingTimeout);
-                window._trackLoadingTimeout = null;
-            }
-            if (currentlyPlayingIndex !== globalIdx) return;
-            isTrackLoading = false;
-            isPlaying = true;
-            playIcon.className = 'fa-solid fa-pause';
-            setCoverAnimationState(true);
-            updateMediaSessionPlaybackState('playing');
-            sendDiscordRpcActivity(song, true);
-            
-            if (isCrossfadeEnabled) {
-                const fadeInterval = 50; // ms
-                const fadeSteps = (crossfadeDuration * 1000) / fadeInterval;
-                let currentStep = 0;
-                
-                crossfadeIntervalId = setInterval(() => {
-                    currentStep++;
-                    const volume = targetVol * (currentStep / fadeSteps);
-                    if (volume >= targetVol || isNaN(volume)) {
-                        clearInterval(crossfadeIntervalId);
-                        crossfadeIntervalId = null;
-                        bgAudio.volume = targetVol;
-                    } else {
-                        bgAudio.volume = volume;
+        const executePlay = () => {
+            const playPromise = bgAudio.play();
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    if (window._trackLoadingTimeout) {
+                        clearTimeout(window._trackLoadingTimeout);
+                        window._trackLoadingTimeout = null;
                     }
-                }, fadeInterval);
+                    if (currentlyPlayingIndex !== globalIdx) return;
+                    isTrackLoading = false;
+                    isPlaying = true;
+                    playIcon.className = 'fa-solid fa-pause';
+                    if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', true);
+                    setCoverAnimationState(true);
+                    updateMediaSessionPlaybackState('playing');
+                    sendDiscordRpcActivity(song, true);
+                    
+                    if (isCrossfadeEnabled) {
+                        const fadeInterval = 50; // ms
+                        const fadeSteps = (crossfadeDuration * 1000) / fadeInterval;
+                        let currentStep = 0;
+                        
+                        crossfadeIntervalId = setInterval(() => {
+                            currentStep++;
+                            const volume = targetVol * (currentStep / fadeSteps);
+                            if (volume >= targetVol || isNaN(volume)) {
+                                clearInterval(crossfadeIntervalId);
+                                crossfadeIntervalId = null;
+                                bgAudio.volume = targetVol;
+                            } else {
+                                bgAudio.volume = volume;
+                            }
+                        }, fadeInterval);
+                    }
+                    
+                    // Re-render views to highlight currently playing item
+                    updateHighlighting();
+                }).catch(err => {
+                    if (err.name === 'AbortError') {
+                        console.log("[playTrack] Playback aborted. If this track is still selected, recovering cleanly...");
+                        if (currentlyPlayingIndex === globalIdx) {
+                            const retryPlay = () => {
+                                if (currentlyPlayingIndex === globalIdx && bgAudio) {
+                                    bgAudio.play().then(() => {
+                                        if (window._trackLoadingTimeout) {
+                                            clearTimeout(window._trackLoadingTimeout);
+                                            window._trackLoadingTimeout = null;
+                                        }
+                                        isTrackLoading = false;
+                                        isPlaying = true;
+                                        playIcon.className = 'fa-solid fa-pause';
+                                        if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', true);
+                                        updateHighlighting();
+                                    }).catch(retryErr => {
+                                        console.warn("[playTrack] Play retry failed:", retryErr);
+                                        if (currentlyPlayingIndex === globalIdx) {
+                                            isTrackLoading = false;
+                                            isPlaying = false;
+                                            playIcon.className = 'fa-solid fa-play';
+                                            if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', false);
+                                            updateHighlighting();
+                                        }
+                                    });
+                                }
+                            };
+                            if (bgAudio.readyState >= 2) {
+                                setTimeout(retryPlay, 60);
+                            } else {
+                                bgAudio.addEventListener('canplay', retryPlay, { once: true });
+                                setTimeout(retryPlay, 400);
+                            }
+                        }
+                        return;
+                    }
+                    console.error("Audio playback error:", err);
+                    if (window._trackLoadingTimeout) {
+                        clearTimeout(window._trackLoadingTimeout);
+                        window._trackLoadingTimeout = null;
+                    }
+                    if (currentlyPlayingIndex === globalIdx) {
+                        isTrackLoading = false;
+                        isPlaying = false;
+                        playIcon.className = 'fa-solid fa-play';
+                        if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', false);
+                        setCoverAnimationState(false);
+                        updateMediaSessionPlaybackState('paused');
+                        sendDiscordRpcActivity(song, false);
+                        updateHighlighting();
+                    }
+                });
             }
-            
-            // Re-render views to highlight currently playing item
-            updateHighlighting();
-        }).catch(err => {
-            if (window._trackLoadingTimeout) {
-                clearTimeout(window._trackLoadingTimeout);
-                window._trackLoadingTimeout = null;
-            }
-            if (err.name === 'AbortError') {
-                console.log("Playback aborted (normal when switching tracks rapidly).");
-                return;
-            }
-            console.error("Audio playback error:", err);
-            if (currentlyPlayingIndex === globalIdx) {
-                isTrackLoading = false;
-                isPlaying = false;
-                playIcon.className = 'fa-solid fa-play';
-                setCoverAnimationState(false);
-                updateMediaSessionPlaybackState('paused');
-                sendDiscordRpcActivity(song, false);
-                updateHighlighting();
-            }
-        });
+        };
+
+        executePlay();
     }
 
     function togglePlayPause() {
@@ -5238,6 +5552,7 @@ document.addEventListener('DOMContentLoaded', () => {
             isTrackLoading = false;
             isPlaying = false;
             playIcon.className = 'fa-solid fa-play';
+            if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', false);
             setCoverAnimationState(false);
             updateMediaSessionPlaybackState('paused');
             updateHighlighting();
@@ -5259,6 +5574,7 @@ document.addEventListener('DOMContentLoaded', () => {
             playIcon.className = 'fa-solid fa-play';
             setCoverAnimationState(false);
             isPlaying = false;
+            if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', false);
             updateMediaSessionPlaybackState('paused');
             sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], false);
         } else {
@@ -5278,6 +5594,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 playIcon.className = 'fa-solid fa-pause';
                 setCoverAnimationState(true);
                 isPlaying = true;
+                if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', true);
                 updateMediaSessionPlaybackState('playing');
                 sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], true);
             }).catch(err => {
@@ -5304,6 +5621,9 @@ document.addEventListener('DOMContentLoaded', () => {
             muteIcon.className = 'fa-solid fa-volume-low fa-fw';
         } else {
             muteIcon.className = 'fa-solid fa-volume-high fa-fw';
+        }
+        if (window.MoonPlayer) {
+            window.MoonPlayer.emit('volumeChange', { volume: val, muted: bgAudio.muted });
         }
     }
 
@@ -5391,7 +5711,9 @@ document.addEventListener('DOMContentLoaded', () => {
             loopBtn.classList.remove('active');
             loopBtn.innerHTML = '<i class="fa-solid fa-repeat"></i>';
         }
+        if (bgAudio) bgAudio.loop = (isLoop === 'one');
         updateIslandQueue();
+        if (window.MoonPlayer) window.MoonPlayer.emit('repeatChange', isLoop);
     });
 
     async function toggleTrackLike(song) {
@@ -5562,17 +5884,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Audio element metadata & time update hooks
     bgAudio.addEventListener('ended', () => {
         if (isLoop === 'one') {
-            bgAudio.currentTime = 0;
-            bgAudio.play().then(() => {
-                isPlaying = true;
-                playIcon.className = 'fa-solid fa-pause';
-                setCoverAnimationState(true);
-                updateMediaSessionPlaybackState('playing');
-                if (allSongs[currentlyPlayingIndex]) {
-                    sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], true);
-                }
-                updateHighlighting();
-            }).catch(e => console.log(e));
+            try {
+                bgAudio.currentTime = 0;
+            } catch (e) {}
+            playTrack(currentlyPlayingIndex, 0, true);
         } else {
             handleNext();
         }
@@ -5590,6 +5905,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (cur.path) {
                     cacheMetadata(cur.path, cur).catch(() => {});
                 }
+                window.dispatchEvent(new CustomEvent('moonplayer-duration-updated', { detail: { path: cur.path, id: cur.id, duration: cur.duration } }));
             }
         }
         if (allSongs[currentlyPlayingIndex]) {
@@ -5606,7 +5922,32 @@ document.addEventListener('DOMContentLoaded', () => {
         isPlaying = true;
         playIcon.className = 'fa-solid fa-pause';
         setCoverAnimationState(true);
+        if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', true);
         updateHighlighting();
+    });
+
+    bgAudio.addEventListener('canplay', () => {
+        if (!bgAudio.paused || isTrackLoading) {
+            isTrackLoading = false;
+            if (!bgAudio.paused) {
+                isPlaying = true;
+                playIcon.className = 'fa-solid fa-pause';
+                if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', true);
+            }
+            updateHighlighting();
+        }
+    });
+
+    bgAudio.addEventListener('loadeddata', () => {
+        if (!bgAudio.paused || isTrackLoading) {
+            isTrackLoading = false;
+            if (!bgAudio.paused) {
+                isPlaying = true;
+                playIcon.className = 'fa-solid fa-pause';
+                if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', true);
+            }
+            updateHighlighting();
+        }
     });
 
     bgAudio.addEventListener('waiting', () => {
@@ -5644,10 +5985,18 @@ document.addEventListener('DOMContentLoaded', () => {
     bgAudio.addEventListener('timeupdate', () => {
         const current = bgAudio.currentTime;
         const duration = bgAudio.duration;
+        if (isTrackLoading && !bgAudio.paused && current > 0) {
+            isTrackLoading = false;
+            isPlaying = true;
+            playIcon.className = 'fa-solid fa-pause';
+            if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', true);
+            updateHighlighting();
+        }
         currentTimeEl.textContent = formatTime(current);
 
         // Update lyrics display
         updateLyricsDisplay(current);
+        if (window.MoonPlayer) window.MoonPlayer.emit('timeUpdate', { currentTime: current, duration: duration });
 
         if (duration > 0) {
             const percent = (current / duration) * 100;
@@ -5974,7 +6323,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        const lrcPath = song.path.substring(0, song.path.lastIndexOf('.')) + '.lrc';
+        if (!song || !song.path || typeof song.path !== 'string') return;
+        const lastDot = song.path.lastIndexOf('.');
+        const lrcPath = (lastDot !== -1 ? song.path.substring(0, lastDot) : song.path) + '.lrc';
         fetch(`/api/stream?path=${encodeURIComponent(lrcPath)}`)
             .then(res => {
                 if (!res.ok) throw new Error('Lyrics not found');
@@ -5983,6 +6334,10 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(text => {
                 if (currentLyricsTrackPath !== song.path) return;
                 currentLyrics = parseLRC(text);
+                if (window.MoonPlayer) {
+                    window.MoonPlayer.emit('lyricsLoaded', currentLyrics);
+                    window.MoonPlayer.emit('lyricsUpdate', { currentLyrics, activeLyricIndex: -1 });
+                }
                 if (currentLyrics.length === 0) {
                     if (currentLineEl) {
                         currentLineEl.textContent = 'Lyrics file is empty';
@@ -5998,6 +6353,10 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(err => {
                 if (currentLyricsTrackPath !== song.path) return;
                 currentLyrics = [];
+                if (window.MoonPlayer) {
+                    window.MoonPlayer.emit('lyricsLoaded', currentLyrics);
+                    window.MoonPlayer.emit('lyricsUpdate', { currentLyrics, activeLyricIndex: -1 });
+                }
                 if (currentLineEl) {
                     currentLineEl.textContent = 'No lyrics available';
                     currentLineEl.classList.add('lyrics-status-message');
@@ -6053,7 +6412,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateLyricsDisplay(currentTime) {
-        if (!currentLyrics || currentLyrics.length === 0 || !dynamicIsland || !dynamicIsland.classList.contains('lyrics-expanded')) return;
+        if (!currentLyrics || currentLyrics.length === 0) return;
+        const isIslandLyrics = dynamicIsland && dynamicIsland.classList.contains('lyrics-expanded');
+        const isRiffMode = document.body.classList.contains('mode-riff');
+        if (!isIslandLyrics && !isRiffMode) return;
         
         const duration = bgAudio.duration || 0;
         
@@ -6075,6 +6437,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (activeIdx !== currentLyricsIndex) {
             currentLyricsIndex = activeIdx;
+            if (window.MoonPlayer) window.MoonPlayer.emit('lyricsUpdate', { currentLyrics, activeLyricIndex: activeIdx });
             
             if (currentLineEl) {
                 currentLineEl.classList.remove('lyrics-status-message');
@@ -6482,6 +6845,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 initAudioContext();
                 applyEqGains();
                 drawEqCurve();
+                if (window.MoonPlayer) window.MoonPlayer.emit('equalizerChange', { values: [...eqValues], preset: currentEqPreset, preamp: eqPreamp, enabled: isEqEnabled });
             });
         });
 
@@ -6502,6 +6866,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     initAudioContext();
                     applyEqGains();
                     drawEqCurve();
+                    if (window.MoonPlayer) window.MoonPlayer.emit('equalizerChange', { values: [...eqValues], preset: currentEqPreset, preamp: eqPreamp, enabled: isEqEnabled });
                 });
             }
         }
@@ -6523,6 +6888,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     initAudioContext();
                     applyEqGains();
                     drawEqCurve();
+                    if (window.MoonPlayer) window.MoonPlayer.emit('equalizerChange', { values: [...eqValues], preset: currentEqPreset, preamp: eqPreamp, enabled: isEqEnabled });
                 });
             }
         }
@@ -6644,6 +7010,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updatePresetDeleteBtn();
         persistEqState();
+        if (window.MoonPlayer) window.MoonPlayer.emit('equalizerChange', { values: [...eqValues], preset: currentEqPreset, preamp: eqPreamp, enabled: isEqEnabled });
     }
 
     // Toggle preset dropdown
@@ -7934,39 +8301,59 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function getAllCachedMetadata(paths) {
+        if (!paths || paths.length === 0) return [];
         try {
-            const db = await getDB();
-            return new Promise((resolve, reject) => {
-                if (paths.length === 0) {
-                    resolve([]);
-                    return;
-                }
-                const tx = db.transaction(METADATA_STORE, 'readonly');
-                const store = tx.objectStore(METADATA_STORE);
-                const results = [];
+            const db = await Promise.race([
+                getDB(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('IndexedDB timeout')), 2000))
+            ]);
+            return await new Promise((resolve) => {
+                const results = new Array(paths.length).fill(null);
                 let completed = 0;
-                
-                paths.forEach((path, idx) => {
-                    const request = store.get(path);
-                    request.onsuccess = (e) => {
-                        results[idx] = e.target.result;
-                        completed++;
-                        if (completed === paths.length) {
-                            resolve(results);
+                let settled = false;
+
+                const finish = () => {
+                    if (!settled) {
+                        settled = true;
+                        resolve(results);
+                    }
+                };
+
+                const timer = setTimeout(finish, 3000);
+
+                try {
+                    const tx = db.transaction(METADATA_STORE, 'readonly');
+                    const store = tx.objectStore(METADATA_STORE);
+
+                    tx.oncomplete = () => { clearTimeout(timer); finish(); };
+                    tx.onerror = () => { clearTimeout(timer); finish(); };
+                    tx.onabort = () => { clearTimeout(timer); finish(); };
+
+                    paths.forEach((p, idx) => {
+                        try {
+                            const req = store.get(p);
+                            req.onsuccess = (e) => {
+                                results[idx] = e.target.result;
+                                completed++;
+                                if (completed >= paths.length) { clearTimeout(timer); finish(); }
+                            };
+                            req.onerror = () => {
+                                completed++;
+                                if (completed >= paths.length) { clearTimeout(timer); finish(); }
+                            };
+                        } catch (e) {
+                            completed++;
+                            if (completed >= paths.length) { clearTimeout(timer); finish(); }
                         }
-                    };
-                    request.onerror = () => {
-                        results[idx] = null;
-                        completed++;
-                        if (completed === paths.length) {
-                            resolve(results);
-                        }
-                    };
-                });
+                    });
+                } catch (e) {
+                    clearTimeout(timer);
+                    finish();
+                }
             });
         } catch (err) {
-            console.error("Failed to query IndexedDB metadata cache in bulk:", err);
-            return [];
+            console.warn("Failed to query IndexedDB metadata cache:", err);
+            return new Array(paths.length).fill(null);
         }
     }
 
@@ -8368,8 +8755,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function parseServerSongMetadata(song) {
-        // If song already has metadata parsed by server (e.g. native FLAC Vorbis comments) or is FLAC:
-        if ((song.title && song.artist) || song.format === 'flac') {
+        // If song already has metadata parsed by server or valid duration:
+        if ((song.title && song.artist) || song.format === 'flac' || (song.duration && Number(song.duration) > 0)) {
             return Promise.resolve(generateServerFallbackMetadata(song));
         }
 
@@ -8434,16 +8821,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function generateServerFallbackMetadata(song) {
-        const pathInfo = parseRelativePath(song.path);
-        const fileInfo = parseFilename(song.name);
-        const ext = (song.name || song.path || song.url || '').split('?')[0].split('.').pop().toLowerCase();
+        if (!song) return null;
+        const songName = song.name || (song.path ? song.path.replace(/^.*[\\\/]/, '') : '') || '';
+        const pathInfo = parseRelativePath(song.path || '');
+        const fileInfo = parseFilename(songName);
+        const ext = (songName || song.path || song.url || '').split('?')[0].split('.').pop().toLowerCase();
         const fallbackDur = (song.duration && !isNaN(song.duration) && Number(song.duration) > 0) ? Number(song.duration) : undefined;
 
         return {
             path: song.path,
             src: song.url,
             format: song.format || ext,
-            title: song.title || fileInfo.title || song.name,
+            title: song.title || fileInfo.title || songName || 'Unknown Title',
             artist: song.artist || fileInfo.artist || pathInfo.artist || "Unknown Artist",
             album: song.album || pathInfo.album || "Unknown Album",
             year: song.year || "",
@@ -8455,6 +8844,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function reloadLibraryFromServer(forceRefresh = false) {
+        window.isLibraryScanning = true;
+        window.dispatchEvent(new CustomEvent('moonplayer-library-loading', { detail: { scanning: true } }));
         try {
             searchResults.innerHTML = `
                 <div class="empty-state">
@@ -8468,6 +8859,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(url);
             const songs = await res.json();
             window.serverRawSongs = songs;
+
+            try {
+                const durRes = await fetch('/api/track-durations');
+                const durData = await durRes.json();
+                if (durData && durData.durations && Array.isArray(songs)) {
+                    songs.forEach((s) => {
+                        if ((!s.duration || Number(s.duration) <= 0) && durData.durations[s.path]) {
+                            s.duration = durData.durations[s.path];
+                        }
+                    });
+                }
+            } catch (e) {}
 
             if (!songs || songs.length === 0) {
                 allSongs = [];
@@ -8504,26 +8907,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Immediately populate allSongs with server fallbacks BEFORE any IndexedDB or tag parsing
             // so all tracks are immediately accessible for search, playlists, and M3U import
-            allSongs = songs.map(generateServerFallbackMetadata);
+            allSongs = deduplicateSongs(songs.map(generateServerFallbackMetadata));
             window.allSongs = allSongs;
             detectAndFixInvertedSongs(allSongs);
             buildLibraries();
             setupFuseSearch();
             renderLibraryPanel();
 
-            // Fetch cached metadata in bulk
-            const cachedResults = await getAllCachedMetadata(songs.map(s => s.path));
-            const uncachedSongs = [];
-            const processedSongs = [];
+            // On desktop: immediately open first album so right panel is populated instantly
+            const isDesktopEarly = !window.AndroidBridge && window.innerWidth > 900;
+            if (isDesktopEarly && albums && albums.length > 0) {
+                const songList = document.getElementById('song-list');
+                const isEmptyOrWelcome = !songList || songList.querySelector('.empty-playlist') || songList.children.length === 0;
+                if (isEmptyOrWelcome) {
+                    selectAlbum(albums[0].albumKey);
+                }
+            }
 
-            songs.forEach((song, idx) => {
+            // Fetch cached metadata in bulk
+            const cachedResults = await getAllCachedMetadata(allSongs.map(s => s.path));
+            const processedSongs = [];
+            const toCacheAsync = [];
+
+            allSongs.forEach((song, idx) => {
                 const cached = cachedResults[idx];
                 if (cached) {
                     if (!cached.format && song.format) {
                         cached.format = song.format;
                     }
-                    // Old cache entries stored the whole embedded picture as a
-                    // base64 string. Drop those and point at the cover endpoint.
                     if (typeof cached.cover === 'string' && cached.cover.startsWith('data:')) {
                         cached.cover = song.folderCoverUrl || (song.path ? `/api/cover?path=${encodeURIComponent(song.path)}` : DEFAULT_COVER);
                         cacheMetadata(song.path, cached).catch(() => {});
@@ -8532,73 +8943,51 @@ document.addEventListener('DOMContentLoaded', () => {
                         cached.duration = Number(song.duration);
                         cacheMetadata(song.path, cached).catch(() => {});
                     }
+                    ensureTrackStreamUrl(cached);
                     processedSongs.push(cached);
                 } else {
-                    uncachedSongs.push(song);
+                    const fallback = generateServerFallbackMetadata(song);
+                    ensureTrackStreamUrl(fallback);
+                    processedSongs.push(fallback);
+                    toCacheAsync.push(fallback);
                 }
             });
 
-            // Immediately populate allSongs with cached songs + instant fallback metadata for uncached songs
-            // so searching, library browsing, and M3U playlist import are fully responsive without waiting
-            const instantFallbacks = uncachedSongs.map(generateServerFallbackMetadata);
-            allSongs = [...processedSongs, ...instantFallbacks];
-            detectAndFixInvertedSongs(allSongs);
-            buildLibraries();
-            setupFuseSearch();
-            renderLibraryPanel();
-
-            // If there are uncached songs, process them with a loading screen
-            if (uncachedSongs.length > 0) {
-                searchResults.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fa-solid fa-spinner fa-spin"></i>
-                        <p>Processing Library...</p>
-                        <span id="scan-progress">Parsing tags: 0 / ${uncachedSongs.length} files</span>
-                    </div>
-                `;
-
-                let processedCount = 0;
-                const progressSpan = document.getElementById('scan-progress');
-                const concurrency = 6;
-
-                const processUncachedSong = async (song) => {
-                    try {
-                        const metadata = await parseServerSongMetadata(song);
-                        if ((!metadata.duration || isNaN(metadata.duration) || Number(metadata.duration) <= 0) && song.duration && Number(song.duration) > 0) {
-                            metadata.duration = Number(song.duration);
-                        }
-                        processedSongs.push(metadata);
-                        await cacheMetadata(song.path, metadata);
-                    } catch (err) {
-                        console.error("Failed processing server metadata, using fallback:", song.name, err);
-                        const fallback = generateServerFallbackMetadata(song);
-                        processedSongs.push(fallback);
-                    } finally {
-                        processedCount++;
-                        if (progressSpan) {
-                            progressSpan.textContent = `Parsing tags: ${processedCount} / ${uncachedSongs.length} files`;
-                        }
-                    }
-                };
-
-                for (let i = 0; i < uncachedSongs.length; i += concurrency) {
-                    const batch = uncachedSongs.slice(i, i + concurrency);
-                    await Promise.all(batch.map(song => processUncachedSong(song)));
-                }
-            }
-
-            allSongs = processedSongs;
+            allSongs = deduplicateSongs(processedSongs);
             restoreSoundCloudTracksToAllSongs();
+            allSongs = deduplicateSongs(allSongs);
             detectAndFixInvertedSongs(allSongs);
             buildLibraries();
             setupFuseSearch();
             renderLibraryPanel();
+
+            // Background silent caching to IndexedDB without blocking UI or showing spinner
+            if (toCacheAsync.length > 0) {
+                setTimeout(async () => {
+                    const chunkSize = 50;
+                    for (let i = 0; i < toCacheAsync.length; i += chunkSize) {
+                        const chunk = toCacheAsync.slice(i, i + chunkSize);
+                        await Promise.all(chunk.map(item => cacheMetadata(item.path, item).catch(() => {})));
+                        await new Promise(r => setTimeout(r, 40));
+                    }
+                }, 100);
+            }
 
             if (currentSelectedPlaylistName) {
                 selectPlaylist(currentSelectedPlaylistName);
             } else if (!currentPlaylist || currentPlaylist.length === 0) {
                 if (allSongs.length > 0) {
                     currentPlaylist = [...allSongs];
+                }
+            }
+
+            // On desktop: if no album is currently open, open the first album so the right panel is ready
+            const isDesktop = !window.AndroidBridge && window.innerWidth > 900;
+            if (isDesktop && albums && albums.length > 0) {
+                const songList = document.getElementById('song-list');
+                const isEmptyOrWelcome = !songList || songList.querySelector('.empty-playlist') || songList.children.length === 0;
+                if (isEmptyOrWelcome) {
+                    selectAlbum(albums[0].albumKey);
                 }
             }
         } catch (e) {
@@ -8617,6 +9006,40 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span>Check your connection or settings.</span>
                 </div>
             `;
+        } finally {
+            window.isLibraryLoaded = true;
+            window.isLibraryScanning = false;
+            window.dispatchEvent(new CustomEvent('moonplayer-library-loading', { detail: { scanning: false } }));
+
+            // Background polling to catch newly parsed durations for non-FLAC files
+            const pollServerDurations = async () => {
+                const missing = (allSongs || []).filter(s => (!s.duration || Number(s.duration) <= 0) && s.path && !s.isSoundCloud);
+                if (missing.length === 0) return;
+                try {
+                    const durRes = await fetch('/api/track-durations');
+                    const durData = await durRes.json();
+                    if (durData && durData.durations) {
+                        let anyUpdated = false;
+                        allSongs.forEach(s => {
+                            if ((!s.duration || Number(s.duration) <= 0) && durData.durations[s.path]) {
+                                s.duration = durData.durations[s.path];
+                                anyUpdated = true;
+                                cacheMetadata(s.path, s).catch(() => {});
+                                window.dispatchEvent(new CustomEvent('moonplayer-duration-updated', {
+                                    detail: { path: s.path, id: s.id, duration: s.duration }
+                                }));
+                            }
+                        });
+                        if (anyUpdated) {
+                            buildLibraries();
+                            renderSongList();
+                        }
+                    }
+                } catch (e) {}
+            };
+            setTimeout(pollServerDurations, 2000);
+            setTimeout(pollServerDurations, 5000);
+            setTimeout(pollServerDurations, 12000);
         }
     }
 
@@ -9067,6 +9490,581 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return false;
     };
+    // ==========================================
+    // 16. MOONPLAYER <-> RIFF UI REACTIVE BRIDGE
+    // ==========================================
+    function setPlayerUIMode(mode) {
+        if (mode !== 'riff' && mode !== 'moon') mode = 'moon';
+        if (window.__currentUIMode === mode && document.body.classList.contains(`mode-${mode}`)) return;
+        window.__currentUIMode = mode;
+        localStorage.setItem('moonplayer_ui_mode', mode);
+
+        const riffStyle = document.getElementById('riff-stylesheet');
+        const riffDynamicTheme = document.getElementById('riff-dynamic-theme');
+        const dynamicIsland = document.getElementById('dynamic-island');
+        const mainContainer = document.querySelector('.main-container');
+        const islandContainer = document.querySelector('.dynamic-island-container');
+        const snowContainer = document.getElementById('snow-container');
+        const preloaderOverlay = document.getElementById('preloader-overlay');
+
+        if (mode === 'riff') {
+            document.documentElement.classList.remove('mode-moon');
+            document.documentElement.classList.add('mode-riff');
+            document.body.classList.remove('mode-moon');
+            document.body.classList.add('mode-riff');
+            if (riffStyle) riffStyle.disabled = false;
+            if (riffDynamicTheme) riffDynamicTheme.disabled = false;
+
+            const riffColor = localStorage.getItem('riff_theme_color') || '#D0BCFF';
+            document.documentElement.style.setProperty('--accent', riffColor, 'important');
+
+            if (preloaderOverlay) {
+                preloaderOverlay.style.display = 'none';
+            }
+
+            // Auto-collapse / stop Dynamic Island visualizer in Riff mode
+            if (dynamicIsland) {
+                dynamicIsland.classList.remove('expanded', 'locked', 'queue-expanded', 'lyrics-expanded');
+                if (typeof stopVisualizer === 'function') stopVisualizer();
+            }
+
+            // Sync Riff UI
+            if (window.RiffUI && typeof window.RiffUI.onActivate === 'function') {
+                window.RiffUI.onActivate();
+            } else if (window.RiffUI && typeof window.RiffUI.syncWithPlayer === 'function') {
+                window.RiffUI.syncWithPlayer();
+            }
+        } else {
+            document.documentElement.classList.remove('mode-riff');
+            document.documentElement.classList.add('mode-moon');
+            document.body.classList.remove('mode-riff');
+            document.body.classList.add('mode-moon');
+            if (riffStyle) riffStyle.disabled = true;
+            if (riffDynamicTheme) riffDynamicTheme.disabled = true;
+
+            // Restore MoonPlayer Classic DOM containers
+            if (preloaderOverlay) preloaderOverlay.style.display = 'none';
+            if (mainContainer) {
+                mainContainer.classList.add('visible');
+                mainContainer.style.removeProperty('display');
+            }
+            if (islandContainer) {
+                islandContainer.classList.add('visible');
+                islandContainer.style.removeProperty('display');
+            }
+            if (snowContainer) {
+                snowContainer.style.removeProperty('display');
+            }
+
+            // Deactivate Riff UI loops
+            if (window.RiffUI && typeof window.RiffUI.onDeactivate === 'function') {
+                window.RiffUI.onDeactivate();
+            }
+
+            // Refresh MoonPlayer visual state
+            updateHighlighting();
+            updateLikeButtonState();
+            if (typeof updateMiniWaveform === 'function') updateMiniWaveform();
+            const moonColor = localStorage.getItem('moonplayer_accent') || cachedAccentColor || '#ffffff';
+            if (typeof updateAccentColor === 'function') updateAccentColor(moonColor);
+        }
+
+        // Update Settings Buttons UI in MoonPlayer modal
+        const moonUiMoon = document.getElementById('moon-settings-ui-moon');
+        const moonUiRiff = document.getElementById('moon-settings-ui-riff');
+        if (moonUiMoon) moonUiMoon.classList.toggle('active', mode === 'moon');
+        if (moonUiRiff) moonUiRiff.classList.toggle('active', mode === 'riff');
+
+        // Update Settings Buttons UI in Riff Settings view
+        const riffOptRiff = document.getElementById('ui-opt-riff');
+        const riffOptMoon = document.getElementById('ui-opt-moon');
+        const riffValMode = document.getElementById('val-ui-mode');
+        if (riffOptRiff) riffOptRiff.classList.toggle('active', mode === 'riff');
+        if (riffOptMoon) riffOptMoon.classList.toggle('active', mode === 'moon');
+        if (riffValMode) riffValMode.textContent = mode === 'riff' ? 'Riff UI (M3)' : 'MoonPlayer Classic';
+
+        console.log('[MoonPlayer] UI Mode switched to:', mode);
+    }
+
+    // Expose window.MoonPlayer Public API
+    window.MoonPlayer = {
+        isSameTrack: (t1, t2) => isSameTrack(t1, t2),
+        normalizeTrackPath: (p) => normalizeTrackPath(p),
+        normalizeTrackString: (s) => normalizeTrackString(s),
+        getAudioContext: () => audioContext,
+        getEqFilterNodes: () => [...eqFilterNodes],
+        getPreampNode: () => preampGainNode,
+        // Queue & History
+        getQueue: () => (Array.isArray(playQueue) ? playQueue : (allSongs || [])),
+        getQueueIndex: () => (typeof playQueueIndex === 'number' ? playQueueIndex : (currentlyPlayingIndex >= 0 ? currentlyPlayingIndex : 0)),
+        setQueue: (q, idx = 0) => {
+            playQueue = [...q];
+            playQueueIndex = idx;
+            window.MoonPlayer.emit('queueChange', { queue: playQueue, index: playQueueIndex });
+        },
+        getHistory: () => (Array.isArray(window._playbackHistory) ? window._playbackHistory : []),
+        getFavorites: () => (allSongs || []).filter(s => window.isCurrentTrackLiked(s)),
+        getLikedSongs: () => (allSongs || []).filter(s => window.isCurrentTrackLiked(s)),
+        isLiked: (song) => window.isCurrentTrackLiked(song),
+
+        getAudio: () => bgAudio,
+        getAudioElement: () => bgAudio,
+        getAllSongs: () => (Array.isArray(allSongs) ? allSongs : []),
+        getAlbums: () => (Array.isArray(albums) ? albums : []),
+        getArtists: () => (Array.isArray(artists) ? artists : []),
+        getPlaylists: () => (playlists || {}),
+        getCurrentSong: () => (currentlyPlayingIndex >= 0 && allSongs && allSongs[currentlyPlayingIndex]) ? allSongs[currentlyPlayingIndex] : (window._currentPlayingSong || null),
+        getCurrentTrack: () => (currentlyPlayingIndex >= 0 && allSongs && allSongs[currentlyPlayingIndex]) ? allSongs[currentlyPlayingIndex] : (window._currentPlayingSong || null),
+        isPlaying: () => (bgAudio ? !bgAudio.paused : false),
+        isLoading: () => {
+            if (bgAudio && !bgAudio.paused) return false;
+            return typeof isTrackLoading !== 'undefined' ? isTrackLoading : false;
+        },
+        getCurrentTime: () => (bgAudio ? bgAudio.currentTime : 0),
+        getDuration: () => (bgAudio ? bgAudio.duration : 0),
+        getVolume: () => {
+            const saved = localStorage.getItem('moonplayer_volume');
+            if (saved !== null && !isNaN(parseFloat(saved))) return parseFloat(saved);
+            if (volumeSlider && !isNaN(parseFloat(volumeSlider.value))) return parseFloat(volumeSlider.value);
+            return bgAudio ? bgAudio.volume : 0.5;
+        },
+        isMuted: () => (bgAudio ? bgAudio.muted : false),
+        isShuffle: () => isShuffle,
+        getLoopMode: () => isLoop,
+        getRepeatMode: () => isLoop,
+        getActiveLyricIndex: () => (typeof currentLyricsIndex !== 'undefined' ? currentLyricsIndex : -1),
+        getAnalyser: () => (typeof analyser !== 'undefined' ? analyser : null),
+        getDataArray: () => (typeof dataArray !== 'undefined' ? dataArray : null),
+        openFolderPicker: () => {
+            const path = prompt('Enter path of music folder to add to library (e.g. D:\Music):');
+            if (path && path.trim()) {
+                addServerFolder(path.trim());
+            }
+        },
+
+        // Equalizer API
+        getEqGain: (idx) => (eqValues && eqValues[idx] !== undefined ? eqValues[idx] : 0),
+        getEqBandGain: (idx) => (eqValues && eqValues[idx] !== undefined ? eqValues[idx] : 0),
+        getEqValues: () => [...(eqValues || [])],
+        getEqBands: () => [...(eqValues || [])],
+        setEqGain: (idx, gain) => {
+            if (!eqValues) return;
+            eqValues[idx] = parseFloat(gain) || 0;
+            currentEqPreset = 'Custom';
+            if (selectedEqPresetText) selectedEqPresetText.textContent = '▼ Custom';
+            const slider = document.getElementById(`eq-slider-${idx}`);
+            const valEl = document.getElementById(`eq-val-${idx}`);
+            if (slider) slider.value = eqValues[idx];
+            if (valEl) {
+                valEl.textContent = formatDbValue(eqValues[idx]);
+                updateDbValClass(valEl, eqValues[idx]);
+            }
+            initAudioContext();
+            applyEqGains();
+            if (typeof drawEqCurve === 'function') drawEqCurve();
+            persistEqState();
+            updatePresetDeleteBtn();
+            window.MoonPlayer.emit('equalizerChange', { values: [...eqValues], preset: currentEqPreset, preamp: eqPreamp, enabled: isEqEnabled });
+        },
+        setEqBandGain: (idx, gain) => window.MoonPlayer.setEqGain(idx, gain),
+        isEqEnabled: () => isEqEnabled,
+        setEqEnabled: (enabled) => {
+            isEqEnabled = !!enabled;
+            if (toggleEqCheckbox) toggleEqCheckbox.checked = isEqEnabled;
+            if (eqStatusLabel) {
+                eqStatusLabel.textContent = isEqEnabled ? 'ENABLED' : 'DISABLED';
+                eqStatusLabel.classList.toggle('disabled', !isEqEnabled);
+            }
+            initAudioContext();
+            applyEqGains();
+            if (typeof drawEqCurve === 'function') drawEqCurve();
+            persistEqState();
+            window.MoonPlayer.emit('equalizerChange', { values: [...eqValues], preset: currentEqPreset, preamp: eqPreamp, enabled: isEqEnabled });
+        },
+        getEqPresets: () => ({ ...EQ_PRESETS, ...customEqPresets }),
+        getCurrentEqPreset: () => currentEqPreset,
+        applyEqPreset: (name) => {
+            selectEqPreset(name);
+            window.MoonPlayer.emit('equalizerChange', { values: [...eqValues], preset: currentEqPreset, preamp: eqPreamp, enabled: isEqEnabled });
+        },
+        getEqPreamp: () => eqPreamp,
+        setEqPreamp: (gain) => {
+            eqPreamp = parseFloat(gain) || 0;
+            if (eqSliderPreamp && eqPreampVal) {
+                eqSliderPreamp.value = eqPreamp;
+                eqPreampVal.textContent = formatDbValue(eqPreamp);
+                updateDbValClass(eqPreampVal, eqPreamp);
+            }
+            initAudioContext();
+            applyEqGains();
+            if (typeof drawEqCurve === 'function') drawEqCurve();
+            persistEqState();
+            window.MoonPlayer.emit('equalizerChange', { values: [...eqValues], preset: currentEqPreset, preamp: eqPreamp, enabled: isEqEnabled });
+        },
+        resetEq: () => {
+            eqPreamp = 0;
+            if (eqSliderPreamp && eqPreampVal) {
+                eqSliderPreamp.value = 0;
+                eqPreampVal.textContent = formatDbValue(0);
+                updateDbValClass(eqPreampVal, 0);
+            }
+            selectEqPreset('Flat');
+            window.MoonPlayer.emit('equalizerChange', { values: [...eqValues], preset: currentEqPreset, preamp: eqPreamp, enabled: isEqEnabled });
+        },
+        getEqFrequencies: () => [...EQ_FREQUENCIES],
+        getEqLabels: () => [...EQ_LABELS],
+        applyThemeColor: (color) => updateAccentColor(color),
+
+        // Playback Rate
+        getPlaybackRate: () => bgAudio.playbackRate,
+        setPlaybackRate: (rate) => {
+            bgAudio.playbackRate = parseFloat(rate) || 1.0;
+            window.MoonPlayer.emit('playbackRateChange', bgAudio.playbackRate);
+        },
+
+        // Lyrics
+        getCurrentLyrics: () => currentLyrics,
+        getCurrentLyricsIndex: () => currentLyricsIndex,
+
+        // Controls
+        playTrack: (target, animDir = 0, forceReload = false) => {
+            if (typeof target === 'number') {
+                playTrack(target, animDir, forceReload);
+            } else if (target && typeof target === 'object') {
+                let idx = allSongs.findIndex(s => isSameTrack(s, target));
+                if (idx !== -1) {
+                    playTrack(idx, animDir, forceReload);
+                } else {
+                    target.globalIndex = allSongs.length;
+                    ensureTrackStreamUrl(target);
+                    allSongs.push(target);
+                    playTrack(target.globalIndex, animDir, forceReload);
+                }
+            }
+        },
+        togglePlayPause: () => {
+            togglePlayPause();
+        },
+        next: () => {
+            handleNext();
+        },
+        playNext: () => {
+            handleNext();
+        },
+        prev: () => {
+            handlePrev();
+        },
+        playPrev: () => {
+            handlePrev();
+        },
+        seek: (seconds) => {
+            if (bgAudio && Number.isFinite(seconds)) {
+                bgAudio.currentTime = Math.max(0, Math.min(seconds, bgAudio.duration || seconds));
+            }
+        },
+        seekTo: (seconds) => {
+            if (bgAudio && Number.isFinite(seconds)) {
+                bgAudio.currentTime = Math.max(0, Math.min(seconds, bgAudio.duration || seconds));
+            }
+        },
+        setVolume: (val) => {
+            setVolume(parseFloat(val));
+            window.MoonPlayer.emit('volumeChange', { volume: bgAudio.volume, muted: bgAudio.muted });
+        },
+        setMuted: (muted) => {
+            bgAudio.muted = !!muted;
+            window.MoonPlayer.emit('volumeChange', { volume: bgAudio.volume, muted: bgAudio.muted });
+        },
+        toggleShuffle: () => {
+            if (shuffleBtn) shuffleBtn.click();
+            else {
+                isShuffle = !isShuffle;
+                window.MoonPlayer.emit('shuffleChange', isShuffle);
+            }
+        },
+        toggleRepeat: () => {
+            if (loopBtn) loopBtn.click();
+            else {
+                if (isLoop === 'none') isLoop = 'all';
+                else if (isLoop === 'all') isLoop = 'one';
+                else isLoop = 'none';
+                if (bgAudio) bgAudio.loop = (isLoop === 'one');
+                window.MoonPlayer.emit('repeatChange', isLoop);
+            }
+        },
+
+        // Sleep Timer
+        setSleepTimer: (minutes) => {
+            if (sleepTimerId) {
+                clearInterval(sleepTimerId);
+                sleepTimerId = null;
+            }
+            sleepTimerTarget = null;
+            const m = parseInt(minutes, 10) || 0;
+            if (m > 0) {
+                sleepTimerTarget = Date.now() + m * 60 * 1000;
+                if (sleepTimerCountdownContainer) sleepTimerCountdownContainer.classList.remove('hidden');
+                updateSleepTimerCountdown();
+                sleepTimerId = setInterval(() => {
+                    updateSleepTimerCountdown();
+                }, 1000);
+            } else {
+                if (sleepTimerCountdownContainer) sleepTimerCountdownContainer.classList.add('hidden');
+            }
+            window.MoonPlayer.emit('sleepTimerChange', m);
+        },
+        getSleepTimerRemaining: () => {
+            if (!sleepTimerTarget) return 0;
+            return Math.max(0, Math.floor((sleepTimerTarget - Date.now()) / 1000));
+        },
+
+        // Likes & Playlists
+        isTrackLiked: (song) => {
+            return window.isCurrentTrackLiked(song);
+        },
+        toggleLike: (song) => {
+            window.MoonPlayer.toggleLikeTrack(song);
+        },
+        toggleMute: () => {
+            if (bgAudio) {
+                bgAudio.muted = !bgAudio.muted;
+                window.MoonPlayer.emit('volumeChange', { volume: bgAudio.volume, muted: bgAudio.muted });
+            }
+        },
+        toggleLoop: () => {
+            if (loopBtn) loopBtn.click();
+            else {
+                if (isLoop === 'none') isLoop = 'all';
+                else if (isLoop === 'all') isLoop = 'one';
+                else isLoop = 'none';
+                if (bgAudio) bgAudio.loop = (isLoop === 'one');
+                window.MoonPlayer.emit('repeatChange', isLoop);
+            }
+        },
+        clearSleepTimer: () => {
+            if (sleepTimerId) {
+                clearInterval(sleepTimerId);
+                sleepTimerId = null;
+            }
+            sleepTimerTarget = null;
+            if (sleepTimerCountdownContainer) sleepTimerCountdownContainer.classList.add('hidden');
+            window.MoonPlayer.emit('sleepTimerChange', 0);
+        },
+        toggleLikeTrack: (song) => {
+            if (!song) song = (currentlyPlayingIndex >= 0 && allSongs[currentlyPlayingIndex]) ? allSongs[currentlyPlayingIndex] : null;
+            if (!song) return;
+            const currentSong = (currentlyPlayingIndex >= 0 && allSongs[currentlyPlayingIndex]) ? allSongs[currentlyPlayingIndex] : null;
+            if (currentSong && ((song.id && song.id === currentSong.id) || (song.path && song.path === currentSong.path))) {
+                if (likeBtn) likeBtn.click();
+            } else {
+                if (song.id || (song.path && song.path.startsWith('soundcloud:'))) {
+                    const scId = song.id || song.path.replace('soundcloud:', '');
+                    const isCurrentlyLiked = window.isCurrentTrackLiked(song);
+                    const method = isCurrentlyLiked ? 'DELETE' : 'POST';
+                    const url = isCurrentlyLiked ? ('/api/soundcloud/like/' + encodeURIComponent(scId)) : '/api/soundcloud/like';
+                    fetch(url, {
+                        method: method,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: isCurrentlyLiked ? undefined : JSON.stringify({ trackId: scId })
+                    }).catch(() => {});
+                }
+                if (typeof toggleLikeSongObject === 'function') {
+                    toggleLikeSongObject(song);
+                }
+            }
+            window.MoonPlayer.emit('likedChange', song);
+        },
+        createPlaylist: (name) => {
+            if (!name || playlists[name]) return false;
+            playlists[name] = [];
+            savePlaylists();
+            window.MoonPlayer.emit('playlistsChange', playlists);
+            return true;
+        },
+        deletePlaylist: (name) => {
+            if (!name || !playlists[name]) return false;
+            delete playlists[name];
+            savePlaylists();
+            window.MoonPlayer.emit('playlistsChange', playlists);
+            return true;
+        },
+        addTrackToPlaylist: (playlistName, song) => {
+            if (!playlistName || !playlists[playlistName] || !song) return;
+            const p = song.path || (song.id ? ('soundcloud:' + song.id) : '');
+            if (p && !playlists[playlistName].includes(p)) {
+                playlists[playlistName].push(p);
+                savePlaylists();
+                window.MoonPlayer.emit('playlistsChange', playlists);
+            }
+        },
+        removeTrackFromPlaylist: (playlistName, song) => {
+            if (!playlistName || !playlists[playlistName] || !song) return;
+            const p = song.path || (song.id ? ('soundcloud:' + song.id) : '');
+            playlists[playlistName] = playlists[playlistName].filter(x => x !== p && !(song.id && x === ('soundcloud:' + song.id)));
+            savePlaylists();
+            window.MoonPlayer.emit('playlistsChange', playlists);
+        },
+        searchSoundCloud: async (query, subTab = 'all') => {
+            const cleanQuery = query.trim();
+            if (!cleanQuery) return { collection: [] };
+            const res = await fetch('/api/soundcloud/search?q=' + encodeURIComponent(cleanQuery) + '&type=' + encodeURIComponent(subTab) + '&limit=25');
+            return await res.json();
+        },
+        registerSoundCloudTrack: (song) => registerSoundCloudTrack(song),
+        openSoundCloudAlbum: (alb) => openSoundCloudAlbum(alb),
+        openSoundCloudArtist: (art) => openSoundCloudArtist(art),
+        downloadSoundCloudSong: (song, btn) => {
+            return downloadSoundCloudSong(song, btn);
+        },
+        getFormatBadgeHTML: (song, badgeClass) => {
+            return getFormatBadgeHTML(song, badgeClass);
+        },
+        isLibraryScanning: () => !!window.isLibraryScanning,
+        openEqualizer: () => {
+            const isRiff = document.documentElement.classList.contains('mode-riff') || (document.body && document.body.classList.contains('mode-riff'));
+            if (isRiff && typeof window.RiffUI !== 'undefined' && typeof window.RiffUI.openEqualizer === 'function') {
+                window.RiffUI.openEqualizer();
+                return;
+            }
+            const eqModal = document.getElementById('equalizer-modal');
+            if (eqModal) {
+                eqModal.classList.add('visible');
+                setTimeout(() => {
+                    if (typeof drawEqCurve === 'function') drawEqCurve();
+                }, 50);
+            }
+        },
+        closeEqualizer: () => {
+            const isRiff = document.documentElement.classList.contains('mode-riff') || (document.body && document.body.classList.contains('mode-riff'));
+            if (isRiff && typeof window.RiffUI !== 'undefined' && typeof window.RiffUI.closeEqualizer === 'function') {
+                window.RiffUI.closeEqualizer();
+                return;
+            }
+            const eqModal = document.getElementById('equalizer-modal');
+            if (eqModal) eqModal.classList.remove('visible');
+        },
+
+        // Context Menus
+        showTrackContextMenu: (e, song) => {
+            if (typeof showTrackContextMenu === 'function') {
+                showTrackContextMenu(e, song);
+            }
+        },
+        showAlbumContextMenu: (e, album) => {
+            if (typeof showAlbumContextMenu === 'function') {
+                showAlbumContextMenu(e, album);
+            }
+        },
+        showPlaylistContextMenu: (e, playlistName) => {
+            if (typeof showPlaylistContextMenu === 'function') {
+                showPlaylistContextMenu(e, playlistName);
+            }
+        },
+        showArtistContextMenu: (e, artist) => {
+            const existingMenus = document.querySelectorAll('.playlist-context-menu, .track-context-menu');
+            existingMenus.forEach(m => m.remove());
+            const menu = document.createElement('div');
+            menu.className = 'playlist-context-menu track-context-menu';
+            const artName = typeof artist === 'string' ? artist : (artist.name || artist.username || 'Artist');
+
+            const playOpt = document.createElement('div');
+            playOpt.className = 'playlist-context-menu-item';
+            playOpt.innerHTML = `<i class="fa-solid fa-play"></i><span>Play artist tracks</span>`;
+            playOpt.addEventListener('click', () => {
+                menu.remove();
+                const artistTracks = allSongs.filter(s => s.artist && s.artist.toLowerCase() === artName.toLowerCase());
+                if (artistTracks.length > 0) {
+                    playTrack(artistTracks[0].globalIndex);
+                }
+            });
+            menu.appendChild(playOpt);
+
+            const queueOpt = document.createElement('div');
+            queueOpt.className = 'playlist-context-menu-item';
+            queueOpt.innerHTML = `<i class="fa-solid fa-circle-plus"></i><span>Add all to queue</span>`;
+            queueOpt.addEventListener('click', () => {
+                menu.remove();
+                const artistTracks = allSongs.filter(s => s.artist && s.artist.toLowerCase() === artName.toLowerCase());
+                artistTracks.forEach(t => {
+                    playQueue.push({ ...t, isQueued: true });
+                });
+                showToast(`Added ${artistTracks.length} tracks to queue`);
+            });
+            menu.appendChild(queueOpt);
+
+            const viewOpt = document.createElement('div');
+            viewOpt.className = 'playlist-context-menu-item';
+            viewOpt.innerHTML = `<i class="fa-solid fa-user"></i><span>View artist profile</span>`;
+            viewOpt.addEventListener('click', () => {
+                menu.remove();
+                if (window.RiffUI && typeof window.RiffUI.openArtistProfile === 'function') {
+                    window.RiffUI.openArtistProfile(artist);
+                } else {
+                    selectArtistByName(artName);
+                }
+            });
+            menu.appendChild(viewOpt);
+
+            document.body.appendChild(menu);
+            menu.style.position = 'fixed';
+            let x = e ? e.clientX : 100;
+            let y = e ? e.clientY : 100;
+            menu.style.left = `${Math.min(x, window.innerWidth - 220)}px`;
+            menu.style.top = `${Math.min(y, window.innerHeight - 150)}px`;
+            setTimeout(() => {
+                const closeMenu = (evt) => {
+                    if (!menu.contains(evt.target)) {
+                        menu.remove();
+                        document.removeEventListener('click', closeMenu);
+                        document.removeEventListener('contextmenu', closeMenu);
+                    }
+                };
+                document.addEventListener('click', closeMenu);
+                document.addEventListener('contextmenu', closeMenu);
+            }, 50);
+        },
+
+        // Event Bus
+        _listeners: {},
+        on: function(event, cb) {
+            if (!this._listeners[event]) this._listeners[event] = [];
+            this._listeners[event].push(cb);
+        },
+        off: function(event, cb) {
+            if (!this._listeners[event]) return;
+            this._listeners[event] = this._listeners[event].filter(fn => fn !== cb);
+        },
+        emit: function(event, data) {
+            if (!this._listeners[event]) return;
+            this._listeners[event].forEach(cb => {
+                try { cb(data); } catch (e) { console.error('[MoonPlayer Event Error]', event, e); }
+            });
+        },
+
+        // UI Mode management
+        getUIMode: () => localStorage.getItem('moonplayer_ui_mode') || 'moon',
+        setUIMode: (mode) => setPlayerUIMode(mode)
+    };
+
+    // UI Mode Header Button in MoonPlayer
+    const btnSwitchToRiff = document.getElementById('btn-switch-to-riff');
+    if (btnSwitchToRiff) {
+        btnSwitchToRiff.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setPlayerUIMode('riff');
+        });
+    }
+
+    // UI Mode Settings Buttons in MoonPlayer Modal
+    const moonUiMoon = document.getElementById('moon-settings-ui-moon');
+    const moonUiRiff = document.getElementById('moon-settings-ui-riff');
+    if (moonUiMoon) moonUiMoon.addEventListener('click', () => setPlayerUIMode('moon'));
+    if (moonUiRiff) moonUiRiff.addEventListener('click', () => setPlayerUIMode('riff'));
+
+    // Initialize UI Mode on startup
+    const initialMode = localStorage.getItem('moonplayer_ui_mode') || 'moon';
+    setPlayerUIMode(initialMode);
+
 });
 
 // ==========================================
@@ -9173,7 +10171,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (bgAudioEl) {
         bgAudioEl.addEventListener('play', () => syncAndroidPlayback(null, 'playing'));
         bgAudioEl.addEventListener('pause', () => {
-            if (!isTrackLoading && isPlaying === false) {
+            // isTrackLoading/isPlaying live in script.js's own scope, not in this
+            // IIFE - reading them threw a ReferenceError on every pause. A pause
+            // during a track switch is loading, not a user pause.
+            const loading = !!(window.MoonPlayer
+                && typeof window.MoonPlayer.isLoading === 'function'
+                && window.MoonPlayer.isLoading());
+            if (!loading && bgAudioEl.paused) {
                 syncAndroidPlayback(null, 'paused');
             }
         });

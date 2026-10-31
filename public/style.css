@@ -677,7 +677,7 @@ body.is-android .overlay {
     box-shadow: 0 0 15px rgba(255, 255, 255, 0.05);
 }
 
-.search-icon {
+.search-input-wrapper .search-icon {
     position: absolute;
     left: 15px;
     top: 50%;
@@ -2976,6 +2976,13 @@ body.is-android .result-play-overlay {
     transform: translateY(-1px);
 }
 
+.settings-action-btn.active {
+    background-color: var(--accent);
+    border-color: var(--accent);
+    color: #000000;
+    font-weight: 800;
+}
+
 .settings-action-btn.delete-action {
     background-color: rgba(255, 50, 100, 0.08);
     border-color: rgba(255, 50, 100, 0.2);
@@ -3390,19 +3397,48 @@ body.is-android .result-play-overlay {
     color: #ef4444;
 }
 
-.playlist-context-menu {
+.playlist-context-menu,
+.track-context-menu {
     position: fixed;
-    background: rgba(13, 13, 16, 0.85);
+    background: #F0EDF2 !important;
     backdrop-filter: blur(25px);
     -webkit-backdrop-filter: blur(25px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-    padding: 8px 0;
-    z-index: 10000;
-    min-width: 200px;
+    border: 1px solid rgba(0, 0, 0, 0.12) !important;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18) !important;
+    padding: 8px !important;
+    z-index: 100000 !important;
+    min-width: 210px;
     font-size: 0.85rem;
+    color: #1B1B1F !important;
     animation: menuFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.playlist-context-submenu {
+    position: absolute !important;
+    top: -8px !important;
+    left: 100% !important;
+    background: #F0EDF2 !important;
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    border: 1px solid rgba(0, 0, 0, 0.12) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18) !important;
+    padding: 8px !important;
+    z-index: 100001 !important;
+    min-width: 200px !important;
+    font-size: 0.85rem;
+    color: #1B1B1F !important;
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.playlist-context-menu-item.has-submenu:hover > .playlist-context-submenu,
+.playlist-context-menu-item.has-submenu:focus-within > .playlist-context-submenu {
+    display: block !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
 }
 
 @keyframes menuFadeIn {
@@ -3416,38 +3452,65 @@ body.is-android .result-play-overlay {
     }
 }
 
-.playlist-context-menu-item {
-    padding: 10px 16px;
-    color: var(--text-secondary);
+.playlist-context-menu-item,
+.track-context-item {
+    padding: 9px 14px !important;
+    color: #1B1B1F !important;
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 12px;
-    transition: all 0.2s ease;
+    border-radius: 8px !important;
+    transition: all 0.15s ease;
     font-weight: 500;
 }
 
-.playlist-context-menu-item:hover {
-    background-color: rgba(255, 255, 255, 0.08);
-    color: #ffffff;
-    padding-left: 20px;
+.playlist-context-menu-item:hover,
+.track-context-item:hover {
+    background-color: rgba(0, 0, 0, 0.08) !important;
+    color: #1B1B1F !important;
+    padding-left: 17px !important;
 }
 
-.playlist-context-menu-item i {
+.playlist-context-menu-item i,
+.track-context-item i {
     font-size: 0.95rem;
     width: 16px;
     text-align: center;
+    color: var(--md-sys-color-primary, #6750A4) !important;
     transition: transform 0.2s ease;
 }
 
-.playlist-context-menu-item:hover i {
+.playlist-context-menu-item:hover i,
+.track-context-item:hover i {
     transform: scale(1.15);
 }
 
 .playlist-context-menu-divider {
     height: 1px;
-    background-color: rgba(255, 255, 255, 0.06);
-    margin: 8px 0;
+    background-color: rgba(0, 0, 0, 0.1) !important;
+    margin: 6px 4px !important;
+}
+
+body.theme-light .playlist-context-menu,
+body.theme-light .track-context-menu,
+body.theme-light .playlist-context-submenu {
+    background: #F0EDF2 !important;
+    border-color: rgba(0, 0, 0, 0.12) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15) !important;
+    color: #1B1B1F !important;
+}
+body.theme-light .playlist-context-menu-item,
+body.theme-light .track-context-item {
+    color: #1B1B1F !important;
+}
+body.theme-light .playlist-context-menu-item:hover,
+body.theme-light .track-context-item:hover {
+    background-color: rgba(0, 0, 0, 0.07) !important;
+    color: #1B1B1F !important;
+}
+body.theme-light .playlist-context-menu-divider {
+    background-color: rgba(0, 0, 0, 0.08) !important;
 }
 
 /* Like Button Styles */
@@ -4622,3 +4685,68 @@ body.is-android .result-play-overlay {
 
 
 
+
+/* ==========================================
+   UI MODE SWITCHER BUTTONS & SETTINGS
+   ========================================== */
+.ui-mode-header-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px;
+    height: 38px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--card-border);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    gap: 6px;
+    transition: all 0.25s ease;
+}
+.ui-mode-header-btn:hover {
+    background: var(--accent);
+    color: #000;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);
+}
+
+/* UI Mode Isolation (Riff vs MoonPlayer) */
+#riff-root {
+    display: none;
+}
+
+body.mode-riff {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    align-items: stretch !important;
+    background: var(--md-sys-color-surface-container, #1E1F22) !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+html.mode-riff .dynamic-island-container, body.mode-riff .dynamic-island-container,
+body.mode-riff .main-container,
+body.mode-riff #snow-container {
+    display: none !important;
+}
+
+html.mode-riff #riff-root, body.mode-riff #riff-root {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+    position: relative !important;
+    z-index: 10 !important;
+}
+
+body.mode-moon #riff-root {
+    display: none !important;
+}

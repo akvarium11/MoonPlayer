@@ -34,6 +34,8 @@ class SoundCloudService {
         this.trackCache = new Map();  // id -> trackObject
         this.transcodingsCache = new Map(); // id -> transcodings array
         this.inFlightStreamUrls = new Map(); // id -> Promise<string>
+        this.trackAudioCache = new Map(); // id -> { buffer, mimeType, expiresAt }
+        this.inFlightTrackAudio = new Map(); // id -> Promise<{ buffer, mimeType }>
         this.currentUser = null;
 
         if (this.config.enabled && this.config.oauthToken) {
@@ -105,6 +107,12 @@ class SoundCloudService {
         return this.downloads.some(d => d.path && path.resolve(d.path).toLowerCase() === norm);
     }
 
+    getDownloadByPath(filePath) {
+        if (!filePath) return null;
+        const norm = path.resolve(filePath).toLowerCase();
+        return this.downloads.find(d => d.path && path.resolve(d.path).toLowerCase() === norm) || null;
+    }
+
     getAuthHeader() {
         const token = (this.config.oauthToken || '').trim();
         if (!token) return {};
@@ -173,7 +181,8 @@ class SoundCloudService {
         const durationSec = Math.round((t.duration || t.full_duration || 0) / 1000);
         const artist = t.user ? (t.user.username || t.user.full_name || 'SoundCloud Artist') : 'SoundCloud Artist';
 
-        const finalAlbum = albumTitle || (t.publisher_metadata && t.publisher_metadata.album_title) || 'SoundCloud';
+        const officialAlbum = t.publisher_metadata && t.publisher_metadata.album_title ? t.publisher_metadata.album_title.trim() : null;
+        const finalAlbum = officialAlbum || (albumTitle && albumTitle !== 'SoundCloud' ? albumTitle : null) || 'SoundCloud';
         const finalAlbumKey = albumTitle
             ? ('sc_album_' + albumTitle.toLowerCase().replace(/[^a-z0-9]/g, '_'))
             : ('sc_track_' + t.id);
@@ -222,7 +231,7 @@ class SoundCloudService {
         const isAlbum = !!(p.is_album || p.set_type === 'album' || p.set_type === 'ep');
         const playlistTitle = p.title || (isAlbum ? 'Untitled Album' : 'Untitled Playlist');
 
-        const tracks = (p.tracks || []).map(t => this.formatTrack(t, cover, playlistTitle)).filter(Boolean);
+        const tracks = (p.tracks || []).map(t => this.formatTrack(t, cover, isAlbum ? playlistTitle : null)).filter(Boolean);
 
         return {
             id: p.id,
@@ -862,24 +871,154 @@ class SoundCloudService {
         }
     }
 
+    serveBuffer(buffer, mimeType, reqHeaders, res) {
+        if (res.destroyed || res.writableEnded) return;
+        const total = buffer.length;
+        const range = reqHeaders.range;
+        res.setHeader('Content-Type', mimeType || 'audio/mp4');
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        if (range) {
+            const parts = range.replace(/bytes=/, '').split('-');
+            const start = parseInt(parts[0], 10) || 0;
+            const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+            const chunksize = (end - start) + 1;
+            const slice = buffer.subarray(start, end + 1);
+
+            res.status(206);
+            res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+            res.setHeader('Content-Length', chunksize);
+            res.end(slice);
+        } else {
+            res.status(200);
+            res.setHeader('Content-Length', total);
+            res.end(buffer);
+        }
+    }
+
+        logout() {
+        this.currentUser = null;
+        this.streamCache.clear();
+        this.trackCache.clear();
+        this.transcodingsCache.clear();
+        this.trackAudioCache.clear();
+        this.inFlightStreamUrls.clear();
+        this.inFlightTrackAudio.clear();
+        this.saveConfig({
+            enabled: false,
+            oauthToken: '',
+            user: null
+        });
+        return { success: true };
+    }
+
+    async fetchHlsAudio(trackId, streamUrl) {
+        const idStr = String(trackId);
+        if (this.inFlightTrackAudio.has(idStr)) {
+            return await this.inFlightTrackAudio.get(idStr);
+        }
+
+        const task = (async () => {
+            const resp = await fetch(streamUrl);
+            if (!resp.ok) throw new Error(`Failed to fetch HLS playlist (${resp.status})`);
+            const m3u8Text = await resp.text();
+            const lines = m3u8Text.split('\n').map(l => l.trim()).filter(Boolean);
+            const initLine = lines.find(l => l.includes('URI='));
+            
+            let initBuf = null;
+            let mimeType = 'audio/mp4';
+
+            if (initLine && initLine.includes('URI="')) {
+                const initUrlRaw = initLine.split('URI="')[1].split('"')[0];
+                const initUrl = (initUrlRaw.startsWith('http://') || initUrlRaw.startsWith('https://'))
+                    ? initUrlRaw
+                    : new URL(initUrlRaw, streamUrl).href;
+                const initResp = await fetch(initUrl);
+                if (initResp.ok) {
+                    initBuf = Buffer.from(await initResp.arrayBuffer());
+                }
+            } else {
+                mimeType = streamUrl.toLowerCase().includes('mp3') ? 'audio/mpeg' : 'audio/mp4';
+            }
+
+            const rawSegUrls = lines.filter(l => !l.startsWith('#') && l.length > 0);
+            const segUrls = rawSegUrls.map(u => {
+                if (u.startsWith('http://') || u.startsWith('https://')) return u;
+                return new URL(u, streamUrl).href;
+            });
+
+            if (segUrls.length === 0) {
+                throw new Error('No audio segments found in HLS playlist');
+            }
+
+            const segBufs = new Array(segUrls.length);
+            const BATCH_SIZE = 12;
+            for (let i = 0; i < segUrls.length; i += BATCH_SIZE) {
+                const batch = segUrls.slice(i, i + BATCH_SIZE).map((url, idx) =>
+                    fetch(url).then(r => {
+                        if (!r.ok) throw new Error(`Segment fetch error ${r.status}`);
+                        return r.arrayBuffer();
+                    }).then(ab => {
+                        segBufs[i + idx] = Buffer.from(ab);
+                    })
+                );
+                await Promise.all(batch);
+            }
+
+            const parts = initBuf ? [initBuf, ...segBufs] : segBufs;
+            const fullBuffer = Buffer.concat(parts);
+            const record = {
+                buffer: fullBuffer,
+                mimeType,
+                expiresAt: Date.now() + 30 * 60 * 1000 // 30 min cache
+            };
+            this.trackAudioCache.set(idStr, record);
+            return record;
+        })();
+
+        this.inFlightTrackAudio.set(idStr, task);
+        try {
+            return await task;
+        } finally {
+            this.inFlightTrackAudio.delete(idStr);
+        }
+    }
+
     async pipeStream(trackId, reqHeaders, res) {
         if (res.destroyed || res.writableEnded) return;
 
-        const abortCtrl = new AbortController();
-        let nodeStream = null;
-
-        const onClose = () => {
-            abortCtrl.abort();
-            if (nodeStream) {
-                try { nodeStream.destroy(); } catch (e) {}
-                nodeStream = null;
-            }
-        };
-        res.on('close', onClose);
+        const idStr = String(trackId);
+        const cached = this.trackAudioCache.get(idStr);
+        if (cached && cached.expiresAt > Date.now()) {
+            return this.serveBuffer(cached.buffer, cached.mimeType, reqHeaders, res);
+        }
 
         try {
             let streamUrl = await this.getTrackMediaStreamUrl(trackId);
             if (res.destroyed || res.writableEnded) return;
+
+            // Handle HLS playlist streams (fMP4 AAC or MP3 from SoundCloud)
+            // HTML5 <audio> requires seekable Range support and exact Content-Length.
+            // Chunked HTTP 200 fMP4 causes Chromium audio element to hang.
+            // Always fetch complete buffered track and serve with HTTP 200/206 Range headers.
+            if (streamUrl.includes('.m3u8')) {
+                const audioRecord = await this.fetchHlsAudio(trackId, streamUrl);
+                return this.serveBuffer(audioRecord.buffer, audioRecord.mimeType, reqHeaders, res);
+            }
+
+            // Standard progressive stream proxying
+            const abortCtrl = new AbortController();
+            let nodeStream = null;
+
+            const onClose = () => {
+                abortCtrl.abort();
+                if (nodeStream) {
+                    try { nodeStream.destroy(); } catch (e) {}
+                    nodeStream = null;
+                }
+            };
+            res.on('close', onClose);
 
             const headers = {};
             if (reqHeaders.range) {
@@ -891,7 +1030,6 @@ class SoundCloudService {
                 signal: abortCtrl.signal
             });
 
-            // If CloudFront signed URL expired (401/403/410/404), refresh stream URL and retry once
             if ((cdnResp.status === 401 || cdnResp.status === 403 || cdnResp.status === 410 || cdnResp.status === 404) && !res.destroyed && !res.writableEnded) {
                 console.warn(`[SoundCloud] Stream URL for track ${trackId} returned ${cdnResp.status}, refreshing stream URL...`);
                 this.streamCache.delete(String(trackId));
@@ -903,7 +1041,7 @@ class SoundCloudService {
             }
 
             if (res.destroyed || res.writableEnded) return;
-            
+
             res.status(cdnResp.status);
             res.setHeader('Content-Type', cdnResp.headers.get('content-type') || 'audio/mpeg');
             res.setHeader('Accept-Ranges', 'bytes');
@@ -928,7 +1066,6 @@ class SoundCloudService {
 
             nodeStream.pipe(res);
         } catch (e) {
-            res.removeListener('close', onClose);
             if (e.name === 'AbortError') return;
             console.error(`[SoundCloud] Stream pipe error for track ${trackId}:`, e.message);
             if (!res.headersSent && !res.destroyed && !res.writableEnded) {
@@ -1019,14 +1156,22 @@ class SoundCloudService {
         }
 
         const baseFileName = this.sanitizeFilename(`${track.artist} - ${track.title}`);
-        const mp3FilePath = path.join(destFolder, `${baseFileName}.mp3`);
+        const isHls = streamUrl.includes('.m3u8');
+        const ext = isHls ? '.m4a' : '.mp3';
+        const audioFilePath = path.join(destFolder, `${baseFileName}${ext}`);
         const coverFilePath = path.join(destFolder, `${baseFileName}.jpg`);
 
         // Fetch audio stream
-        const audioResp = await fetch(streamUrl);
-        if (!audioResp.ok) throw new Error(`Failed to download audio data (${audioResp.status})`);
-        const audioArrayBuffer = await audioResp.arrayBuffer();
-        const audioBuffer = Buffer.from(audioArrayBuffer);
+        let audioBuffer;
+        if (isHls) {
+            const hlsResult = await this.fetchHlsAudio(idStr, streamUrl);
+            audioBuffer = hlsResult.buffer;
+        } else {
+            const audioResp = await fetch(streamUrl);
+            if (!audioResp.ok) throw new Error(`Failed to download audio data (${audioResp.status})`);
+            const audioArrayBuffer = await audioResp.arrayBuffer();
+            audioBuffer = Buffer.from(audioArrayBuffer);
+        }
 
         // Fetch cover artwork if present
         let coverBuffer = null;
@@ -1043,23 +1188,26 @@ class SoundCloudService {
             }
         }
 
-        // Create ID3v2 tag
-        const id3Tag = this.createId3Tag(track.title, track.artist, track.album, track.year, coverBuffer);
-        const finalBuffer = Buffer.concat([id3Tag, audioBuffer]);
+        let finalBuffer = audioBuffer;
+        if (!isHls) {
+            // Prepend ID3v2 tag for MP3 files
+            const id3Tag = this.createId3Tag(track.title, track.artist, track.album, track.year, coverBuffer);
+            finalBuffer = Buffer.concat([id3Tag, audioBuffer]);
+        }
 
-        fs.writeFileSync(mp3FilePath, finalBuffer);
+        fs.writeFileSync(audioFilePath, finalBuffer);
 
         // Record in downloads
         const downloadRecord = {
             id: track.id,
-            path: mp3FilePath,
+            path: audioFilePath,
             title: track.title,
             artist: track.artist,
             coverPath: fs.existsSync(coverFilePath) ? coverFilePath : null,
             downloadedAt: new Date().toISOString()
         };
 
-        const existingIdx = this.downloads.findIndex(d => d.path === mp3FilePath || d.id === track.id);
+        const existingIdx = this.downloads.findIndex(d => d.path === audioFilePath || d.id === track.id);
         if (existingIdx !== -1) {
             this.downloads[existingIdx] = downloadRecord;
         } else {
@@ -1069,7 +1217,7 @@ class SoundCloudService {
 
         return {
             success: true,
-            filePath: mp3FilePath,
+            filePath: audioFilePath,
             coverPath: downloadRecord.coverPath,
             track
         };

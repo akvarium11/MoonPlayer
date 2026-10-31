@@ -2,6 +2,7 @@ node_modules/
 music_folders.json
 discord_config.json
 cover_cache.json
+track_meta_cache.json
 lastfm_info_cache.json
 soundcloud_config.json
 soundcloud_cache.json

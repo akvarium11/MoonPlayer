@@ -7,6 +7,22 @@ const soundcloudService = require('./soundcloud_service');
 const app = express();
 const PORT = process.env.PORT || 7644;
 
+// Watchdog: Non-lethal monitor of parent Tauri process
+const tauriParentPid = parseInt(process.env.TAURI_PARENT_PID, 10);
+if (tauriParentPid && !isNaN(tauriParentPid)) {
+    // Windows Job Object handles auto-kill on parent close. Watchdog logs only.
+    const watchdogTimer = setInterval(() => {
+        try {
+            process.kill(tauriParentPid, 0);
+        } catch (e) {
+            if (e && e.code === 'ESRCH') {
+                console.log('[Server] Parent MoonPlayer process (PID ' + tauriParentPid + ') no longer detected.');
+                clearInterval(watchdogTimer);
+            }
+        }
+    }, 5000);
+}
+
 // Prevent server termination on unhandled errors/rejections
 process.on('uncaughtException', (err) => {
     console.error('[Server] Uncaught Exception:', err);
@@ -16,8 +32,21 @@ process.on('unhandledRejection', (reason) => {
     console.error('[Server] Unhandled Rejection:', reason);
 });
 
+// Global CORS & preflight middleware
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+    }
+    next();
+});
+
 // Middleware to parse JSON bodies
 app.use(express.json());
+
+
 
 // Resolve writable data directory (portable exe or appData or local directory)
 function getWritableDir() {
@@ -35,6 +64,10 @@ function getWritableDir() {
         }
     } catch (e) {}
     if (process.platform === 'win32' && process.env.APPDATA) {
+        const tauriDir = path.join(process.env.APPDATA, 'com.moonplayer.desktop');
+        if (fs.existsSync(tauriDir)) {
+            return tauriDir;
+        }
         return path.join(process.env.APPDATA, 'MoonPlayer');
     }
     return __dirname;
@@ -93,6 +126,7 @@ function saveEqualizerConfig(config) {
 
 // Helper to save configured folders
 function saveFolders(folders) {
+    memorySongCache = null;
     try {
         if (!fs.existsSync(DATA_DIR)) {
             fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -100,6 +134,82 @@ function saveFolders(folders) {
         fs.writeFileSync(CONFIG_FILE, JSON.stringify(folders, null, 2), 'utf8');
     } catch (e) {
         console.error("Failed to save config file:", e);
+    }
+}
+
+// Track metadata & duration cache (file-backed)
+const TRACK_CACHE_FILE = path.join(DATA_DIR, 'track_meta_cache.json');
+const TRACK_CACHE_FALLBACK = path.join(__dirname, 'track_meta_cache.json');
+let trackMetaCache = {};
+try {
+    if (fs.existsSync(TRACK_CACHE_FILE)) {
+        trackMetaCache = JSON.parse(fs.readFileSync(TRACK_CACHE_FILE, 'utf8'));
+    } else if (fs.existsSync(TRACK_CACHE_FALLBACK)) {
+        trackMetaCache = JSON.parse(fs.readFileSync(TRACK_CACHE_FALLBACK, 'utf8'));
+    }
+} catch (e) {
+    trackMetaCache = {};
+}
+
+let saveCacheTimeout = null;
+function saveTrackMetaCacheDebounced() {
+    if (saveCacheTimeout) return;
+    saveCacheTimeout = setTimeout(() => {
+        saveCacheTimeout = null;
+        try {
+            const dataStr = JSON.stringify(trackMetaCache);
+            if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+            fs.writeFileSync(TRACK_CACHE_FILE, dataStr, 'utf8');
+            if (DATA_DIR !== __dirname) {
+                try { fs.writeFileSync(TRACK_CACHE_FALLBACK, dataStr, 'utf8'); } catch (e) {}
+            }
+        } catch (e) {
+            console.error('[Server] Failed to save track_meta_cache:', e);
+        }
+    }, 1500);
+}
+
+// Background worker to parse missing durations in parallel
+let isFillingDurations = false;
+async function fillMissingTrackDurations(songs) {
+    if (isFillingDurations) return;
+    const toResolve = songs.filter(s => (!s.duration || Number(s.duration) <= 0) && s.path && !s.isSoundCloud && fs.existsSync(s.path));
+    if (toResolve.length === 0) return;
+    isFillingDurations = true;
+    try {
+        const mm = await import('music-metadata');
+        let idx = 0;
+        const concurrency = 4;
+        async function worker() {
+            while (idx < toResolve.length) {
+                const song = toResolve[idx++];
+                try {
+                    const stat = fs.statSync(song.path);
+                    const meta = await mm.parseFile(song.path, { duration: true, skipCovers: true });
+                    if (meta && meta.format && meta.format.duration > 0) {
+                        const dur = Math.round(meta.format.duration);
+                        song.duration = dur;
+                        trackMetaCache[song.path] = Object.assign(trackMetaCache[song.path] || {}, {
+                            mtimeMs: stat.mtimeMs,
+                            size: stat.size,
+                            duration: dur,
+                            title: (meta.common && meta.common.title) || song.title,
+                            artist: (meta.common && meta.common.artist) || song.artist,
+                            album: (meta.common && meta.common.album) || song.album,
+                            year: (meta.common && meta.common.year) || song.year
+                        });
+                        saveTrackMetaCacheDebounced();
+                    }
+                } catch (err) {
+                    // Ignore corrupt or unsupported file
+                }
+            }
+        }
+        await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    } catch (e) {
+        console.error('[Server] fillMissingTrackDurations error:', e);
+    } finally {
+        isFillingDurations = false;
     }
 }
 
@@ -127,7 +237,19 @@ function parseFlacMetadata(filePath, readPicture = false) {
             const blockType = (headerVal >>> 24) & 0x7F;
             const blockLen = headerVal & 0x00FFFFFF;
 
-            if (blockType === 4) { // VORBIS_COMMENT
+            if (blockType === 0) { // STREAMINFO
+                const streamInfo = Buffer.alloc(Math.min(blockLen, 34));
+                fs.readSync(fd, streamInfo, 0, streamInfo.length, offset);
+                if (streamInfo.length >= 18) {
+                    const sampleRate = (streamInfo[10] << 12) | (streamInfo[11] << 4) | (streamInfo[12] >> 4);
+                    const totalSamplesHigh = streamInfo[13] & 0x0F;
+                    const totalSamplesLow = streamInfo.readUInt32BE(14);
+                    const totalSamples = (totalSamplesHigh * 0x100000000) + totalSamplesLow;
+                    if (sampleRate > 0 && totalSamples > 0) {
+                        meta.duration = totalSamples / sampleRate;
+                    }
+                }
+            } else if (blockType === 4) { // VORBIS_COMMENT
                 const commentBuf = Buffer.alloc(blockLen);
                 fs.readSync(fd, commentBuf, 0, blockLen, offset);
                 let p = 0;
@@ -250,26 +372,69 @@ function scanDirectory(dirPath, fileList = []) {
                     let artist;
                     let album;
                     let year;
+                    let duration;
                     let itemCoverUrl = folderCoverUrl;
 
-                    if (ext === '.flac') {
+                    const cached = trackMetaCache[filePath];
+                    const isCacheValid = cached && (!cached.mtimeMs || (cached.mtimeMs === fileStat.mtimeMs && cached.size === fileStat.size));
+
+                    if (isCacheValid) {
+                        if (cached.title) title = cached.title;
+                        if (cached.artist) artist = cached.artist;
+                        if (cached.album) album = cached.album;
+                        if (cached.year) year = cached.year;
+                        if (cached.duration && cached.duration > 0) duration = cached.duration;
+                        if (cached.hasPicture) {
+                            itemCoverUrl = `/api/flac-cover?path=${encodeURIComponent(filePath)}`;
+                        }
+                    } else if (ext === '.flac') {
                         const flacMeta = parseFlacMetadata(filePath, false);
                         if (flacMeta) {
                             if (flacMeta.comments.TITLE) title = flacMeta.comments.TITLE.trim();
                             if (flacMeta.comments.ARTIST) artist = flacMeta.comments.ARTIST.trim();
                             if (flacMeta.comments.ALBUM) album = flacMeta.comments.ALBUM.trim();
                             if (flacMeta.comments.DATE) year = flacMeta.comments.DATE.trim().substring(0, 4);
+                            if (flacMeta.duration && flacMeta.duration > 0) {
+                                duration = Math.round(flacMeta.duration);
+                            }
                             if (flacMeta.hasPicture) {
                                 itemCoverUrl = `/api/flac-cover?path=${encodeURIComponent(filePath)}`;
                             }
+                            trackMetaCache[filePath] = Object.assign(trackMetaCache[filePath] || {}, {
+                                mtimeMs: fileStat.mtimeMs,
+                                size: fileStat.size,
+                                duration: duration || 0,
+                                title: title || undefined,
+                                artist: artist || undefined,
+                                album: album || undefined,
+                                year: year || undefined,
+                                hasPicture: flacMeta.hasPicture || false
+                            });
+                            saveTrackMetaCacheDebounced();
                         }
+                    } else if (cached) {
+                        if (cached.duration && (!duration || duration <= 0)) {
+                            duration = cached.duration;
+                        }
+                        if (cached.title && !title) title = cached.title;
+                        if (cached.artist && !artist) artist = cached.artist;
+                        if (cached.album && !album) album = cached.album;
+                        if (cached.year && !year) year = cached.year;
                     }
 
-                    const isSoundCloud = soundcloudService.isDownloadedPath(filePath) ||
+                    const downloadRecord = soundcloudService.getDownloadByPath(filePath);
+                    const isSoundCloud = !!downloadRecord || soundcloudService.isDownloadedPath(filePath) ||
                         filePath.toLowerCase().includes(path.sep + 'soundcloud' + path.sep) ||
                         path.dirname(filePath).toLowerCase().endsWith('soundcloud');
 
+                    const soundCloudTrackId = downloadRecord ? downloadRecord.id : undefined;
+                    if (downloadRecord) {
+                        if (!title && downloadRecord.title) title = downloadRecord.title;
+                        if (!artist && downloadRecord.artist) artist = downloadRecord.artist;
+                    }
+
                     fileList.push({
+                        id: soundCloudTrackId || undefined,
                         path: filePath,
                         name: file,
                         format: ext.replace('.', ''),
@@ -279,6 +444,7 @@ function scanDirectory(dirPath, fileList = []) {
                         artist: artist || undefined,
                         album: album || undefined,
                         year: year || undefined,
+                        duration: (typeof duration === 'number' && duration > 0) ? duration : undefined,
                         isSoundCloud: isSoundCloud || undefined,
                         source: isSoundCloud ? 'soundcloud' : undefined
                     });
@@ -436,11 +602,30 @@ function detectAndFixInvertedSongs(songs) {
     return songs;
 }
 
+let memorySongCache = null;
+let memorySongCacheTime = 0;
+
 // API: Get all songs from all folders
 app.get('/api/songs', (req, res) => {
+    const forceRefresh = req.query.refresh === 'true';
+    if (!forceRefresh && memorySongCache && (Date.now() - memorySongCacheTime < 60000)) {
+        return res.json(memorySongCache);
+    }
     const folders = getFolders();
     let allSongs = [];
-    for (const folder of folders) {
+
+    // Filter out redundant subfolders if parent folder is already in the list
+    const effectiveFolders = folders.filter((f, idx) => {
+        const resolvedF = path.resolve(f).toLowerCase();
+        return !folders.some((other, oIdx) => {
+            if (idx === oIdx) return false;
+            const resolvedOther = path.resolve(other).toLowerCase();
+            const rel = path.relative(resolvedOther, resolvedF);
+            return !rel.startsWith('..') && !path.isAbsolute(rel);
+        });
+    });
+
+    for (const folder of effectiveFolders) {
         scanDirectory(folder, allSongs);
     }
     
@@ -467,53 +652,105 @@ app.get('/api/songs', (req, res) => {
         }
     }
     detectAndFixInvertedSongs(uniqueSongs);
+    // Background duration resolver for non-FLAC files
+    fillMissingTrackDurations(uniqueSongs).catch(() => {});
+    memorySongCache = uniqueSongs;
+    memorySongCacheTime = Date.now();
     res.json(uniqueSongs);
+});
+
+// API: Track duration lookup & on-demand metadata resolver
+app.get('/api/track-duration', async (req, res) => {
+    const filePath = req.query.path;
+    if (!filePath || !fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'File not found' });
+    }
+    if (trackMetaCache[filePath] && trackMetaCache[filePath].duration) {
+        return res.json({ duration: trackMetaCache[filePath].duration });
+    }
+    try {
+        const mm = await import('music-metadata');
+        const meta = await mm.parseFile(filePath, { duration: true, skipCovers: true });
+        const dur = (meta && meta.format && meta.format.duration > 0) ? Math.round(meta.format.duration) : 0;
+        const stat = fs.statSync(filePath);
+        trackMetaCache[filePath] = Object.assign(trackMetaCache[filePath] || {}, {
+            mtimeMs: stat.mtimeMs,
+            size: stat.size,
+            duration: dur
+        });
+        saveTrackMetaCacheDebounced();
+        res.json({ duration: dur });
+    } catch (e) {
+        res.json({ duration: 0 });
+    }
+});
+
+// API: Bulk track durations lookup
+app.get('/api/track-durations', (req, res) => {
+    const durations = {};
+    for (const p in trackMetaCache) {
+        if (trackMetaCache[p] && trackMetaCache[p].duration > 0) {
+            durations[p] = trackMetaCache[p].duration;
+        }
+    }
+    res.json({ durations });
 });
 
 // API: Stream audio file
 app.get(['/api/stream', '/api/stream/:filename'], (req, res) => {
-    const filePath = req.query.path;
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Accept-Ranges', 'bytes');
+    let filePath = req.query.path;
+    if (!filePath && req.params.filename && req.params.filename.includes('?path=')) {
+        filePath = req.params.filename.split('?path=')[1];
+    }
     if (!filePath) {
         return res.status(400).send('Path is required');
     }
 
-    const resolvedPath = path.resolve(filePath);
-    const folders = getFolders();
-    const soundcloudDir = path.resolve(DATA_DIR, 'SoundCloud');
-
-    // Security check: ensure path is within one of the registered folders or soundcloud directory
-    const isAllowed = folders.some(folder => {
-        const resolvedFolder = path.resolve(folder);
-        const relative = path.relative(resolvedFolder, resolvedPath);
-        return relative && !relative.startsWith('..') && !path.isAbsolute(relative);
-    }) || soundcloudService.isDownloadedPath(resolvedPath) ||
-       resolvedPath.toLowerCase().startsWith(soundcloudDir.toLowerCase());
-
-    if (!isAllowed) {
-        return res.status(403).send('Access denied: File is outside of configured music directories');
+    let resolvedPath = path.resolve(filePath);
+    if (!fs.existsSync(resolvedPath)) {
+        try {
+            const decoded = decodeURIComponent(filePath);
+            const decodedPath = path.resolve(decoded);
+            if (fs.existsSync(decodedPath)) {
+                resolvedPath = decodedPath;
+            }
+        } catch (e) {}
     }
 
-    res.sendFile(resolvedPath);
+    if (!fs.existsSync(resolvedPath)) {
+        return res.status(404).send('File not found');
+    }
+
+    const ext = path.extname(resolvedPath).toLowerCase();
+    const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.ico'];
+    const isAllowed = AUDIO_EXTENSIONS.includes(ext) || IMAGE_EXTS.includes(ext) || soundcloudService.isDownloadedPath(resolvedPath);
+    if (!isAllowed) {
+        return res.status(403).send('Access denied: Only audio and cover files can be streamed');
+    }
+
+    res.sendFile(resolvedPath, (err) => {
+        if (err && !res.headersSent) {
+            res.status(err.status || 500).end();
+        }
+    });
 });
 
 // API: Stream embedded FLAC cover art
 app.get('/api/flac-cover', (req, res) => {
-    const filePath = req.query.path;
+    let filePath = req.query.path;
     if (!filePath) {
         return res.status(400).send('Path is required');
     }
 
+    try {
+        filePath = decodeURIComponent(filePath);
+    } catch (e) {}
+
     const resolvedPath = path.resolve(filePath);
-    const folders = getFolders();
-
-    const isAllowed = folders.some(folder => {
-        const resolvedFolder = path.resolve(folder);
-        const relative = path.relative(resolvedFolder, resolvedPath);
-        return relative && !relative.startsWith('..') && !path.isAbsolute(relative);
-    });
-
-    if (!isAllowed) {
-        return res.status(403).send('Access denied');
+    if (!fs.existsSync(resolvedPath)) {
+        return res.status(404).send('File not found');
     }
 
     const meta = parseFlacMetadata(resolvedPath, true);
@@ -531,24 +768,18 @@ app.get('/api/flac-cover', (req, res) => {
 // (often hundreds of MB); serving a thumbnail by URL lets the renderer decode
 // only the covers actually on screen.
 app.get('/api/cover', async (req, res) => {
-    const filePath = req.query.path;
+    let filePath = req.query.path;
     if (!filePath) {
         return res.status(400).send('Path is required');
     }
 
+    try {
+        filePath = decodeURIComponent(filePath);
+    } catch (e) {}
+
     const resolvedPath = path.resolve(filePath);
-    const folders = getFolders();
-    const soundcloudDir = path.join(DATA_DIR, 'soundcloud');
-
-    const isAllowed = folders.some(folder => {
-        const resolvedFolder = path.resolve(folder);
-        const relative = path.relative(resolvedFolder, resolvedPath);
-        return relative && !relative.startsWith('..') && !path.isAbsolute(relative);
-    }) || soundcloudService.isDownloadedPath(resolvedPath) ||
-       resolvedPath.toLowerCase().startsWith(soundcloudDir.toLowerCase());
-
-    if (!isAllowed) {
-        return res.status(403).send('Access denied');
+    if (!fs.existsSync(resolvedPath)) {
+        return res.status(404).send('File not found');
     }
 
     try {
@@ -787,6 +1018,17 @@ app.post('/api/soundcloud/config', async (req, res) => {
 });
 
 // Get authenticated SoundCloud user profile
+
+// Log out of SoundCloud
+app.post('/api/soundcloud/logout', async (req, res) => {
+    try {
+        const result = soundcloudService.logout();
+        res.json({ success: true, ...result });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 app.get('/api/soundcloud/user', async (req, res) => {
     try {
         if (!soundcloudService.config.enabled || !soundcloudService.config.oauthToken) {
@@ -1002,14 +1244,24 @@ app.get('/api/soundcloud/download-file/:id', async (req, res) => {
         const trackId = req.params.id;
         const streamUrl = await soundcloudService.getTrackMediaStreamUrl(trackId);
         const track = soundcloudService.trackCache.get(String(trackId));
+        const isHls = streamUrl.includes('.m3u8');
+        const ext = isHls ? 'm4a' : 'mp3';
+        const mimeType = isHls ? 'audio/mp4' : 'audio/mpeg';
         const filename = soundcloudService.sanitizeFilename(
-            track ? `${track.artist} - ${track.title}.mp3` : `soundcloud_${trackId}.mp3`
+            track ? `${track.artist} - ${track.title}.${ext}` : `soundcloud_${trackId}.${ext}`
         );
         res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
-        res.setHeader('Content-Type', 'audio/mpeg');
-        const cdnResp = await fetch(streamUrl);
-        const { Readable } = require('stream');
-        Readable.fromWeb(cdnResp.body).pipe(res);
+        res.setHeader('Content-Type', mimeType);
+
+        if (isHls) {
+            const hlsAudio = await soundcloudService.fetchHlsAudio(trackId, streamUrl);
+            res.setHeader('Content-Length', hlsAudio.buffer.length);
+            res.send(hlsAudio.buffer);
+        } else {
+            const cdnResp = await fetch(streamUrl);
+            const { Readable } = require('stream');
+            Readable.fromWeb(cdnResp.body).pipe(res);
+        }
     } catch (e) {
         res.status(500).send('Download failed: ' + e.message);
     }

@@ -61,12 +61,33 @@ if (fs.existsSync(zipFile)) {
     fs.unlinkSync(zipFile);
 }
 try {
-    execSync(`tar -a -cf "${zipFile}" -C "${distDir}" "MoonPlayer-portable"`, {
+    // Use Windows' own bsdtar: the GNU tar from Git for Windows ignores "-a"
+    // for .zip and silently writes a plain tar, and it reads an absolute
+    // "G:\..." archive path as a remote host ("Cannot connect to G: resolve
+    // failed"). Run from dist/ with relative names and verify the signature.
+    const sysTar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+    const tarBin = fs.existsSync(sysTar) ? `"${sysTar}"` : 'tar';
+    execSync(`${tarBin} -a -cf "${path.basename(zipFile)}" "${path.basename(portableDir)}"`, {
+        cwd: distDir,
         stdio: 'inherit'
     });
+    const signature = fs.readFileSync(zipFile).subarray(0, 2).toString('latin1');
+    if (signature !== 'PK') {
+        throw new Error(`archive is not a zip (signature: ${JSON.stringify(signature)})`);
+    }
     console.log('[Packaging] Created:', zipFile);
 } catch (e) {
     console.warn('[Packaging] Failed to create zip with tar:', e.message);
+    try {
+        console.log('[Packaging] Retrying with Compress-Archive...');
+        execSync(
+            `powershell -NoProfile -Command "Compress-Archive -Path '${portableDir}' -DestinationPath '${zipFile}' -Force"`,
+            { stdio: 'inherit' }
+        );
+        console.log('[Packaging] Created:', zipFile);
+    } catch (e2) {
+        console.warn('[Packaging] Failed to create zip with Compress-Archive:', e2.message);
+    }
 }
 
 console.log('[Packaging] Done! Distribution files are ready in dist/:');

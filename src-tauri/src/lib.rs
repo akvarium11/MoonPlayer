@@ -257,9 +257,11 @@ fn start_server(app_handle: &tauri::AppHandle) -> Result<(), String> {
         cmd.arg(&server_path);
     }
 
+    let parent_pid = std::process::id().to_string();
     cmd.current_dir(&work_dir)
         .env("PORT", SERVER_PORT.to_string())
-        .env("MOONPLAYER_DATA_DIR", data_dir.to_string_lossy().to_string());
+        .env("MOONPLAYER_DATA_DIR", data_dir.to_string_lossy().to_string())
+        .env("TAURI_PARENT_PID", parent_pid);
 
     // Redirect stdout and stderr to server.log for diagnostics
     let log_path = data_dir.join("server.log");
@@ -300,9 +302,9 @@ fn start_server(app_handle: &tauri::AppHandle) -> Result<(), String> {
         *proc_guard = Some(ServerProcess { child });
     }
 
-    // Wait up to 12 seconds for the server to bind
+    // Wait up to 20 seconds for the server to bind
     let start_time = Instant::now();
-    let timeout = Duration::from_secs(12);
+    let timeout = Duration::from_secs(20);
     let mut ready = false;
 
     while start_time.elapsed() < timeout {
@@ -336,6 +338,14 @@ fn start_server(app_handle: &tauri::AppHandle) -> Result<(), String> {
 fn stop_server() {
     let mut proc_guard = SERVER_PROCESS.lock().unwrap();
     if let Some(mut proc) = proc_guard.take() {
+        #[cfg(windows)]
+        {
+            let child_pid = proc.child.id();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &child_pid.to_string()])
+                .creation_flags(0x08000000)
+                .status();
+        }
         let _ = proc.child.kill();
         #[cfg(windows)]
         if let Some(job) = proc.job_handle.take() {
@@ -692,7 +702,7 @@ pub fn run() {
                 .inner_size(1280.0, 820.0)
                 .min_inner_size(900.0, 600.0)
                 .resizable(true)
-                .visible(false)
+                .visible(true)
                 .on_navigation(move |nav_url| {
                     let url_str = nav_url.as_str();
                     let is_http = url_str.starts_with("http://") || url_str.starts_with("https://");
@@ -719,9 +729,12 @@ pub fn run() {
         .on_window_event(|window, event| {
             // Only the main window owns the backend. Closing the sign-in
             // window must not kill the server and freeze the app.
-            if let tauri::WindowEvent::Destroyed = event {
-                if window.label() == "main" {
-                    stop_server();
+            if window.label() == "main" {
+                match event {
+                    tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
+                        stop_server();
+                    }
+                    _ => {}
                 }
             }
         })
