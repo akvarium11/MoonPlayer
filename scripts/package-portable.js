@@ -41,18 +41,61 @@ fs.mkdirSync(portableDir, { recursive: true });
 // Copy executable and dll
 const filesToCopy = ['moonplayer.exe', 'WebView2Loader.dll'];
 for (const file of filesToCopy) {
-    const src = path.join(releaseDir, file);
+    let src = path.join(releaseDir, file);
+    if (!fs.existsSync(src)) {
+        src = path.join(rootDir, 'bin', file);
+    }
     if (fs.existsSync(src)) {
         fs.copyFileSync(src, path.join(portableDir, file));
     }
 }
 
 // Copy server folder
-const serverSrc = path.join(releaseDir, 'server');
+let serverSrc = path.join(releaseDir, 'server');
+if (!fs.existsSync(serverSrc)) {
+    serverSrc = path.join(releaseDir, 'resources', 'server');
+}
 const serverDst = path.join(portableDir, 'server');
 if (fs.existsSync(serverSrc)) {
     console.log('[Packaging] Copying server directory to portable distribution...');
     fs.cpSync(serverSrc, serverDst, { recursive: true });
+} else {
+    console.log('[Packaging] Assembling server directory from project files...');
+    fs.mkdirSync(serverDst, { recursive: true });
+    const serverFiles = ['server.js', 'soundcloud_service.js', 'discord_presence.js', 'discord_config.json', 'package.json'];
+    for (const f of serverFiles) {
+        const srcF = path.join(rootDir, f);
+        if (fs.existsSync(srcF)) {
+            fs.copyFileSync(srcF, path.join(serverDst, f));
+        }
+    }
+    fs.cpSync(path.join(rootDir, 'public'), path.join(serverDst, 'public'), { recursive: true });
+    fs.cpSync(path.join(rootDir, 'assets'), path.join(serverDst, 'assets'), { recursive: true });
+    if (fs.existsSync(path.join(rootDir, 'node_modules'))) {
+        fs.cpSync(path.join(rootDir, 'node_modules'), path.join(serverDst, 'node_modules'), { recursive: true });
+    }
+    const binDst = path.join(serverDst, 'bin');
+    fs.mkdirSync(binDst, { recursive: true });
+    if (fs.existsSync(path.join(rootDir, 'bin', 'node.exe'))) {
+        fs.copyFileSync(path.join(rootDir, 'bin', 'node.exe'), path.join(binDst, 'node.exe'));
+    }
+}
+
+// Prune devDependencies from packaged server
+const devModulesToRemove = ['electron', 'electron-builder', '@tauri-apps', 'app-builder-bin', 'app-builder-lib', 'dmg-builder'];
+for (const mod of devModulesToRemove) {
+    const modPath = path.join(serverDst, 'node_modules', mod);
+    if (fs.existsSync(modPath)) {
+        console.log(`[Packaging] Pruning devDependency ${mod}...`);
+        fs.rmSync(modPath, { recursive: true, force: true });
+    }
+}
+
+// Ensure server/bin/node.exe exists
+const packagedNode = path.join(serverDst, 'bin', 'node.exe');
+if (!fs.existsSync(packagedNode) && fs.existsSync(path.join(rootDir, 'bin', 'node.exe'))) {
+    fs.mkdirSync(path.dirname(packagedNode), { recursive: true });
+    fs.copyFileSync(path.join(rootDir, 'bin', 'node.exe'), packagedNode);
 }
 
 // 3. Create portable zip using Windows built-in tar (fast multi-threaded)

@@ -10,13 +10,15 @@ function getWritableDir() {
     if (process.env.MOONPLAYER_DATA_DIR) {
         return process.env.MOONPLAYER_DATA_DIR;
     }
-    try {
-        const electron = require('electron');
-        const app = electron.app || (electron.remote && electron.remote.app);
-        if (app && app.getPath) {
-            return app.getPath('userData');
-        }
-    } catch (e) {}
+    if (process.versions && process.versions.electron) {
+        try {
+            const electron = require('electron');
+            const app = electron.app || (electron.remote && electron.remote.app);
+            if (app && app.getPath) {
+                return app.getPath('userData');
+            }
+        } catch (e) {}
+    }
     if (process.platform === 'win32' && process.env.APPDATA) {
         return path.join(process.env.APPDATA, 'MoonPlayer');
     }

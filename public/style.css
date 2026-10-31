@@ -101,6 +101,17 @@ body.has-custom-bg {
     }
 }
 
+/* Background Power-Saving Throttling */
+body.app-hidden #snow-container {
+    display: none !important;
+}
+
+body.app-hidden *,
+body.app-hidden *::before,
+body.app-hidden *::after {
+    animation-play-state: paused !important;
+}
+
 /* Click Overlay (Preloader) */
 .overlay {
     position: fixed;
