@@ -13,7 +13,7 @@
     currentView: 'local',
     prevView: 'local',
     viewHistory: [],
-    platform: 'local', // 'local', 'soundcloud', 'all'
+    platform: 'local', // 'local', 'soundcloud'
     searchQuery: '',
     currentTrack: null,
     isPlaying: false,
@@ -444,7 +444,6 @@
       scTracksList: document.getElementById('sc-tracks-list'),
       btnScRefresh: document.getElementById('btn-sc-refresh'),
       scSubtabs: document.querySelectorAll('.sc-subtab'),
-      scSearchInput: document.getElementById('sc-search-input'),
       scSubtitle: document.getElementById('sc-subtitle'),
 
       // History & Queue items
@@ -699,10 +698,26 @@
     } else if (viewName === 'local') {
       targetView = el.viewLocal;
       targetNav = el.navLocal;
+      if (state.platform !== 'local') {
+        state.platform = 'local';
+        const pl = document.getElementById('platform-btn-local');
+        const ps = document.getElementById('platform-btn-soundcloud');
+        if (pl) pl.classList.add('active');
+        if (ps) ps.classList.remove('active');
+        if (el.searchInput) el.searchInput.placeholder = 'Search tracks, artists, or albums...';
+      }
       try { renderLocalView(); } catch (err) { console.error('[RiffUI] renderLocalView error:', err); }
     } else if (viewName === 'soundcloud') {
       targetView = el.viewSoundcloud;
       targetNav = el.navLocal;
+      if (state.platform !== 'soundcloud') {
+        state.platform = 'soundcloud';
+        const pl = document.getElementById('platform-btn-local');
+        const ps = document.getElementById('platform-btn-soundcloud');
+        if (pl) pl.classList.remove('active');
+        if (ps) ps.classList.add('active');
+        if (el.searchInput) el.searchInput.placeholder = 'Search SoundCloud tracks, artists...';
+      }
       try { renderSoundCloudView(); } catch (err) { console.error('[RiffUI] renderSoundCloudView error:', err); }
     } else if (viewName === 'history') {
       targetView = el.viewHistory;
@@ -854,14 +869,14 @@
     row._track = track;
 
     const currentSong = window.MoonPlayer ? window.MoonPlayer.getCurrentSong() : null;
-    const isPlayingThis = currentSong && (
-      (track.path && track.path === currentSong.path) ||
-      (track.id && track.id === currentSong.id) ||
-      (track.globalIndex !== undefined && track.globalIndex === currentSong.globalIndex)
-    );
+    const isLoading = window.MoonPlayer ? window.MoonPlayer.isLoading() : false;
+    const isPlayingThis = currentSong && isSameTrack(track, currentSong);
 
     if (isPlayingThis) {
       row.classList.add('playing');
+      if (isLoading) {
+        row.classList.add('loading');
+      }
     }
 
     const isFav = window.MoonPlayer ? window.MoonPlayer.isLiked(track) : false;
@@ -928,15 +943,22 @@
       if (e.target.closest('button') || e.target.closest('.track-row-actions')) return;
       if (window.MoonPlayer) {
         const cur = window.MoonPlayer.getCurrentTrack();
-        const isCurrent = cur && (
-          (track.path && cur.path && track.path === cur.path) ||
-          (track.id && cur.id && track.id === cur.id) ||
-          (track.globalIndex !== undefined && cur.globalIndex !== undefined && track.globalIndex === cur.globalIndex)
-        );
+        const isCurrent = cur && isSameTrack(track, cur);
         if (isCurrent && !window.MoonPlayer.isLoading()) {
           window.MoonPlayer.togglePlayPause();
           return;
         }
+        // Immediate visual loading feedback
+        row.classList.add('playing');
+        row.classList.add('loading');
+        state.currentTrack = track;
+        state.isPlaying = false;
+        if (el.playIcon) el.playIcon.classList.add('hidden');
+        if (el.pauseIcon) el.pauseIcon.classList.add('hidden');
+        if (el.playbarSpinner) el.playbarSpinner.classList.remove('hidden');
+        syncWithPlayer();
+        highlightPlayingRows();
+
         if (Array.isArray(trackList) && trackList.length > 0) {
           window.MoonPlayer.setQueue(trackList, idx);
         }
@@ -1571,19 +1593,13 @@
 
   function deduplicateTrackList(tracks) {
     if (!Array.isArray(tracks) || tracks.length <= 1) return tracks || [];
-    const sorted = tracks.slice().sort((a, b) => {
-      const aIsLocal = a && a.path && !a.path.startsWith('soundcloud:') && !a.isSoundCloud ? 1 : 0;
-      const bIsLocal = b && b.path && !b.path.startsWith('soundcloud:') && !b.isSoundCloud ? 1 : 0;
-      return bIsLocal - aIsLocal;
-    });
-
     const deduped = [];
     const seenIds = new Set();
     const seenPaths = new Set();
     const seenMetas = new Set();
 
-    for (let i = 0; i < sorted.length; i++) {
-      const t = sorted[i];
+    for (let i = 0; i < tracks.length; i++) {
+      const t = tracks[i];
       if (!t) continue;
 
       const id = t.id ? String(t.id) : null;
@@ -1591,7 +1607,9 @@
       const lp = t.localPath ? t.localPath.toLowerCase().replace(/\\/g, '/') : null;
       const title = (t.title || '').trim().toLowerCase();
       const artist = (t.artist || '').trim().toLowerCase();
-      const meta = (title && artist) ? `${title}:::${artist}` : null;
+      const album = (t.album || '').trim().toLowerCase();
+      // Keep tracks from different albums distinct!
+      const meta = (title && artist && album) ? `${title}:::${artist}:::${album}` : null;
 
       if (id && seenIds.has(id)) continue;
       if (p && seenPaths.has(p)) continue;
@@ -1614,7 +1632,18 @@
     if (window.MoonPlayer && typeof window.MoonPlayer.isSameTrack === 'function') {
       return window.MoonPlayer.isSameTrack(t1, t2);
     }
-    if (t1.id && t2.id && String(t1.id) === String(t2.id)) return true;
+    const sc1 = isSoundCloudSong(t1);
+    const sc2 = isSoundCloudSong(t2);
+    // Strict platform isolation: Local track must NEVER match SoundCloud track
+    if (sc1 !== sc2) return false;
+
+    if (sc1 && sc2) {
+      if (t1.id && t2.id && String(t1.id) === String(t2.id)) return true;
+      if (t1.path && t2.path && t1.path === t2.path) return true;
+      if (t1.permalink_url && t2.permalink_url && t1.permalink_url === t2.permalink_url) return true;
+      return false;
+    }
+
     const p1 = (t1.path || '').toLowerCase().replace(/\\/g, '/');
     const p2 = (t2.path || '').toLowerCase().replace(/\\/g, '/');
     if (p1 && p2 && p1 === p2) return true;
@@ -1622,10 +1651,17 @@
     const lp2 = (t2.localPath || '').toLowerCase().replace(/\\/g, '/');
     if (lp1 && p2 && lp1 === p2) return true;
     if (lp2 && p1 && lp2 === p1) return true;
+
     const title1 = (t1.title || '').trim().toLowerCase();
     const title2 = (t2.title || '').trim().toLowerCase();
     const artist1 = (t1.artist || '').trim().toLowerCase();
     const artist2 = (t2.artist || '').trim().toLowerCase();
+    const album1 = (t1.album || '').trim().toLowerCase();
+    const album2 = (t2.album || '').trim().toLowerCase();
+
+    // If both specify albums and they differ, they are genuinely from different albums!
+    if (album1 && album2 && album1 !== album2) return false;
+
     if (title1 && title1 === title2 && artist1 && artist1 === artist2) return true;
     return false;
   }
@@ -2125,92 +2161,6 @@
 
     if (!listEl) return;
     const subTitle = document.getElementById('sc-subtitle');
-    const q = (document.getElementById('sc-search-input') ? document.getElementById('sc-search-input').value : '').trim();
-
-    // If search query is present, perform categorized online search (Tracks, Albums, Artists)
-    if (q) {
-      if (subTitle) subTitle.textContent = `Searching SoundCloud for "${q}"...`;
-      listEl.innerHTML = `
-        <div class="empty-hint" style="display:flex; flex-direction:column; align-items:center; gap:12px; padding:32px;">
-          <div style="width:24px; height:24px; border:3px solid var(--md-sys-color-primary); border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
-          <span>Searching SoundCloud...</span>
-        </div>
-      `;
-
-      if (scSearchTimeout) clearTimeout(scSearchTimeout);
-      scSearchTimeout = setTimeout(async () => {
-        try {
-          if (!window.MoonPlayer || typeof window.MoonPlayer.searchSoundCloud !== 'function') {
-            throw new Error('SoundCloud search unavailable');
-          }
-          const data = await window.MoonPlayer.searchSoundCloud(q, 'all');
-          const tracks = data.tracks || [];
-          const albums = data.albums || data.playlists || [];
-          const artists = data.artists || [];
-
-          if (subTitle) subTitle.textContent = `${tracks.length} tracks, ${albums.length} albums, ${artists.length} artists`;
-          listEl.innerHTML = '';
-
-          if (artists.length === 0 && albums.length === 0 && tracks.length === 0) {
-            listEl.innerHTML = `<div class="empty-hint">No SoundCloud results found for "${escapeHtml(q)}"</div>`;
-            return;
-          }
-
-          // 1. Artists Section
-          if (artists.length > 0) {
-            const artSec = document.createElement('div');
-            artSec.className = 'riff-search-section';
-            artSec.innerHTML = `
-              <div class="riff-search-section-header">
-                <span class="sc-section-title"><i class="fa-solid fa-user"></i> Artists (${artists.length})</span>
-              </div>
-            `;
-            const scroll = document.createElement('div');
-            scroll.className = 'riff-cards-scroll';
-            makeHorizontalScrollable(scroll);
-            artists.forEach((art) => scroll.appendChild(createArtistCard(art)));
-            artSec.appendChild(scroll);
-            listEl.appendChild(artSec);
-          }
-
-          // 2. Albums Section
-          if (albums.length > 0) {
-            const albSec = document.createElement('div');
-            albSec.className = 'riff-search-section';
-            albSec.innerHTML = `
-              <div class="riff-search-section-header">
-                <span class="sc-section-title"><i class="fa-solid fa-compact-disc"></i> Albums (${albums.length})</span>
-              </div>
-            `;
-            const scroll = document.createElement('div');
-            scroll.className = 'riff-cards-scroll';
-            makeHorizontalScrollable(scroll);
-            albums.forEach((alb) => scroll.appendChild(createAlbumCard(alb)));
-            albSec.appendChild(scroll);
-            listEl.appendChild(albSec);
-          }
-
-          // 3. Tracks Section
-          if (tracks.length > 0) {
-            const trkSec = document.createElement('div');
-            trkSec.className = 'riff-search-section-header';
-            trkSec.innerHTML = `
-              <span class="sc-section-title"><i class="fa-solid fa-music"></i> Tracks (${tracks.length})</span>
-            `;
-            listEl.appendChild(trkSec);
-            tracks.slice(0, 50).forEach((track, idx) => {
-              const row = createTrackRow(track, idx, 'soundcloud', tracks);
-              listEl.appendChild(row);
-            });
-          }
-        } catch (err) {
-          listEl.innerHTML = `<div class="empty-hint">SoundCloud search failed: ${escapeHtml(err.message || 'Error')}</div>`;
-        }
-      }, 300);
-      return;
-    }
-
-    // Empty query -> show normal library / trending / likes
     listEl.innerHTML = '';
     const allSongs = window.MoonPlayer ? window.MoonPlayer.getAllSongs() : [];
     let scSongs = allSongs.filter((s) => isSoundCloudSong(s));
@@ -2952,7 +2902,24 @@
 
     if (!hasArtists && !hasAlbums && !hasTracks) {
       if (el.searchTracksList) {
-        el.searchTracksList.innerHTML = `<div class="empty-hint">No tracks, albums, or artists matching "${escapeHtml(state.searchQuery)}"</div>`;
+        el.searchTracksList.innerHTML = `
+          <div class="empty-hint" style="display:flex; flex-direction:column; align-items:center; gap:12px; padding:32px;">
+            <span>No results matching "${escapeHtml(state.searchQuery)}"</span>
+            ${state.platform !== 'soundcloud' ? `
+              <button class="btn-pill-primary" id="btn-search-sc-fallback" type="button" style="display:inline-flex; align-items:center; gap:8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11.56 8.87V17h8.84c1.99 0 3.6-1.61 3.6-3.6 0-1.85-1.4-3.37-3.21-3.57-.42-2.73-2.77-4.83-5.63-4.83-1.64 0-3.12.69-4.17 1.8A5.98 5.98 0 0 0 11.56 8.87zM8.33 17h1.67V9.75c-.53.2-1.09.52-1.67.92V17zm-3.33 0h1.67v-5.25c-.53.4-1.09.84-1.67 1.33V17zm-3.33 0h1.67v-3.33c-.53.5-1.09 1.05-1.67 1.63V17z"/></svg>
+                Search on SoundCloud
+              </button>
+            ` : ''}
+          </div>
+        `;
+        const btnScFallback = document.getElementById('btn-search-sc-fallback');
+        if (btnScFallback) {
+          btnScFallback.addEventListener('click', () => {
+            const scBtn = document.getElementById('platform-btn-soundcloud');
+            if (scBtn) scBtn.click();
+          });
+        }
       }
       return;
     }
@@ -3018,45 +2985,61 @@
 
     const q = state.searchQuery.toLowerCase();
     const currentQ = state.searchQuery;
+    const searchSubtitle = document.getElementById('search-view-subtitle');
 
-    // In SoundCloud mode: only query SoundCloud
+    // In SoundCloud mode: top search queries SoundCloud directly
     if (state.platform === 'soundcloud') {
-      renderSearchResultsSections([], [], []);
+      if (searchSubtitle) searchSubtitle.textContent = `Searching SoundCloud for "${currentQ}"...`;
+      if (el.searchArtistCardContainer) el.searchArtistCardContainer.innerHTML = '';
+      if (el.searchAlbumsContainer) el.searchAlbumsContainer.innerHTML = '';
+      if (el.searchTracksList) {
+        el.searchTracksList.innerHTML = `
+          <div class="empty-hint" style="display:flex; flex-direction:column; align-items:center; gap:14px; padding:48px 24px;">
+            <div style="width:28px; height:28px; border:3px solid var(--md-sys-color-primary, #ff5500); border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+            <span style="font-size:14px; color:var(--md-sys-color-on-surface-variant, #ccc);">Searching SoundCloud for "${escapeHtml(currentQ)}"...</span>
+          </div>
+        `;
+      }
       if (window.MoonPlayer && typeof window.MoonPlayer.searchSoundCloud === 'function') {
         if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         searchDebounceTimer = setTimeout(() => {
           window.MoonPlayer.searchSoundCloud(currentQ, 'all')
             .then((scData) => {
               if (state.searchQuery !== currentQ) return;
-              if (!scData) return;
+              if (!scData) {
+                renderSearchResultsSections([], [], []);
+                return;
+              }
               const scArtists = scData.artists || [];
               const scAlbums = scData.albums || scData.playlists || [];
               const scTracks = scData.tracks || [];
+              if (window.MoonPlayer && typeof window.MoonPlayer.registerSoundCloudTrack === 'function') {
+                scTracks.forEach(t => window.MoonPlayer.registerSoundCloudTrack(t));
+              }
+              if (searchSubtitle) {
+                searchSubtitle.textContent = `${scTracks.length} tracks, ${scAlbums.length} albums, ${scArtists.length} artists from SoundCloud`;
+              }
               renderSearchResultsSections(scArtists, scAlbums, scTracks);
             })
-            .catch(() => {});
-        }, 250);
+            .catch((err) => {
+              if (state.searchQuery !== currentQ) return;
+              if (el.searchTracksList) {
+                el.searchTracksList.innerHTML = `<div class="empty-hint">SoundCloud search failed: ${escapeHtml(err.message || 'Error')}</div>`;
+              }
+            });
+        }, 220);
       }
       return;
     }
 
-    // 1. Local Library Matching
+    // Local Library Search
     const allSongs = window.MoonPlayer ? window.MoonPlayer.getAllSongs() : [];
     const allArtists = window.MoonPlayer ? window.MoonPlayer.getArtists() : [];
     const allAlbums = window.MoonPlayer ? window.MoonPlayer.getAlbums() : [];
 
-    const isLocalOnly = (state.platform === 'local');
-    const sourceSongs = isLocalOnly
-      ? allSongs.filter((s) => !isSoundCloudSong(s))
-      : allSongs;
-
-    const sourceAlbums = isLocalOnly
-      ? allAlbums.filter((al) => Array.isArray(al.tracks) && al.tracks.some((t) => !isSoundCloudSong(t)))
-      : allAlbums;
-
-    const sourceArtists = isLocalOnly
-      ? allArtists.filter((ar) => Array.isArray(ar.tracks) && ar.tracks.some((t) => !isSoundCloudSong(t)))
-      : allArtists;
+    const sourceSongs = allSongs.filter((s) => !isSoundCloudSong(s));
+    const sourceAlbums = allAlbums.filter((al) => Array.isArray(al.tracks) && al.tracks.some((t) => !isSoundCloudSong(t)));
+    const sourceArtists = allArtists.filter((ar) => Array.isArray(ar.tracks) && ar.tracks.some((t) => !isSoundCloudSong(t)));
 
     let matchedArtists = sourceArtists.filter((a) => a.name && a.name.toLowerCase().includes(q));
     let matchedAlbums = sourceAlbums.filter(
@@ -3069,74 +3052,13 @@
         (s.album && s.album.toLowerCase().includes(q))
     );
 
-    // Deduplicate matched tracks in O(N)
     matchedTracks = deduplicateTrackList(matchedTracks);
 
-    renderSearchResultsSections(matchedArtists, matchedAlbums, matchedTracks);
-
-    // 2. Online SoundCloud Search (only when platform === 'all')
-    if (state.platform === 'all' && window.MoonPlayer && typeof window.MoonPlayer.searchSoundCloud === 'function') {
-      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-      searchDebounceTimer = setTimeout(() => {
-        window.MoonPlayer.searchSoundCloud(currentQ, 'all')
-          .then((scData) => {
-            if (state.searchQuery !== currentQ) return;
-            if (!scData) return;
-            const scArtists = scData.artists || [];
-            const scAlbums = scData.albums || scData.playlists || [];
-            const scTracks = scData.tracks || [];
-
-            // Combine with local results
-            const combinedArtists = [...matchedArtists];
-            const seenArtistNames = new Set(combinedArtists.map(a => (a.name || a.username || '').toLowerCase()));
-            scArtists.forEach((sa) => {
-              const name = (sa.name || sa.username || '').toLowerCase();
-              if (name && !seenArtistNames.has(name)) {
-                seenArtistNames.add(name);
-                combinedArtists.push(sa);
-              }
-            });
-
-            const combinedAlbums = [...matchedAlbums];
-            const seenAlbumTitles = new Set(combinedAlbums.map(al => (al.title || '').toLowerCase()));
-            scAlbums.forEach((sal) => {
-              const title = (sal.title || '').toLowerCase();
-              if (title && !seenAlbumTitles.has(title)) {
-                seenAlbumTitles.add(title);
-                combinedAlbums.push(sal);
-              }
-            });
-
-            const combinedTracks = [...matchedTracks];
-            const seenOnlineIds = new Set();
-            const seenOnlineMetas = new Set();
-            for (let i = 0; i < combinedTracks.length; i++) {
-              const t = combinedTracks[i];
-              if (t.id) seenOnlineIds.add(String(t.id));
-              const title = (t.title || '').trim().toLowerCase();
-              const artist = (t.artist || '').trim().toLowerCase();
-              if (title && artist) seenOnlineMetas.add(`${title}:::${artist}`);
-            }
-
-            scTracks.forEach((st) => {
-              const stId = st.id ? String(st.id) : null;
-              const stTitle = (st.title || '').trim().toLowerCase();
-              const stArtist = (st.artist || '').trim().toLowerCase();
-              const stMeta = (stTitle && stArtist) ? `${stTitle}:::${stArtist}` : null;
-
-              if (stId && seenOnlineIds.has(stId)) return;
-              if (stMeta && seenOnlineMetas.has(stMeta)) return;
-
-              if (stId) seenOnlineIds.add(stId);
-              if (stMeta) seenOnlineMetas.add(stMeta);
-              combinedTracks.push(st);
-            });
-
-            renderSearchResultsSections(combinedArtists, combinedAlbums, combinedTracks);
-          })
-          .catch(() => {});
-      }, 300);
+    if (searchSubtitle) {
+      searchSubtitle.textContent = `${matchedTracks.length} tracks, ${matchedAlbums.length} albums, ${matchedArtists.length} artists in local library`;
     }
+
+    renderSearchResultsSections(matchedArtists, matchedAlbums, matchedTracks);
   }
 
 
@@ -4317,6 +4239,20 @@
 
   // Bind Event Listeners
   function bindEvents() {
+    // Scroll guard: prevent any scroll displacement on window and root containers
+    window.addEventListener('scroll', () => {
+      if (window.scrollX !== 0 || window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+      }
+    }, { passive: true });
+
+    const riffRootEl = document.getElementById('riff-root');
+    if (riffRootEl) {
+      riffRootEl.addEventListener('scroll', () => {
+        if (riffRootEl.scrollTop !== 0) riffRootEl.scrollTop = 0;
+        if (riffRootEl.scrollLeft !== 0) riffRootEl.scrollLeft = 0;
+      }, { passive: true });
+    }
     // 1. UI Switcher Button in Titlebar -> Switch to MoonPlayer Classic
     if (el.btnSwitchToMoon) {
       el.btnSwitchToMoon.addEventListener('click', () => {
@@ -4377,31 +4313,36 @@
     // Top Header Platform Switcher (Local vs SoundCloud)
     const platformBtnLocal = document.getElementById('platform-btn-local');
     const platformBtnSoundCloud = document.getElementById('platform-btn-soundcloud');
-    if (platformBtnLocal) {
-      platformBtnLocal.addEventListener('click', () => {
-        state.platform = 'local';
-        platformBtnLocal.classList.add('active');
-        if (platformBtnSoundCloud) platformBtnSoundCloud.classList.remove('active');
-        if (state.currentView === 'soundcloud') {
+
+    function setActivePlatform(plat, doSwitchView = true) {
+      state.platform = plat;
+      if (platformBtnLocal) platformBtnLocal.classList.toggle('active', plat === 'local');
+      if (platformBtnSoundCloud) platformBtnSoundCloud.classList.toggle('active', plat === 'soundcloud');
+
+      if (el.searchInput) {
+        el.searchInput.placeholder = (plat === 'soundcloud')
+          ? 'Search SoundCloud tracks, artists...'
+          : 'Search tracks, artists, or albums...';
+      }
+
+      if (doSwitchView) {
+        if (plat === 'soundcloud' && state.currentView === 'local') {
+          switchView('soundcloud');
+        } else if (plat === 'local' && state.currentView === 'soundcloud') {
           switchView('local');
         }
-        if (el.searchInput && el.searchInput.value.trim()) {
-          performSearch(el.searchInput.value);
-        }
-      });
+      }
+
+      if (el.searchInput && el.searchInput.value.trim()) {
+        performSearch(el.searchInput.value);
+      }
+    }
+
+    if (platformBtnLocal) {
+      platformBtnLocal.addEventListener('click', () => setActivePlatform('local'));
     }
     if (platformBtnSoundCloud) {
-      platformBtnSoundCloud.addEventListener('click', () => {
-        state.platform = 'soundcloud';
-        platformBtnSoundCloud.classList.add('active');
-        if (platformBtnLocal) platformBtnLocal.classList.remove('active');
-        if (state.currentView === 'local') {
-          switchView('soundcloud');
-        }
-        if (el.searchInput && el.searchInput.value.trim()) {
-          performSearch(el.searchInput.value);
-        }
-      });
+      platformBtnSoundCloud.addEventListener('click', () => setActivePlatform('soundcloud'));
     }
 
     // SoundCloud subtabs & buttons
@@ -4412,12 +4353,6 @@
         renderSoundCloudView(sctab);
       });
     });
-    const scSearchInput = document.getElementById('sc-search-input');
-    if (scSearchInput) {
-      scSearchInput.addEventListener('input', () => {
-        renderSoundCloudView();
-      });
-    }
     const btnScRefresh = document.getElementById('btn-sc-refresh');
     if (btnScRefresh) {
       btnScRefresh.addEventListener('click', () => {
@@ -4476,7 +4411,7 @@
           }
         } else {
           if (state.currentView === 'search') {
-            switchView(state.prevView || 'local');
+            switchView((state.prevView && state.prevView !== 'search') ? state.prevView : (state.platform === 'soundcloud' ? 'soundcloud' : 'local'));
           }
         }
         if (el.searchClearBtn) {
@@ -4518,7 +4453,7 @@
           el.searchInput.value = '';
           el.searchClearBtn.classList.add('hidden');
           if (state.currentView === 'search') {
-            switchView(state.prevView || 'local');
+            switchView((state.prevView && state.prevView !== 'search') ? state.prevView : (state.platform === 'soundcloud' ? 'soundcloud' : 'local'));
           }
           performSearch('');
         }
@@ -4903,6 +4838,11 @@
         syncWithPlayer();
       });
 
+      window.MoonPlayer.on('loadingStateChange', () => {
+        updatePlayPauseButton();
+        highlightPlayingRows();
+      });
+
       window.MoonPlayer.on('volumeChange', (payload) => {
         let v = 0.5;
         let isMuted = false;
@@ -4924,6 +4864,14 @@
 
       const bgAudioEl = typeof window.MoonPlayer.getAudio === 'function' ? window.MoonPlayer.getAudio() : document.getElementById('bg-audio');
       if (bgAudioEl) {
+        bgAudioEl.addEventListener('loadstart', () => {
+          updatePlayPauseButton();
+          highlightPlayingRows();
+        });
+        bgAudioEl.addEventListener('waiting', () => {
+          updatePlayPauseButton();
+          highlightPlayingRows();
+        });
         bgAudioEl.addEventListener('playing', () => {
           state.isPlaying = true;
           updatePlayPauseButton();
@@ -5018,15 +4966,13 @@
 
   function highlightPlayingRows() {
     const current = window.MoonPlayer ? window.MoonPlayer.getCurrentSong() : null;
+    const isLoading = window.MoonPlayer ? window.MoonPlayer.isLoading() : false;
     const allRows = document.querySelectorAll('.mode-riff .track-row');
     allRows.forEach((row) => {
       const t = row._track;
-      const isPlaying = current && t && (
-        (t.path && t.path === current.path) ||
-        (t.id && t.id === current.id) ||
-        (t.globalIndex !== undefined && t.globalIndex === current.globalIndex)
-      );
-      row.classList.toggle('playing', !!isPlaying);
+      const isMatch = !!(current && t && isSameTrack(t, current));
+      row.classList.toggle('playing', isMatch);
+      row.classList.toggle('loading', isMatch && isLoading);
     });
   }
 

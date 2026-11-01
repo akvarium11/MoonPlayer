@@ -50,35 +50,29 @@ for (const file of filesToCopy) {
     }
 }
 
-// Copy server folder
-let serverSrc = path.join(releaseDir, 'server');
-if (!fs.existsSync(serverSrc)) {
-    serverSrc = path.join(releaseDir, 'resources', 'server');
-}
+// Copy server folder fresh from project files
 const serverDst = path.join(portableDir, 'server');
-if (fs.existsSync(serverSrc)) {
-    console.log('[Packaging] Copying server directory to portable distribution...');
-    fs.cpSync(serverSrc, serverDst, { recursive: true });
-} else {
-    console.log('[Packaging] Assembling server directory from project files...');
-    fs.mkdirSync(serverDst, { recursive: true });
-    const serverFiles = ['server.js', 'soundcloud_service.js', 'discord_presence.js', 'discord_config.json', 'package.json'];
-    for (const f of serverFiles) {
-        const srcF = path.join(rootDir, f);
-        if (fs.existsSync(srcF)) {
-            fs.copyFileSync(srcF, path.join(serverDst, f));
-        }
+console.log('[Packaging] Assembling server directory fresh from project files...');
+if (fs.existsSync(serverDst)) {
+    fs.rmSync(serverDst, { recursive: true, force: true });
+}
+fs.mkdirSync(serverDst, { recursive: true });
+const serverFiles = ['server.js', 'soundcloud_service.js', 'discord_presence.js', 'discord_config.json', 'package.json'];
+for (const f of serverFiles) {
+    const srcF = path.join(rootDir, f);
+    if (fs.existsSync(srcF)) {
+        fs.copyFileSync(srcF, path.join(serverDst, f));
     }
-    fs.cpSync(path.join(rootDir, 'public'), path.join(serverDst, 'public'), { recursive: true });
-    fs.cpSync(path.join(rootDir, 'assets'), path.join(serverDst, 'assets'), { recursive: true });
-    if (fs.existsSync(path.join(rootDir, 'node_modules'))) {
-        fs.cpSync(path.join(rootDir, 'node_modules'), path.join(serverDst, 'node_modules'), { recursive: true });
-    }
-    const binDst = path.join(serverDst, 'bin');
-    fs.mkdirSync(binDst, { recursive: true });
-    if (fs.existsSync(path.join(rootDir, 'bin', 'node.exe'))) {
-        fs.copyFileSync(path.join(rootDir, 'bin', 'node.exe'), path.join(binDst, 'node.exe'));
-    }
+}
+fs.cpSync(path.join(rootDir, 'public'), path.join(serverDst, 'public'), { recursive: true });
+fs.cpSync(path.join(rootDir, 'assets'), path.join(serverDst, 'assets'), { recursive: true });
+if (fs.existsSync(path.join(rootDir, 'node_modules'))) {
+    fs.cpSync(path.join(rootDir, 'node_modules'), path.join(serverDst, 'node_modules'), { recursive: true });
+}
+const binDst = path.join(serverDst, 'bin');
+fs.mkdirSync(binDst, { recursive: true });
+if (fs.existsSync(path.join(rootDir, 'bin', 'node.exe'))) {
+    fs.copyFileSync(path.join(rootDir, 'bin', 'node.exe'), path.join(binDst, 'node.exe'));
 }
 
 // Prune devDependencies from packaged server

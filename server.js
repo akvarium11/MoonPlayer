@@ -1230,6 +1230,11 @@ app.get('/api/soundcloud/stream/:id', async (req, res) => {
     await soundcloudService.pipeStream(req.params.id, req.headers, res);
 });
 
+app.get('/api/soundcloud/preload/:id', (req, res) => {
+    soundcloudService.preloadTrack(req.params.id);
+    res.json({ success: true });
+});
+
 // Download SoundCloud track to local MoonPlayer library
 app.post('/api/soundcloud/download-to-library', async (req, res) => {
     const { trackId } = req.body;

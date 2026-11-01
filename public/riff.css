@@ -386,38 +386,36 @@ body.is-playing .shape-triangle {
 }
 
 .search-box-wrapper {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translateY(-50%) translateX(-50%);
-  width: min(640px, calc(100% - 96px));
-  max-width: 640px;
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  transform: none;
+  flex: 1 1 auto;
+  width: 100%;
   max-width: 560px;
+  min-width: 140px;
   margin: 0;
   z-index: 2;
-  transition: left 0.35s cubic-bezier(0.2, 0, 0, 1),
-              transform 0.35s cubic-bezier(0.2, 0, 0, 1),
-              width 0.35s cubic-bezier(0.2, 0, 0, 1),
-              max-width 0.35s cubic-bezier(0.2, 0, 0, 1);
+  box-sizing: border-box;
+  transition: max-width 0.25s ease;
 }
 
 .top-nav.search-pos-middle .search-box-wrapper,
+.top-nav.search-pos-left .search-box-wrapper,
+.top-nav.search-pos-right .search-box-wrapper,
 .top-nav:not(.search-pos-left):not(.search-pos-right) .search-box-wrapper {
-  left: 50%;
-  transform: translateY(-50%) translateX(-50%);
-  width: min(560px, max(200px, calc(100% - (var(--engine-w, 435px) + 36px) * 2)));
-}
-
-.top-nav.search-pos-left .search-box-wrapper {
-  left: 24px;
-  transform: translateY(-50%) translateX(0);
-  width: min(560px, calc(100% - 48px - var(--engine-w, 435px) - var(--engine-gap, 16px)));
-}
-
-.top-nav.search-pos-right .search-box-wrapper {
-  left: calc(100% - 24px - var(--engine-w, 435px) - var(--engine-gap, 16px));
-  transform: translateY(-50%) translateX(-100%);
-  width: min(560px, calc(100% - 48px - var(--engine-w, 435px) - var(--engine-gap, 16px)));
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  transform: none !important;
+  width: 100% !important;
+  max-width: 560px !important;
+  min-width: 140px !important;
+  flex: 1 1 auto !important;
+  box-sizing: border-box !important;
 }
 
 .platform-switch-container {
@@ -1440,6 +1438,9 @@ body.perf .my-wave-ambient-light {
   border-radius: var(--md-shape-corner-full);
   padding: 8px 16px;
   margin-bottom: 16px;
+  box-sizing: border-box !important;
+  max-width: 100% !important;
+  width: 100% !important;
   transition: background var(--transition-fast);
 }
 .view-search-box:focus-within {
@@ -1500,6 +1501,32 @@ body.perf .my-wave-ambient-light {
 }
 .track-row.playing {
   background-color: var(--md-sys-color-surface-container-high);
+}
+.track-row.loading {
+  background-color: var(--md-sys-color-surface-container-high);
+}
+.track-row.loading .track-row-index {
+  position: relative !important;
+  color: transparent !important;
+}
+.track-row.loading .track-row-index::after {
+  content: '';
+  box-sizing: border-box;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 15px;
+  height: 15px;
+  margin-top: -7.5px;
+  margin-left: -7.5px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--md-sys-color-primary, #a8c7fa);
+  border-radius: 50%;
+  animation: riff-track-spin 0.75s linear infinite;
+}
+@keyframes riff-track-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 .track-row-index {
   font-size: calc(12px * var(--font-scale, 1));
@@ -4592,25 +4619,40 @@ button:active svg, button:active img, button:active i, .btn-icon-pill:active svg
 .playlist-actions {
   display: flex !important;
   align-items: center !important;
-  gap: 12px !important;
+  flex-wrap: wrap !important;
+  gap: 8px 10px !important;
   margin-top: 12px !important;
-  flex-shrink: 0;
+  max-width: 100% !important;
+  min-width: 0 !important;
 }
 
 .playlist-actions #btn-play-playlist {
   width: 44px !important;
   height: 44px !important;
   min-width: 44px !important;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--md-sys-color-primary);
-  color: var(--md-sys-color-on-primary);
-  border: none;
-  cursor: pointer;
-  transition: transform 0.15s ease, background 0.15s ease;
+  max-width: 44px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 50% !important;
+  background: var(--md-sys-color-primary) !important;
+  color: var(--md-sys-color-on-primary) !important;
+  border: none !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+  transition: transform 0.15s ease, background 0.15s ease !important;
+}
+
+.playlist-actions #btn-play-playlist span {
+  display: none !important;
+}
+
+.playlist-actions #btn-play-playlist svg {
+  width: 22px !important;
+  height: 22px !important;
+  margin-left: 2px !important;
+  display: block !important;
 }
 
 .playlist-actions #btn-play-playlist:hover {
@@ -4645,14 +4687,30 @@ button:active svg, button:active img, button:active i, .btn-icon-pill:active svg
   transform: scale(0.92);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 768px), (max-aspect-ratio: 1/1) {
   .playlist-detail-header {
-    flex-wrap: wrap;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 16px !important;
+    padding: 20px 16px !important;
+  }
+  .playlist-detail-header #playlist-detail-cover,
+  .playlist-detail-header .playlist-cover-wrapper,
+  .playlist-detail-header .playlist-cover-art,
+  .playlist-detail-header .cover-single-img,
+  .playlist-detail-header img {
+    width: 140px !important;
+    height: 140px !important;
+    min-width: 140px !important;
+  }
+  .playlist-meta {
+    width: 100% !important;
+    min-width: 0 !important;
   }
   .playlist-actions {
-    margin-left: 0;
-    width: 100%;
-    justify-content: flex-start;
+    flex-wrap: wrap !important;
+    width: 100% !important;
+    gap: 8px 10px !important;
   }
 }
 
@@ -8981,12 +9039,74 @@ body:not(.mode-riff) #riff-root {
    ROOT SCROLL LOCK TO PREVENT DISPLACEMENT (IMAGE(2).PNG)
    ======================================================== */
 html.mode-riff,
-body.mode-riff,
-#riff-root,
-.app-layout {
+body.mode-riff {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  overflow-x: hidden !important;
+  overflow-y: hidden !important;
+  overscroll-behavior: none !important;
+  position: fixed !important;
+  inset: 0 !important;
+}
+
+body.mode-riff #riff-root {
+  width: 100vw !important;
+  max-width: 100vw !important;
   height: 100vh !important;
   max-height: 100vh !important;
   overflow: hidden !important;
+}
+
+.top-nav {
+  position: sticky !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  flex: 0 0 64px !important;
+  height: 64px !important;
+  max-height: 64px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  z-index: 50 !important;
+  overflow: visible !important;
+}
+
+.search-box-wrapper {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
+  flex: 1 1 auto !important;
+  max-width: 560px !important;
+  min-width: 140px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.app-layout {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  height: calc(100vh - 64px) !important;
+  max-height: calc(100vh - 64px) !important;
+  overflow: hidden !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: none !important;
+  box-sizing: border-box !important;
+}
+
+.main-content {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  box-sizing: border-box !important;
 }
 
 /* ========================================================
@@ -9041,10 +9161,18 @@ body.mode-riff #riff-root {
 }
 body.riff-ui-scaled.mode-riff #riff-root {
   width: calc(100vw / var(--riff-ui-scale, 1)) !important;
+  min-width: calc(100vw / var(--riff-ui-scale, 1)) !important;
+  max-width: calc(100vw / var(--riff-ui-scale, 1)) !important;
   height: calc(100vh / var(--riff-ui-scale, 1)) !important;
   max-height: calc(100vh / var(--riff-ui-scale, 1)) !important;
   transform: scale(var(--riff-ui-scale, 1)) !important;
+  transform-origin: top left !important;
   will-change: transform;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: auto !important;
+  bottom: auto !important;
 }
 /* Inner shells are pinned to 100vh, which does not follow the inverse-sized
    root - at <100% they stopped short of the bottom and left a gap. Let flex

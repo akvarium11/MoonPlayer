@@ -550,6 +550,9 @@ body.is-android .overlay {
     display: flex;
     gap: 10px;
     flex-shrink: 0;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
 }
 
 /* Dropdown styling */

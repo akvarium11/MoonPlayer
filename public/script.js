@@ -371,11 +371,32 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function isSoundCloudTrack(t) {
+        if (!t) return false;
+        return !!(
+            t.isSoundCloud ||
+            t.platform === 'soundcloud' ||
+            (t.path && String(t.path).startsWith('soundcloud:')) ||
+            (t.format && t.format === 'soundcloud')
+        );
+    }
+
     function isSameTrack(t1, t2) {
         if (!t1 || !t2) return false;
         if (t1 === t2) return true;
-        if (t1.id && t2.id && String(t1.id) === String(t2.id)) return true;
-        
+
+        const sc1 = isSoundCloudTrack(t1);
+        const sc2 = isSoundCloudTrack(t2);
+        // Strict platform isolation: Local track must NEVER match SoundCloud track
+        if (sc1 !== sc2) return false;
+
+        if (sc1 && sc2) {
+            if (t1.id && t2.id && String(t1.id) === String(t2.id)) return true;
+            if (t1.path && t2.path && t1.path === t2.path) return true;
+            if (t1.permalink_url && t2.permalink_url && t1.permalink_url === t2.permalink_url) return true;
+            return false;
+        }
+
         const p1 = normalizeTrackPath(t1.path || t1.localPath || t1.src || t1.url);
         const p2 = normalizeTrackPath(t2.path || t2.localPath || t2.src || t2.url);
         if (p1 && p2 && p1 === p2) return true;
@@ -387,10 +408,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawTitle2 = String(t2.title).trim().toLowerCase();
             const rawArtist1 = String(t1.artist || '').trim().toLowerCase();
             const rawArtist2 = String(t2.artist || '').trim().toLowerCase();
+            const rawAlbum1 = String(t1.album || '').trim().toLowerCase();
+            const rawAlbum2 = String(t2.album || '').trim().toLowerCase();
+
+            // If albums are specified on both and differ, they are genuinely from different albums!
+            if (rawAlbum1 && rawAlbum2 && rawAlbum1 !== rawAlbum2) {
+                return false;
+            }
             
             const dur1 = typeof t1.duration === 'number' && !isNaN(t1.duration) ? t1.duration : 0;
             const dur2 = typeof t2.duration === 'number' && !isNaN(t2.duration) ? t2.duration : 0;
-            const durMatch = (!dur1 || !dur2 || Math.abs(dur1 - dur2) <= 4);
+            const durMatch = (!dur1 || !dur2 || Math.abs(dur1 - dur2) <= 3);
 
             if (rawTitle1 === rawTitle2 && rawArtist1 === rawArtist2 && durMatch) return true;
 
@@ -440,21 +468,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const seenPaths = new Set();
         const seenMetas = new Set();
 
-        const sorted = [...songList].sort((a, b) => {
-            const aIsLocal = (a && a.path && !a.path.startsWith('soundcloud:') && !a.isSoundCloud) ? 1 : 0;
-            const bIsLocal = (b && b.path && !b.path.startsWith('soundcloud:') && !b.isSoundCloud) ? 1 : 0;
-            return bIsLocal - aIsLocal;
-        });
-
-        for (const song of sorted) {
+        for (const song of songList) {
             if (!song) continue;
             ensureTrackStreamUrl(song);
 
-            const sId = song.id ? String(song.id) : null;
+            const isSC = isSoundCloudTrack(song);
+            const sId = (isSC && song.id) ? String(song.id) : null;
             const sPath = normalizeTrackPath(song.path || song.localPath || song.src || song.url);
             const normTitle = normalizeTrackString(song.title);
             const normArtist = normalizeTrackString(song.artist);
-            const sMeta = (normTitle && normArtist) ? `${normTitle}:::${normArtist}` : null;
+            const normAlbum = normalizeTrackString(song.album);
+            // Deduplication key MUST include album so same song in different albums is kept!
+            const sMeta = (normTitle && normArtist && normAlbum) ? `${normTitle}:::${normArtist}:::${normAlbum}` : null;
 
             let isDup = false;
             if (sId && seenIds.has(sId)) isDup = true;
@@ -467,8 +492,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isDup) {
                 const existing = unique.find(u => isSameTrack(u, song));
                 if (existing) {
-                    if (!existing.id && song.id) existing.id = song.id;
-                    if (!existing.soundCloudId && song.id) existing.soundCloudId = song.id;
+                    if (!existing.id && song.id && isSC) existing.id = song.id;
+                    if (!existing.soundCloudId && song.id && isSC) existing.soundCloudId = song.id;
                     if (!existing.duration && song.duration) existing.duration = song.duration;
                     if (song.isDownloadedLocally) existing.isDownloadedLocally = true;
                 }
@@ -721,17 +746,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         saveSoundCloudCache();
 
-        let existing = allSongs.find(s => s.path === track.path || (track.id && s.id && String(s.id) === String(track.id)) || isSameTrack(s, track));
+        // ONLY match other registered SoundCloud tracks, NEVER hijack local songs!
+        let existing = allSongs.find(s => isSoundCloudTrack(s) && (s.path === track.path || (track.id && s.id && String(s.id) === String(track.id))));
         if (existing) {
-            const isLocal = existing.path && !existing.path.startsWith('soundcloud:') && !existing.isSoundCloud;
-            if (isLocal) {
-                if (!existing.id && track.id) existing.id = track.id;
-                if (!existing.soundCloudId && track.id) existing.soundCloudId = track.id;
-                if (!existing.cover || existing.cover === DEFAULT_COVER) existing.cover = track.cover;
-                existing.isDownloadedLocally = true;
-            } else {
-                Object.assign(existing, track);
-            }
+            Object.assign(existing, track);
             if (existing.globalIndex === undefined || typeof existing.globalIndex !== 'number') {
                 existing.globalIndex = allSongs.indexOf(existing);
             }
@@ -5082,6 +5100,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let isTrackLoading = false;
 
+    function setIsTrackLoading(loading) {
+        const val = !!loading;
+        if (isTrackLoading === val) return;
+        isTrackLoading = val;
+        if (window.MoonPlayer && typeof window.MoonPlayer.emit === 'function') {
+            window.MoonPlayer.emit('loadingStateChange', isTrackLoading);
+        }
+    }
+
     // ---------------------------------------------------------------
     // Cross-fade volume handling
     // ---------------------------------------------------------------
@@ -5204,7 +5231,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         currentlyPlayingIndex = globalIdx;
-        isTrackLoading = true;
+        setIsTrackLoading(true);
 
         // Ensure playQueue and index are in sync with what is being played
         if (playQueue.length === 0 || !playQueue.some(s => s.globalIndex === globalIdx)) {
@@ -5396,6 +5423,14 @@ document.addEventListener('DOMContentLoaded', () => {
             syncAndroidPlayback(song, 'playing');
         }
 
+        // Background preload next track if it is SoundCloud
+        try {
+            const nextTrack = playQueue && playQueue[playQueueIndex + 1];
+            if (nextTrack && isSoundCloudTrack(nextTrack) && nextTrack.id) {
+                fetch('/api/soundcloud/preload/' + nextTrack.id).catch(() => {});
+            }
+        } catch (e) {}
+
         // Fetch cover from server / Last.fm if track has no embedded picture
         if (!song.cover || song.cover === DEFAULT_COVER) {
             fetch(`/api/cover-art?title=${encodeURIComponent(song.title || '')}&artist=${encodeURIComponent(song.artist || '')}&album=${encodeURIComponent(song.album || '')}`)
@@ -5432,7 +5467,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window._trackLoadingTimeout = setTimeout(() => {
             if (isTrackLoading && currentlyPlayingIndex === globalIdx) {
                 console.warn('[playTrack] Loading watchdog timeout reached, resetting loading lock');
-                isTrackLoading = false;
+                setIsTrackLoading(false);
                 if (!bgAudio.paused) {
                     isPlaying = true;
                     playIcon.className = 'fa-solid fa-pause';
@@ -5455,7 +5490,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         window._trackLoadingTimeout = null;
                     }
                     if (currentlyPlayingIndex !== globalIdx) return;
-                    isTrackLoading = false;
+                    setIsTrackLoading(false);
                     isPlaying = true;
                     playIcon.className = 'fa-solid fa-pause';
                     if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', true);
@@ -5481,7 +5516,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                             clearTimeout(window._trackLoadingTimeout);
                                             window._trackLoadingTimeout = null;
                                         }
-                                        isTrackLoading = false;
+                                        setIsTrackLoading(false);
                                         isPlaying = true;
                                         playIcon.className = 'fa-solid fa-pause';
                                         if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', true);
@@ -5489,7 +5524,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     }).catch(retryErr => {
                                         console.warn("[playTrack] Play retry failed:", retryErr);
                                         if (currentlyPlayingIndex === globalIdx) {
-                                            isTrackLoading = false;
+                                            setIsTrackLoading(false);
                                             isPlaying = false;
                                             playIcon.className = 'fa-solid fa-play';
                                             if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', false);
@@ -5513,7 +5548,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         window._trackLoadingTimeout = null;
                     }
                     if (currentlyPlayingIndex === globalIdx) {
-                        isTrackLoading = false;
+                        setIsTrackLoading(false);
                         isPlaying = false;
                         playIcon.className = 'fa-solid fa-play';
                         if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', false);
@@ -5604,7 +5639,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 window._trackLoadingTimeout = null;
             }
             bgAudio.pause();
-            isTrackLoading = false;
+            setIsTrackLoading(false);
             isPlaying = false;
             playIcon.className = 'fa-solid fa-play';
             if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', false);
@@ -5976,7 +6011,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(window._trackLoadingTimeout);
             window._trackLoadingTimeout = null;
         }
-        isTrackLoading = false;
+        setIsTrackLoading(false);
         isPlaying = true;
         playIcon.className = 'fa-solid fa-pause';
         setCoverAnimationState(true);
@@ -5986,7 +6021,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bgAudio.addEventListener('canplay', () => {
         if (!bgAudio.paused || isTrackLoading) {
-            isTrackLoading = false;
+            setIsTrackLoading(false);
             if (!bgAudio.paused) {
                 isPlaying = true;
                 playIcon.className = 'fa-solid fa-pause';
@@ -5998,7 +6033,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bgAudio.addEventListener('loadeddata', () => {
         if (!bgAudio.paused || isTrackLoading) {
-            isTrackLoading = false;
+            setIsTrackLoading(false);
             if (!bgAudio.paused) {
                 isPlaying = true;
                 playIcon.className = 'fa-solid fa-pause';
@@ -6033,7 +6068,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(window._trackLoadingTimeout);
             window._trackLoadingTimeout = null;
         }
-        isTrackLoading = false;
+        setIsTrackLoading(false);
         isPlaying = false;
         playIcon.className = 'fa-solid fa-play';
         setCoverAnimationState(false);
@@ -6044,7 +6079,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const current = bgAudio.currentTime;
         const duration = bgAudio.duration;
         if (isTrackLoading && !bgAudio.paused && current > 0) {
-            isTrackLoading = false;
+            setIsTrackLoading(false);
             isPlaying = true;
             playIcon.className = 'fa-solid fa-pause';
             if (window.MoonPlayer) window.MoonPlayer.emit('playStateChange', true);

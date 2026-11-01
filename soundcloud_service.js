@@ -39,12 +39,108 @@ class SoundCloudService {
         this.trackAudioCache = new Map(); // id -> { buffer, mimeType, expiresAt }
         this.inFlightTrackAudio = new Map(); // id -> Promise<{ buffer, mimeType }>
         this.currentUser = null;
+        this.clientId = 'OGA0P5R5U4CpyooNe9OUcnjIMxao2hB2';
+        this.inFlightClientId = null;
 
         if (this.config.enabled && this.config.oauthToken) {
             this.verifyToken(this.config.oauthToken).catch(err => {
                 console.error('[SoundCloud] Initial token verification failed:', err.message);
             });
         }
+    }
+
+    
+    async getClientId(forceRefresh = false) {
+        if (!forceRefresh && this.clientId) {
+            return this.clientId;
+        }
+        if (this.inFlightClientId) {
+            return await this.inFlightClientId;
+        }
+        this.inFlightClientId = (async () => {
+            try {
+                const pageResp = await fetch('https://soundcloud.com', {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+                    }
+                });
+                if (pageResp.ok) {
+                    const html = await pageResp.text();
+                    const scriptUrls = [...html.matchAll(/<script[^>]+src="([^">]+.js)"/g)].map(m => m[1]);
+                    for (let i = scriptUrls.length - 1; i >= 0; i--) {
+                        const sUrl = scriptUrls[i];
+                        try {
+                            const jsResp = await fetch(sUrl, {
+                                headers: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                                }
+                            });
+                            if (jsResp.ok) {
+                                const js = await jsResp.text();
+                                const match = js.match(/client_id[:=]["']([a-zA-Z0-9]{32})["']/);
+                                if (match && match[1]) {
+                                    this.clientId = match[1];
+                                    return this.clientId;
+                                }
+                            }
+                        } catch {}
+                    }
+                }
+            } catch (err) {
+                console.warn('[SoundCloud] Failed to scrape fresh client_id:', err.message);
+            } finally {
+                this.inFlightClientId = null;
+            }
+            if (!this.clientId) {
+                this.clientId = 'OGA0P5R5U4CpyooNe9OUcnjIMxao2hB2';
+            }
+            return this.clientId;
+        })();
+        return await this.inFlightClientId;
+    }
+
+    appendClientId(urlStr, clientId) {
+        if (!clientId) return urlStr;
+        if (urlStr.includes('client_id=')) return urlStr;
+        const separator = urlStr.includes('?') ? '&' : '?';
+        return `${urlStr}${separator}client_id=${encodeURIComponent(clientId)}`;
+    }
+
+    async apiFetch(url, options = {}) {
+        const hasToken = !!(this.config.oauthToken && this.config.oauthToken.trim());
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            ...(options.headers || {})
+        };
+
+        if (hasToken) {
+            headers['Authorization'] = `OAuth ${this.config.oauthToken.trim()}`;
+            try {
+                const resp = await fetch(url, { ...options, headers });
+                if (resp.status !== 401 && resp.status !== 403) {
+                    return resp;
+                }
+                console.warn(`[SoundCloud] Request with OAuth token failed (${resp.status}), falling back to public client_id`);
+            } catch (err) {
+                console.warn('[SoundCloud] OAuth request network error, trying client_id:', err.message);
+            }
+        }
+
+        // Try with client_id
+        let cId = await this.getClientId();
+        const fallbackHeaders = { ...headers };
+        delete fallbackHeaders['Authorization'];
+        let clientUrl = this.appendClientId(url, cId);
+        let resp = await fetch(clientUrl, { ...options, headers: fallbackHeaders });
+
+        if ((resp.status === 401 || resp.status === 403) && !options._retried) {
+            console.warn(`[SoundCloud] client_id ${cId} failed (${resp.status}), refreshing client_id...`);
+            cId = await this.getClientId(true);
+            clientUrl = this.appendClientId(url, cId);
+            resp = await fetch(clientUrl, { ...options, headers: fallbackHeaders, _retried: true });
+        }
+
+        return resp;
     }
 
     loadConfig() {
@@ -287,9 +383,6 @@ class SoundCloudService {
     }
 
     async searchTracks(query, limit = 30) {
-        if (!this.config.enabled || !this.config.oauthToken) {
-            throw new Error('SoundCloud is disabled or OAuth token is not configured');
-        }
         const q = (query || '').trim();
         if (!q) return [];
 
@@ -303,7 +396,7 @@ class SoundCloudService {
         }
 
         const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(q)}&limit=${limit}`;
-        const resp = await fetch(url, { headers: this.getAuthHeader() });
+        const resp = await this.apiFetch(url);
         if (!resp.ok) {
             throw new Error(`SoundCloud search failed with status ${resp.status}`);
         }
@@ -314,14 +407,11 @@ class SoundCloudService {
     }
 
     async searchAlbums(query, limit = 20) {
-        if (!this.config.enabled || !this.config.oauthToken) {
-            throw new Error('SoundCloud is disabled or OAuth token is not configured');
-        }
         const q = (query || '').trim();
         if (!q) return [];
 
         const url = `https://api-v2.soundcloud.com/search/albums?q=${encodeURIComponent(q)}&limit=${limit}`;
-        const resp = await fetch(url, { headers: this.getAuthHeader() });
+        const resp = await this.apiFetch(url);
         if (!resp.ok) {
             throw new Error(`SoundCloud search albums failed (${resp.status})`);
         }
@@ -332,17 +422,14 @@ class SoundCloudService {
     }
 
     async searchPlaylists(query, limit = 20) {
-        if (!this.config.enabled || !this.config.oauthToken) {
-            throw new Error('SoundCloud is disabled or OAuth token is not configured');
-        }
         const q = (query || '').trim();
         if (!q) return [];
 
         let url = `https://api-v2.soundcloud.com/search/playlists_without_albums?q=${encodeURIComponent(q)}&limit=${limit}`;
-        let resp = await fetch(url, { headers: this.getAuthHeader() });
+        let resp = await this.apiFetch(url);
         if (!resp.ok) {
             url = `https://api-v2.soundcloud.com/search/playlists?q=${encodeURIComponent(q)}&limit=${limit}`;
-            resp = await fetch(url, { headers: this.getAuthHeader() });
+            resp = await this.apiFetch(url);
         }
         if (!resp.ok) {
             throw new Error(`SoundCloud search playlists failed (${resp.status})`);
@@ -354,14 +441,11 @@ class SoundCloudService {
     }
 
     async searchArtists(query, limit = 20) {
-        if (!this.config.enabled || !this.config.oauthToken) {
-            throw new Error('SoundCloud is disabled or OAuth token is not configured');
-        }
         const q = (query || '').trim();
         if (!q) return [];
 
         const url = `https://api-v2.soundcloud.com/search/users?q=${encodeURIComponent(q)}&limit=${limit}`;
-        const resp = await fetch(url, { headers: this.getAuthHeader() });
+        const resp = await this.apiFetch(url);
         if (!resp.ok) {
             throw new Error(`SoundCloud search artists failed (${resp.status})`);
         }
@@ -403,9 +487,7 @@ class SoundCloudService {
 
         try {
             const results = await Promise.all(chunks.map(async (batchIds) => {
-                const tracksResp = await fetch(`https://api-v2.soundcloud.com/tracks?ids=${batchIds.join(',')}`, {
-                    headers: this.getAuthHeader()
-                });
+                const tracksResp = await this.apiFetch(`https://api-v2.soundcloud.com/tracks?ids=${batchIds.join(',')}`);
                 if (tracksResp.ok) {
                     return await tracksResp.json();
                 }
@@ -426,9 +508,6 @@ class SoundCloudService {
     }
 
     async getPlaylist(playlistId) {
-        if (!this.config.enabled || !this.config.oauthToken) {
-            throw new Error('SoundCloud is disabled or OAuth token is not configured');
-        }
         const pUrl = `https://api-v2.soundcloud.com/playlists/${playlistId}`;
         const resp = await fetch(pUrl, { headers: this.getAuthHeader() });
         if (!resp.ok) {
@@ -451,12 +530,8 @@ class SoundCloudService {
         let track = this.trackCache.get(idStr);
         if (track) return track;
 
-        if (!this.config.enabled || !this.config.oauthToken) {
-            throw new Error('SoundCloud is disabled or OAuth token is not configured');
-        }
-
         const trackUrl = `https://api-v2.soundcloud.com/tracks/${idStr}`;
-        const resp = await fetch(trackUrl, { headers: this.getAuthHeader() });
+                const resp = await this.apiFetch(trackUrl);
         if (!resp.ok) {
             throw new Error(`Track ${idStr} not found (${resp.status})`);
         }
@@ -465,15 +540,12 @@ class SoundCloudService {
     }
 
     async getTrackStation(trackId) {
-        if (!this.config.enabled || !this.config.oauthToken) {
-            throw new Error('SoundCloud is disabled or OAuth token is not configured');
-        }
         const cleanId = String(trackId).replace(/^soundcloud:/i, '').trim();
         let rawTracks = [];
 
         try {
             const stationUrl = `https://api-v2.soundcloud.com/stations/soundcloud:track-stations:${cleanId}/tracks`;
-            const resp = await fetch(stationUrl, { headers: this.getAuthHeader() });
+            const resp = await this.apiFetch(stationUrl);
             if (resp.ok) {
                 const data = await resp.json();
                 rawTracks = Array.isArray(data) ? data : (data.collection || []);
@@ -485,7 +557,7 @@ class SoundCloudService {
         if (!rawTracks || rawTracks.length === 0) {
             try {
                 const relatedUrl = `https://api-v2.soundcloud.com/tracks/${cleanId}/related?limit=30`;
-                const resp = await fetch(relatedUrl, { headers: this.getAuthHeader() });
+                const resp = await this.apiFetch(relatedUrl);
                 if (resp.ok) {
                     const data = await resp.json();
                     rawTracks = Array.isArray(data) ? data : (data.collection || []);
@@ -504,9 +576,6 @@ class SoundCloudService {
     }
 
     async getArtist(artistId) {
-        if (!this.config.enabled || !this.config.oauthToken) {
-            throw new Error('SoundCloud is disabled or OAuth token is not configured');
-        }
         const userUrl = `https://api-v2.soundcloud.com/users/${artistId}`;
         const resp = await fetch(userUrl, { headers: this.getAuthHeader() });
         if (!resp.ok) {
@@ -517,11 +586,11 @@ class SoundCloudService {
         const artist = this.formatArtist(userData);
 
         const [topRes, tracksRes, albumsRes, playlistsRes, likesRes] = await Promise.allSettled([
-            fetch(`https://api-v2.soundcloud.com/users/${artistId}/toptracks?limit=10`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] }),
-            fetch(`https://api-v2.soundcloud.com/users/${artistId}/tracks?limit=30`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] }),
-            fetch(`https://api-v2.soundcloud.com/users/${artistId}/albums?limit=20`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] }),
-            fetch(`https://api-v2.soundcloud.com/users/${artistId}/playlists?limit=20`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] }),
-            fetch(`https://api-v2.soundcloud.com/users/${artistId}/likes?limit=30`, { headers: this.getAuthHeader() }).then(r => r.ok ? r.json() : { collection: [] })
+            this.apiFetch(`https://api-v2.soundcloud.com/users/${artistId}/toptracks?limit=10`).then(r => r.ok ? r.json() : { collection: [] }),
+            this.apiFetch(`https://api-v2.soundcloud.com/users/${artistId}/tracks?limit=30`).then(r => r.ok ? r.json() : { collection: [] }),
+            this.apiFetch(`https://api-v2.soundcloud.com/users/${artistId}/albums?limit=20`).then(r => r.ok ? r.json() : { collection: [] }),
+            this.apiFetch(`https://api-v2.soundcloud.com/users/${artistId}/playlists?limit=20`).then(r => r.ok ? r.json() : { collection: [] }),
+            this.apiFetch(`https://api-v2.soundcloud.com/users/${artistId}/likes?limit=30`).then(r => r.ok ? r.json() : { collection: [] })
         ]);
 
         const rawTop = topRes.status === 'fulfilled' ? (topRes.value.collection || topRes.value || []) : [];
@@ -555,12 +624,9 @@ class SoundCloudService {
     }
 
     async resolve(targetUrl) {
-        if (!this.config.enabled || !this.config.oauthToken) {
-            throw new Error('SoundCloud is disabled or OAuth token is not configured');
-        }
         const cleanUrl = (targetUrl || '').trim();
         const url = `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(cleanUrl)}`;
-        const resp = await fetch(url, { headers: this.getAuthHeader() });
+        const resp = await this.apiFetch(url);
         if (!resp.ok) {
             throw new Error(`Failed to resolve SoundCloud URL (${resp.status})`);
         }
@@ -610,7 +676,7 @@ class SoundCloudService {
             if (offset > 0) url += `&offset=${offset}`;
         }
 
-        const resp = await fetch(url, { headers: this.getAuthHeader() });
+        const resp = await this.apiFetch(url);
         if (!resp.ok) {
             throw new Error(`SoundCloud get likes failed (${resp.status})`);
         }
@@ -646,7 +712,7 @@ class SoundCloudService {
 
         const userId = this.currentUser.id;
         const url = `https://api-v2.soundcloud.com/users/${userId}/playlists`;
-        const resp = await fetch(url, { headers: this.getAuthHeader() });
+        const resp = await this.apiFetch(url);
         if (!resp.ok) {
             throw new Error(`SoundCloud get playlists failed (${resp.status})`);
         }
@@ -846,7 +912,7 @@ class SoundCloudService {
                 targetTranscoding = transcodings[0];
             }
 
-            const streamResp = await fetch(targetTranscoding.url, { headers: this.getAuthHeader() });
+            const streamResp = await this.apiFetch(targetTranscoding.url);
             if (!streamResp.ok) {
                 throw new Error(`Failed to obtain stream URL (${streamResp.status})`);
             }
@@ -955,18 +1021,18 @@ class SoundCloudService {
             }
 
             const segBufs = new Array(segUrls.length);
-            const BATCH_SIZE = 12;
-            for (let i = 0; i < segUrls.length; i += BATCH_SIZE) {
-                const batch = segUrls.slice(i, i + BATCH_SIZE).map((url, idx) =>
-                    fetch(url).then(r => {
-                        if (!r.ok) throw new Error(`Segment fetch error ${r.status}`);
-                        return r.arrayBuffer();
-                    }).then(ab => {
-                        segBufs[i + idx] = Buffer.from(ab);
-                    })
-                );
-                await Promise.all(batch);
-            }
+            const workerCount = Math.min(24, segUrls.length);
+            let nextIdx = 0;
+            const workers = Array.from({ length: workerCount }, async () => {
+                while (nextIdx < segUrls.length) {
+                    const idx = nextIdx++;
+                    const url = segUrls[idx];
+                    const r = await fetch(url);
+                    if (!r.ok) throw new Error(`Segment fetch error ${r.status}`);
+                    segBufs[idx] = Buffer.from(await r.arrayBuffer());
+                }
+            });
+            await Promise.all(workers);
 
             const parts = initBuf ? [initBuf, ...segBufs] : segBufs;
             const fullBuffer = Buffer.concat(parts);
@@ -1074,6 +1140,20 @@ class SoundCloudService {
                 res.status(500).json({ error: e.message });
             }
         }
+    }
+
+    preloadTrack(trackId) {
+        if (!trackId) return;
+        const idStr = String(trackId);
+        if (this.trackAudioCache.has(idStr) || this.inFlightTrackAudio.has(idStr)) return;
+        setImmediate(async () => {
+            try {
+                const streamUrl = await this.getTrackMediaStreamUrl(idStr);
+                if (streamUrl && streamUrl.includes('.m3u8')) {
+                    await this.fetchHlsAudio(idStr, streamUrl);
+                }
+            } catch (e) {}
+        });
     }
 
     sanitizeFilename(name) {
