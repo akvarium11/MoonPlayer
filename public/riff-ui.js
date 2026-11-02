@@ -2924,7 +2924,20 @@
       return;
     }
 
-    // 1. Artists Section (horizontal cards scroll)
+    // 1. Tracks Section (track rows) - Rendered FIRST
+    if (hasTracks && el.searchTracksList) {
+      const trkHdr = document.createElement('div');
+      trkHdr.className = 'riff-search-section-header';
+      trkHdr.innerHTML = `
+        <span class="sc-section-title"><i class="fa-solid fa-music"></i> Tracks (${tracks.length})</span>
+      `;
+      el.searchTracksList.appendChild(trkHdr);
+      searchTracksChunkList = tracks;
+      searchTracksRenderedCount = 0;
+      appendSearchTracksChunk();
+    }
+
+    // 2. Artists Section (horizontal cards scroll) - Rendered SECOND
     if (hasArtists && el.searchArtistCardContainer) {
       const artSec = document.createElement('div');
       artSec.className = 'riff-search-section';
@@ -2941,13 +2954,13 @@
       el.searchArtistCardContainer.appendChild(artSec);
     }
 
-    // 2. Albums Section (horizontal cards scroll)
+    // 3. Playlists & Albums Section (horizontal cards scroll) - Rendered THIRD
     if (hasAlbums && el.searchAlbumsContainer) {
       const albSec = document.createElement('div');
       albSec.className = 'riff-search-section';
       albSec.innerHTML = `
         <div class="riff-search-section-header">
-          <span class="sc-section-title"><i class="fa-solid fa-compact-disc"></i> Albums (${albums.length})</span>
+          <span class="sc-section-title"><i class="fa-solid fa-compact-disc"></i> ${state.platform === 'soundcloud' ? 'Playlists & Albums' : 'Albums'} (${albums.length})</span>
         </div>
       `;
       const scroll = document.createElement('div');
@@ -2956,19 +2969,6 @@
       albums.slice(0, 20).forEach((alb) => scroll.appendChild(createAlbumCard(alb)));
       albSec.appendChild(scroll);
       el.searchAlbumsContainer.appendChild(albSec);
-    }
-
-    // 3. Tracks Section (track rows)
-    if (hasTracks && el.searchTracksList) {
-      const trkHdr = document.createElement('div');
-      trkHdr.className = 'riff-search-section-header';
-      trkHdr.innerHTML = `
-        <span class="sc-section-title"><i class="fa-solid fa-music"></i> Tracks (${tracks.length})</span>
-      `;
-      el.searchTracksList.appendChild(trkHdr);
-      searchTracksChunkList = tracks;
-      searchTracksRenderedCount = 0;
-      appendSearchTracksChunk();
     }
   }
 
@@ -3011,13 +3011,13 @@
                 return;
               }
               const scArtists = scData.artists || [];
-              const scAlbums = scData.albums || scData.playlists || [];
+              const scAlbums = [...(scData.albums || []), ...(scData.playlists || [])];
               const scTracks = scData.tracks || [];
               if (window.MoonPlayer && typeof window.MoonPlayer.registerSoundCloudTrack === 'function') {
                 scTracks.forEach(t => window.MoonPlayer.registerSoundCloudTrack(t));
               }
               if (searchSubtitle) {
-                searchSubtitle.textContent = `${scTracks.length} tracks, ${scAlbums.length} albums, ${scArtists.length} artists from SoundCloud`;
+                searchSubtitle.textContent = `${scTracks.length} tracks, ${scArtists.length} artists, ${scAlbums.length} playlists/albums from SoundCloud`;
               }
               renderSearchResultsSections(scArtists, scAlbums, scTracks);
             })
@@ -4801,18 +4801,12 @@
         return;
       }
 
-      if (e.code === 'Space') {
-        e.preventDefault();
-        if (window.MoonPlayer) window.MoonPlayer.togglePlayPause();
-      } else if (e.code === 'KeyF' && !e.ctrlKey) {
+      if (e.code === 'KeyF' && !e.ctrlKey) {
         e.preventDefault();
         toggleTvKaraoke();
       } else if (e.code === 'KeyL' && !e.ctrlKey) {
         e.preventDefault();
         toggleLyricsPanel();
-      } else if (e.code === 'KeyM' && !e.ctrlKey) {
-        e.preventDefault();
-        if (window.MoonPlayer) window.MoonPlayer.toggleMute();
       } else if (e.code === 'Escape') {
         if (state.isTvKaraokeOpen) toggleTvKaraoke();
         else if (state.isLyricsOpen) toggleLyricsPanel();

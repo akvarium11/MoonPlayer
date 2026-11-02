@@ -7969,7 +7969,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         tracks.forEach(registerSoundCloudTrack);
                         searchResults.innerHTML = '';
 
-                        // 1. Tracks Section (vertical list)
+                        // 1. Tracks Section (vertical list) - FIRST
                         if (tracks.length > 0) {
                             const trackHeader = document.createElement('div');
                             trackHeader.className = 'sc-section-header';
@@ -7987,29 +7987,29 @@ document.addEventListener('DOMContentLoaded', () => {
                             appendMoreResults();
                         }
 
-                        // 2. Albums Section (horizontal cards)
-                        if (albums.length > 0) {
-                            const albumHeader = document.createElement('div');
-                            albumHeader.className = 'sc-section-header';
-                            albumHeader.innerHTML = `
-                                <span class="sc-section-title"><i class="fa-solid fa-compact-disc"></i> Albums (${albums.length})</span>
-                                <button class="sc-section-more-btn" data-tab="albums">See all <i class="fa-solid fa-chevron-right"></i></button>
+                        // 2. Artists Section (horizontal cards) - SECOND
+                        if (artists.length > 0) {
+                            const artistHeader = document.createElement('div');
+                            artistHeader.className = 'sc-section-header';
+                            artistHeader.innerHTML = `
+                                <span class="sc-section-title"><i class="fa-solid fa-user"></i> Artists (${artists.length})</span>
+                                <button class="sc-section-more-btn" data-tab="artists">See all <i class="fa-solid fa-chevron-right"></i></button>
                             `;
-                            albumHeader.querySelector('.sc-section-more-btn').addEventListener('click', () => {
-                                setSoundCloudSubTab('albums');
+                            artistHeader.querySelector('.sc-section-more-btn').addEventListener('click', () => {
+                                setSoundCloudSubTab('artists');
                             });
-                            searchResults.appendChild(albumHeader);
+                            searchResults.appendChild(artistHeader);
 
-                            const albumScroll = document.createElement('div');
-                            albumScroll.className = 'sc-cards-scroll';
-                            enableHorizontalScroll(albumScroll);
-                            albums.forEach(alb => {
-                                albumScroll.appendChild(createSoundCloudCard(alb, 'album'));
+                            const artistScroll = document.createElement('div');
+                            artistScroll.className = 'sc-cards-scroll';
+                            enableHorizontalScroll(artistScroll);
+                            artists.forEach(art => {
+                                artistScroll.appendChild(createSoundCloudCard(art, 'artist'));
                             });
-                            searchResults.appendChild(albumScroll);
+                            searchResults.appendChild(artistScroll);
                         }
 
-                        // 3. Playlists Section (horizontal cards)
+                        // 3. Playlists Section (horizontal cards) - THIRD
                         if (playlists.length > 0) {
                             const playlistHeader = document.createElement('div');
                             playlistHeader.className = 'sc-section-header';
@@ -8031,26 +8031,26 @@ document.addEventListener('DOMContentLoaded', () => {
                             searchResults.appendChild(playlistScroll);
                         }
 
-                        // 4. Artists Section (horizontal cards)
-                        if (artists.length > 0) {
-                            const artistHeader = document.createElement('div');
-                            artistHeader.className = 'sc-section-header';
-                            artistHeader.innerHTML = `
-                                <span class="sc-section-title"><i class="fa-solid fa-user"></i> Artists (${artists.length})</span>
-                                <button class="sc-section-more-btn" data-tab="artists">See all <i class="fa-solid fa-chevron-right"></i></button>
+                        // 4. Albums Section (horizontal cards) - FOURTH
+                        if (albums.length > 0) {
+                            const albumHeader = document.createElement('div');
+                            albumHeader.className = 'sc-section-header';
+                            albumHeader.innerHTML = `
+                                <span class="sc-section-title"><i class="fa-solid fa-compact-disc"></i> Albums (${albums.length})</span>
+                                <button class="sc-section-more-btn" data-tab="albums">See all <i class="fa-solid fa-chevron-right"></i></button>
                             `;
-                            artistHeader.querySelector('.sc-section-more-btn').addEventListener('click', () => {
-                                setSoundCloudSubTab('artists');
+                            albumHeader.querySelector('.sc-section-more-btn').addEventListener('click', () => {
+                                setSoundCloudSubTab('albums');
                             });
-                            searchResults.appendChild(artistHeader);
+                            searchResults.appendChild(albumHeader);
 
-                            const artistScroll = document.createElement('div');
-                            artistScroll.className = 'sc-cards-scroll';
-                            enableHorizontalScroll(artistScroll);
-                            artists.forEach(art => {
-                                artistScroll.appendChild(createSoundCloudCard(art, 'artist'));
+                            const albumScroll = document.createElement('div');
+                            albumScroll.className = 'sc-cards-scroll';
+                            enableHorizontalScroll(albumScroll);
+                            albums.forEach(alb => {
+                                albumScroll.appendChild(createSoundCloudCard(alb, 'album'));
                             });
-                            searchResults.appendChild(artistScroll);
+                            searchResults.appendChild(albumScroll);
                         }
                     } else {
                         // Sub-tab specific search
@@ -9328,6 +9328,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (muteBtn) muteBtn.click();
                 break;
             case 'KeyL':
+                if (document.body && document.body.classList.contains('mode-riff')) break;
                 e.preventDefault();
                 if (likeBtn) likeBtn.click();
                 break;
