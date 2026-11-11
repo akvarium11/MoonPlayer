@@ -2339,7 +2339,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const playlistSongs = savedPaths.map(p => {
             // 1. Direct match in songPool
-            let found = songPool.find(s => s.path === p || (s.id && (`soundcloud:${s.id}` === p || String(s.id) === p)));
+            const normP = typeof normalizeTrackPath === 'function' ? normalizeTrackPath(p) : String(p).toLowerCase().replace(/\\/g, '/');
+            let found = songPool.find(s => {
+                if (!s) return false;
+                if (s.path && (s.path === p || (typeof normalizeTrackPath === 'function' && normalizeTrackPath(s.path) === normP))) return true;
+                if (s.id && (`soundcloud:${s.id}` === p || String(s.id) === p)) return true;
+                return false;
+            });
             
             // 2. Look in SoundCloud cache
             if (!found) {
@@ -9883,6 +9889,27 @@ document.addEventListener('DOMContentLoaded', () => {
         getAlbums: () => (Array.isArray(albums) ? albums : []),
         getArtists: () => (Array.isArray(artists) ? artists : []),
         getPlaylists: () => (playlists || {}),
+        resolveTrack: (pathOrUri) => {
+            if (!pathOrUri) return null;
+            const normP = typeof normalizeTrackPath === 'function' ? normalizeTrackPath(pathOrUri) : String(pathOrUri).toLowerCase().replace(/\\/g, '/');
+            let found = (allSongs || []).find(s => {
+                if (!s) return false;
+                if (s.path && (s.path === pathOrUri || (typeof normalizeTrackPath === 'function' && normalizeTrackPath(s.path) === normP))) return true;
+                if (s.id && (`soundcloud:${s.id}` === pathOrUri || String(s.id) === pathOrUri)) return true;
+                return false;
+            });
+            if (!found && soundCloudTracksCache.has(pathOrUri)) {
+                found = soundCloudTracksCache.get(pathOrUri);
+            } else if (!found && isSoundCloudPath(pathOrUri)) {
+                const scId = extractSoundCloudId(pathOrUri);
+                if (scId) found = soundCloudTracksCache.get(`soundcloud:${scId}`) || soundCloudTracksCache.get(scId);
+            }
+            return found || null;
+        },
+        getPlaylistTracks: (playlistName) => {
+            const savedPaths = (playlists && playlists[playlistName]) || [];
+            return savedPaths.map(p => window.MoonPlayer.resolveTrack(p)).filter(Boolean);
+        },
         getCurrentSong: () => (currentlyPlayingIndex >= 0 && allSongs && allSongs[currentlyPlayingIndex]) ? allSongs[currentlyPlayingIndex] : (window._currentPlayingSong || null),
         getCurrentTrack: () => (currentlyPlayingIndex >= 0 && allSongs && allSongs[currentlyPlayingIndex]) ? allSongs[currentlyPlayingIndex] : (window._currentPlayingSong || null),
         isPlaying: () => (bgAudio ? !bgAudio.paused : false),
@@ -10162,53 +10189,35 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/soundcloud/search?q=' + encodeURIComponent(cleanQuery) + '&type=' + encodeURIComponent(subTab) + '&limit=25');
             return await res.json();
         },
-        // Load the Riff UI SoundCloud tabs (trending / likes / all). Registers
+        // Load the Riff UI SoundCloud tabs (likes / playlists / trending). Registers
         // every streamed track into the global registry so playback works on
         // the first click. Returns { tracks, nextHref } so the view can page
         // through the user's likes dynamically on scroll.
-        fetchSoundCloudFeed: async (subtab = 'trending') => {
+        fetchSoundCloudFeed: async (subtab = 'likes') => {
             const register = (raw) => {
                 raw.forEach(registerSoundCloudTrack);
                 return raw.map(t => allSongs.find(s => isSoundCloudTrack(s) && String(s.id) === String(t.id)) || t).filter(Boolean);
             };
-            let endpoint;
-            if (subtab === 'likes') {
-                endpoint = '/api/soundcloud/likes?limit=50';
-            } else if (subtab === 'trending') {
-                endpoint = '/api/soundcloud/trending?limit=30';
-            } else {
-                // "All" = union of trending + likes. Likes keep their cursor
-                // so "All" can also load more liked tracks on scroll.
-                const [trRes, lkRes] = await Promise.all([
-                    fetch('/api/soundcloud/trending?limit=30').then(r => r.json()).catch(() => ({})),
-                    fetch('/api/soundcloud/likes?limit=50').then(r => r.json()).catch(() => ({}))
-                ]);
-                const lkTracks = lkRes.tracks || [];
-                lkTracks.forEach(t => {
-                    if (t && t.id != null) scLikedIds.add(String(t.id));
-                });
-                if (lkTracks.length > 0) {
-                    saveScLikedIds();
-                    updateLikeButtonState();
-                }
-                const merged = [...(trRes.tracks || []), ...lkTracks];
-                const seen = new Set();
-                const unique = merged.filter(t => {
-                    if (!t || !t.id || seen.has(String(t.id))) return false;
-                    seen.add(String(t.id));
-                    return true;
-                });
-                return {
-                    tracks: register(unique),
-                    nextHref: lkRes.next_href || null,
-                    likeCursor: true,
-                    total: lkRes.total || null,
-                    warning: lkRes.warning || null
-                };
-            }
+
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 15000);
             try {
+                if (subtab === 'playlists') {
+                    const res = await fetch('/api/soundcloud/liked-playlists', { signal: controller.signal });
+                    const data = await res.json();
+                    return {
+                        playlists: data.playlists || [],
+                        userPlaylists: data.userPlaylists || [],
+                        likedPlaylists: data.likedPlaylists || [],
+                        total: data.total || (data.playlists ? data.playlists.length : 0),
+                        warning: data.warning || null
+                    };
+                }
+
+                let endpoint = (subtab === 'likes')
+                    ? '/api/soundcloud/likes?limit=50'
+                    : '/api/soundcloud/trending?limit=30';
+
                 const res = await fetch(endpoint, { signal: controller.signal });
                 const data = await res.json();
                 const tracks = (data && data.tracks) || [];

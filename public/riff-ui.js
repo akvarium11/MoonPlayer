@@ -36,8 +36,8 @@
     scrubberDragTime: null,
     lastActiveLyricIdx: -1,
     waveAmplitude: 0.0,
-    scSubtab: 'trending',
-    scFeedCache: {},   // subtab -> tracks[] (survives tab switches)
+    scSubtab: 'likes',
+    scFeedCache: {},   // subtab -> tracks[] or playlists obj (survives tab switches)
     scFeedLoading: {}, // subtab -> bool (prevents duplicate requests)
     scFeedNext: {},    // subtab -> next_href cursor for liked-track paging
   };
@@ -1406,15 +1406,17 @@
       <div class="riff-card-subtitle">${escapeHtml(author)}${count > 0 ? ` • ${count} tr.` : ''}</div>
     `;
     card.addEventListener('click', () => {
-      if ((album.isSoundCloud || (album.id && !album.tracks)) && album.id) {
+      const isSoundCloud = album.isSoundCloud || (album.id && (!album.tracks || album.tracks.length === 0 || !album.tracks[0].title));
+      if (isSoundCloud && album.id) {
         fetch(`/api/soundcloud/playlist/${album.id}`)
           .then(r => r.json())
           .then(data => {
-            const tracks = data.tracks || [];
+            const pl = data.playlist || data.album || data;
+            const tracks = (pl && Array.isArray(pl.tracks)) ? pl.tracks : (Array.isArray(data.tracks) ? data.tracks : []);
             if (window.MoonPlayer && typeof window.MoonPlayer.registerSoundCloudTrack === 'function') {
               tracks.forEach(window.MoonPlayer.registerSoundCloudTrack);
             }
-            openAlbum({ ...album, tracks });
+            openAlbum({ ...album, ...pl, tracks });
           })
           .catch(() => openAlbum(album));
       } else {
@@ -1741,6 +1743,54 @@
     appendQueueTracksChunk();
   }
 
+  function resolveSongByPathOrUri(pathOrUri, allSongs) {
+    if (!pathOrUri) return null;
+    const str = String(pathOrUri).trim();
+    const normP = str.toLowerCase().replace(/\\/g, '/');
+    const scIdMatch = str.match(/(?:soundcloud:)?(\d+)/i);
+    const scId = scIdMatch ? scIdMatch[1] : null;
+
+    // 1. Direct or normalized match in allSongs
+    let found = (allSongs || []).find((s) => {
+      if (!s) return false;
+      if (s.path) {
+        const sNorm = String(s.path).toLowerCase().replace(/\\/g, '/');
+        if (sNorm === normP) return true;
+      }
+      if (scId && s.id && String(s.id) === scId) return true;
+      if (scId && s.path && s.path === `soundcloud:${scId}`) return true;
+      return isSameTrack(s, { path: str, id: scId });
+    });
+
+    // 2. Resolve via window.MoonPlayer if available
+    if (!found && window.MoonPlayer && typeof window.MoonPlayer.resolveTrack === 'function') {
+      found = window.MoonPlayer.resolveTrack(str);
+    }
+
+    // 3. Fallback for SoundCloud tracks in playlist
+    if (!found && (str.startsWith('soundcloud:') || /^\d+$/.test(str))) {
+      const cleanId = scId || str.replace(/^soundcloud:/i, '');
+      found = {
+        id: cleanId,
+        path: `soundcloud:${cleanId}`,
+        src: `/api/soundcloud/stream/${cleanId}`,
+        url: `/api/soundcloud/stream/${cleanId}`,
+        title: `SoundCloud Track #${cleanId}`,
+        artist: 'SoundCloud',
+        album: 'SoundCloud',
+        cover: 'assets/icon.png',
+        duration: 0,
+        isSoundCloud: true,
+        isLoadingMetadata: true
+      };
+      if (window.MoonPlayer && typeof window.MoonPlayer.registerSoundCloudTrack === 'function') {
+        window.MoonPlayer.registerSoundCloudTrack(found);
+      }
+    }
+
+    return found || null;
+  }
+
   // 6. Playlists View
   function renderPlaylistsView() {
     if (!el.viewPlaylists || !el.playlistsGrid) return;
@@ -1773,7 +1823,7 @@
       let cover = 'assets/icon.png';
       if (count > 0) {
         const firstPath = trackPaths[0];
-        const s = allSongs.find((item) => item.path === firstPath || (item.id && `soundcloud:${item.id}` === firstPath));
+        const s = resolveSongByPathOrUri(firstPath, allSongs);
         if (s) {
           cover = getTrackThumb(s);
         }
@@ -1815,7 +1865,7 @@
     // Resolve track objects
     const plTracks = [];
     trackPaths.forEach((pathOrUri) => {
-      const s = allSongs.find((item) => item.path === pathOrUri || (item.id && `soundcloud:${item.id}` === pathOrUri));
+      const s = resolveSongByPathOrUri(pathOrUri, allSongs);
       if (s) plTracks.push(s);
     });
 
@@ -1904,9 +1954,13 @@
         target = found;
       } else if (!albumObj.tracks || albumObj.tracks.length === 0) {
         const albumTracks = allSongs.filter((s) => {
-          if (!s.album || s.album.trim().toLowerCase() !== albTitle) return false;
-          if (albArtist && s.artist && s.artist.trim().toLowerCase() !== albArtist) return false;
-          return true;
+          if (!s) return false;
+          if (albKey && s.albumKey && s.albumKey.toLowerCase() === albKey.toLowerCase()) return true;
+          if (albTitle && s.album && s.album.trim().toLowerCase() === albTitle) {
+            if (albArtist && s.artist && s.artist.trim().toLowerCase() !== albArtist) return false;
+            return true;
+          }
+          return false;
         });
         if (albumTracks.length > 0) {
           target = { ...albumObj, tracks: albumTracks };
@@ -1952,27 +2006,66 @@
     state.selectedAlbum = target;
     switchView('album', pushHistory);
     renderAlbumView(target);
+
+    // If it's a SoundCloud playlist or album without fully loaded tracks, fetch dynamically
+    const isSc = target && (target.isSoundCloud || target.id);
+    const hasFullTracks = target && Array.isArray(target.tracks) && target.tracks.length > 0 && target.tracks[0] && typeof target.tracks[0] === 'object' && target.tracks[0].title;
+    if (isSc && !hasFullTracks && target.id) {
+      if (el.albumTracksList && (!target.tracks || target.tracks.length === 0)) {
+        el.albumTracksList.innerHTML = `
+          <div class="empty-hint" style="display:flex; flex-direction:column; align-items:center; gap:14px; padding:48px 24px;">
+            <div style="width:28px; height:28px; border:3px solid var(--md-sys-color-primary, #ff5500); border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+            <span>Loading tracks...</span>
+          </div>`;
+      }
+      fetch(`/api/soundcloud/playlist/${target.id}`)
+        .then(r => r.json())
+        .then(data => {
+          const pl = data.playlist || data.album || data;
+          const tracks = (pl && Array.isArray(pl.tracks)) ? pl.tracks : (Array.isArray(data.tracks) ? data.tracks : []);
+          if (window.MoonPlayer && typeof window.MoonPlayer.registerSoundCloudTrack === 'function') {
+            tracks.forEach(window.MoonPlayer.registerSoundCloudTrack);
+          }
+          target = { ...target, ...pl, tracks };
+          state.selectedAlbum = target;
+          renderAlbumView(target);
+        })
+        .catch(err => {
+          console.error('[RiffUI] Failed to load album tracks:', err);
+        });
+    }
   }
 
   function renderAlbumView(album) {
     if (!album || !el.viewAlbum) return;
     const tracks = album.tracks || [];
+    const count = tracks.length > 0 ? tracks.length : (album.trackCount || 0);
     if (el.albumDetailTitle) el.albumDetailTitle.textContent = album.title || 'Album';
     if (el.albumDetailArtist) {
       el.albumDetailArtist.textContent = album.artist || 'Unknown Artist';
       el.albumDetailArtist.onclick = () => openArtistProfile(album.artist);
     }
-    if (el.albumDetailCount) el.albumDetailCount.textContent = `${tracks.length} tracks`;
+    if (el.albumDetailCount) el.albumDetailCount.textContent = `${count} track${count !== 1 ? 's' : ''}`;
     if (el.albumDetailCover) {
       el.albumDetailCover.innerHTML = `<img src="${escapeHtml(album.cover || 'assets/icon.png')}" alt="" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.onerror=null;this.src='assets/icon.png'">`;
     }
 
     if (el.albumTracksList) {
-      el.albumTracksList.innerHTML = '';
-      tracks.forEach((track, idx) => {
-        const row = createTrackRow(track, idx, 'album', tracks);
-        el.albumTracksList.appendChild(row);
-      });
+      if (tracks.length === 0 && (album.isSoundCloud || album.id)) {
+        el.albumTracksList.innerHTML = `
+          <div class="empty-hint" style="display:flex; flex-direction:column; align-items:center; gap:14px; padding:48px 24px;">
+            <div style="width:28px; height:28px; border:3px solid var(--md-sys-color-primary, #ff5500); border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+            <span>Loading tracks...</span>
+          </div>`;
+      } else if (tracks.length === 0) {
+        el.albumTracksList.innerHTML = '<div class="empty-hint">No tracks found in this album.</div>';
+      } else {
+        el.albumTracksList.innerHTML = '';
+        tracks.forEach((track, idx) => {
+          const row = createTrackRow(track, idx, 'album', tracks);
+          el.albumTracksList.appendChild(row);
+        });
+      }
     }
 
     const btnPlayAlbum = document.getElementById('btn-play-album');
@@ -2162,10 +2255,8 @@
   // 9. Dedicated SoundCloud View with Categorized Online Search
   let scSearchTimeout = null;
 
-  // Render the SoundCloud tabs. Streams come from the backend API (not from
-  // the local library), are registered for playback, and cached per tab so
-  // switching tabs is instant and never loses the list.
-  function renderSoundCloudView(subtab = (state.scSubtab || 'trending'), forceRefresh = false) {
+  // Render the SoundCloud tabs (Liked tracks / Liked playlists / Trending).
+  function renderSoundCloudView(subtab = (state.scSubtab || 'likes'), forceRefresh = false) {
     state.scSubtab = subtab;
     const listEl = document.getElementById('sc-tracks-list');
     const subBtns = document.querySelectorAll('.sc-subtab');
@@ -2176,8 +2267,123 @@
     if (!listEl) return;
     const subTitle = document.getElementById('sc-subtitle');
 
-    const paint = (tracks, note, warningMsg, totalCount) => {
-      // Only paint if the user is still on this subtab (avoid races).
+    const renderNotConnectedCard = (targetEl) => {
+      targetEl.innerHTML = `
+        <div class="empty-hint" style="display:flex; flex-direction:column; align-items:center; gap:14px; padding:48px 24px; text-align:center;">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="#ff5500"><path d="M11.56 8.87V17h8.84c1.99 0 3.6-1.61 3.6-3.6 0-1.85-1.4-3.37-3.21-3.57-.42-2.73-2.77-4.83-5.63-4.83-1.64 0-3.12.69-4.17 1.8A5.98 5.98 0 0 0 11.56 8.87zM8.33 17h1.67V9.75c-.53.2-1.09.52-1.67.92V17zm-3.33 0h1.67v-5.25c-.53.4-1.09.84-1.67 1.33V17zm-3.33 0h1.67v-3.33c-.53.5-1.09 1.05-1.67 1.63V17z"/></svg>
+          <div style="font-size:16px; font-weight:600; color:var(--md-sys-color-on-surface, #fff);">SoundCloud Account Not Connected</div>
+          <div style="font-size:13px; color:var(--md-sys-color-on-surface-variant, #a1a1aa); max-width:420px; line-height:1.5;">Connect your SoundCloud account or paste your OAuth token in Settings to view your likes and playlists.</div>
+          <div style="display:flex; gap:10px; margin-top:8px;">
+            <button class="btn-pill-primary" id="btn-sc-open-settings" type="button">Connect in Settings</button>
+            <button class="btn-outline-pill" id="btn-sc-browse-online" type="button">Retry</button>
+          </div>
+        </div>
+      `;
+      const btnSet = document.getElementById('btn-sc-open-settings');
+      if (btnSet) {
+        btnSet.addEventListener('click', () => {
+          switchView('settings');
+          setTimeout(() => {
+            const navBtn = document.querySelector('.settings-nav-btn[data-cat="integrations"]');
+            if (navBtn) navBtn.click();
+          }, 120);
+        });
+      }
+      const btnBrowse = document.getElementById('btn-sc-browse-online');
+      if (btnBrowse) {
+        btnBrowse.addEventListener('click', () => renderSoundCloudView(subtab, true));
+      }
+    };
+
+    const paintPlaylists = (data, note, warningMsg) => {
+      if (state.scSubtab !== subtab) return;
+      listEl.innerHTML = '';
+      const allPl = (data && data.playlists) || [];
+      const userPl = (data && data.userPlaylists) || [];
+      const likedPl = (data && data.likedPlaylists) || [];
+      const total = (data && data.total) || allPl.length;
+
+      if (subTitle) {
+        if (note) subTitle.textContent = note;
+        else if (userPl.length > 0 && likedPl.length > 0) {
+          subTitle.textContent = `${total} playlists (${userPl.length} created, ${likedPl.length} liked)`;
+        } else {
+          subTitle.textContent = `${total} SoundCloud playlist${total === 1 ? '' : 's'}`;
+        }
+      }
+
+      if (!allPl.length) {
+        const isNotConnected = warningMsg && (
+          warningMsg.includes('not configured') ||
+          warningMsg.includes('disabled') ||
+          warningMsg.includes('OAuth') ||
+          warningMsg.includes('Invalid token') ||
+          warningMsg.includes('401') ||
+          warningMsg.includes('not available')
+        );
+        if (isNotConnected) {
+          renderNotConnectedCard(listEl);
+          return;
+        }
+
+        listEl.innerHTML = `
+          <div class="empty-hint" style="display:flex; flex-direction:column; align-items:center; gap:12px; padding:32px;">
+            <span>No liked or created SoundCloud playlists found.</span>
+            <button class="btn-pill-primary" id="btn-sc-browse-online" type="button">Retry / Refresh</button>
+          </div>
+        `;
+        const btnBrowse = document.getElementById('btn-sc-browse-online');
+        if (btnBrowse) {
+          btnBrowse.addEventListener('click', () => renderSoundCloudView(subtab, true));
+        }
+        return;
+      }
+
+      const container = document.createElement('div');
+      container.style.cssText = 'display:flex; flex-direction:column; gap:24px; width:100%;';
+
+      // Section 1: User's Own Playlists
+      if (userPl.length > 0) {
+        const sec1 = document.createElement('div');
+        sec1.innerHTML = `
+          <div class="sc-section-header" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+            <span class="sc-section-title" style="font-size:15px; font-weight:600;"><i class="fa-solid fa-user"></i> Your Playlists (${userPl.length})</span>
+          </div>
+        `;
+        const grid1 = document.createElement('div');
+        grid1.className = 'playlists-grid';
+        userPl.forEach((pl) => grid1.appendChild(createAlbumCard(pl)));
+        sec1.appendChild(grid1);
+        container.appendChild(sec1);
+      }
+
+      // Section 2: Liked Playlists
+      if (likedPl.length > 0) {
+        const sec2 = document.createElement('div');
+        sec2.innerHTML = `
+          <div class="sc-section-header" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+            <span class="sc-section-title" style="font-size:15px; font-weight:600;"><i class="fa-solid fa-heart" style="color:var(--accent, #ff5500);"></i> Liked Playlists (${likedPl.length})</span>
+          </div>
+        `;
+        const grid2 = document.createElement('div');
+        grid2.className = 'playlists-grid';
+        likedPl.forEach((pl) => grid2.appendChild(createAlbumCard(pl)));
+        sec2.appendChild(grid2);
+        container.appendChild(sec2);
+      }
+
+      // Fallback if neither sub-array is partitioned
+      if (userPl.length === 0 && likedPl.length === 0) {
+        const grid = document.createElement('div');
+        grid.className = 'playlists-grid';
+        allPl.forEach((pl) => grid.appendChild(createAlbumCard(pl)));
+        container.appendChild(grid);
+      }
+
+      listEl.appendChild(container);
+    };
+
+    const paintTracks = (tracks, note, warningMsg, totalCount) => {
       if (state.scSubtab !== subtab) return;
       listEl.innerHTML = '';
       if (subTitle) {
@@ -2187,7 +2393,7 @@
           const totText = totalCount && totalCount > tracks.length ? ` (${Number(totalCount).toLocaleString()} total)` : '';
           subTitle.textContent = `${tracks.length} liked track${tracks.length === 1 ? '' : 's'}${totText}`;
         } else {
-          subTitle.textContent = `${tracks.length} SoundCloud track${tracks.length === 1 ? '' : 's'}`;
+          subTitle.textContent = `${tracks.length} trending track${tracks.length === 1 ? '' : 's'}`;
         }
       }
       if (!tracks.length) {
@@ -2201,31 +2407,7 @@
         );
 
         if (isNotConnected) {
-          listEl.innerHTML = `
-            <div class="empty-hint" style="display:flex; flex-direction:column; align-items:center; gap:14px; padding:48px 24px; text-align:center;">
-              <svg width="44" height="44" viewBox="0 0 24 24" fill="#ff5500"><path d="M11.56 8.87V17h8.84c1.99 0 3.6-1.61 3.6-3.6 0-1.85-1.4-3.37-3.21-3.57-.42-2.73-2.77-4.83-5.63-4.83-1.64 0-3.12.69-4.17 1.8A5.98 5.98 0 0 0 11.56 8.87zM8.33 17h1.67V9.75c-.53.2-1.09.52-1.67.92V17zm-3.33 0h1.67v-5.25c-.53.4-1.09.84-1.67 1.33V17zm-3.33 0h1.67v-3.33c-.53.5-1.09 1.05-1.67 1.63V17z"/></svg>
-              <div style="font-size:16px; font-weight:600; color:var(--md-sys-color-on-surface, #fff);">SoundCloud Account Not Connected</div>
-              <div style="font-size:13px; color:var(--md-sys-color-on-surface-variant, #a1a1aa); max-width:420px; line-height:1.5;">Connect your SoundCloud account or paste your OAuth token in Settings to view and stream your likes.</div>
-              <div style="display:flex; gap:10px; margin-top:8px;">
-                <button class="btn-pill-primary" id="btn-sc-open-settings" type="button">Connect in Settings</button>
-                <button class="btn-outline-pill" id="btn-sc-browse-online" type="button">Retry</button>
-              </div>
-            </div>
-          `;
-          const btnSet = document.getElementById('btn-sc-open-settings');
-          if (btnSet) {
-            btnSet.addEventListener('click', () => {
-              switchView('settings');
-              setTimeout(() => {
-                const navBtn = document.querySelector('.settings-nav-btn[data-cat="integrations"]');
-                if (navBtn) navBtn.click();
-              }, 120);
-            });
-          }
-          const btnBrowse = document.getElementById('btn-sc-browse-online');
-          if (btnBrowse) {
-            btnBrowse.addEventListener('click', () => renderSoundCloudView(subtab, true));
-          }
+          renderNotConnectedCard(listEl);
           return;
         }
 
@@ -2249,20 +2431,28 @@
       listEl.appendChild(frag);
     };
 
-    // Show cached data immediately.
+    // Show cached data immediately
     const cached = state.scFeedCache[subtab];
-    if (cached && cached.length && !forceRefresh) {
-      paint(cached, null, null, state.scFeedTotal && state.scFeedTotal[subtab]);
-      return;
+    if (cached && !forceRefresh) {
+      if (subtab === 'playlists' && cached.playlists) {
+        paintPlaylists(cached);
+        return;
+      } else if (Array.isArray(cached) && cached.length) {
+        paintTracks(cached, null, null, state.scFeedTotal && state.scFeedTotal[subtab]);
+        return;
+      }
     }
 
-    // Still show stale cache while refreshing, with a visible hint.
-    if (cached && cached.length) paint(cached, `Refreshing SoundCloud...`);
-    else {
+    // Still show stale cache while refreshing, with a visible hint
+    if (cached) {
+      if (subtab === 'playlists' && cached.playlists) paintPlaylists(cached, 'Refreshing playlists…');
+      else if (Array.isArray(cached) && cached.length) paintTracks(cached, 'Refreshing tracks…');
+    } else {
+      const tabTitle = subtab === 'likes' ? 'Liked tracks' : (subtab === 'playlists' ? 'Liked playlists' : 'Trending');
       listEl.innerHTML = `
         <div class="empty-hint" style="display:flex; flex-direction:column; align-items:center; gap:14px; padding:48px 24px;">
           <div style="width:28px; height:28px; border:3px solid var(--md-sys-color-primary, #ff5500); border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
-          <span>Loading SoundCloud ${escapeHtml(subtab)}…</span>
+          <span>Loading ${escapeHtml(tabTitle)}…</span>
         </div>
       `;
     }
@@ -2272,6 +2462,27 @@
 
     const load = async () => {
       try {
+        if (subtab === 'playlists') {
+          let plData = { playlists: [], userPlaylists: [], likedPlaylists: [], total: 0 };
+          let warning = null;
+          if (window.MoonPlayer && typeof window.MoonPlayer.fetchSoundCloudFeed === 'function') {
+            const feed = await window.MoonPlayer.fetchSoundCloudFeed('playlists');
+            if (feed) {
+              plData = {
+                playlists: feed.playlists || [],
+                userPlaylists: feed.userPlaylists || [],
+                likedPlaylists: feed.likedPlaylists || [],
+                total: feed.total || 0
+              };
+              warning = feed.warning || null;
+            }
+          }
+          state.scFeedCache['playlists'] = plData;
+          state.scFeedNext['playlists'] = null;
+          paintPlaylists(plData, null, warning);
+          return;
+        }
+
         let tracks = [];
         let nextHref = null;
         let likeCursor = false;
@@ -2281,7 +2492,7 @@
         if (window.MoonPlayer && typeof window.MoonPlayer.fetchSoundCloudFeed === 'function') {
           const feed = await window.MoonPlayer.fetchSoundCloudFeed(subtab);
           if (Array.isArray(feed)) {
-            tracks = feed; // backward compatibility with older bridge
+            tracks = feed;
           } else if (feed) {
             tracks = feed.tracks || [];
             nextHref = feed.nextHref || null;
@@ -2290,14 +2501,15 @@
             total = feed.total || null;
           }
         } else {
-          // Fallback: local library only (older bridge).
+          // Fallback: local library only
           const allSongs = window.MoonPlayer ? window.MoonPlayer.getAllSongs() : [];
           tracks = allSongs.filter((s) => isSoundCloudSong(s));
           if (subtab === 'likes') {
             tracks = tracks.filter((s) => window.MoonPlayer && window.MoonPlayer.isLiked(s));
           }
         }
-        // Register every track so a click always plays (src + globalIndex).
+
+        // Register every track so a click always plays
         if (window.MoonPlayer && typeof window.MoonPlayer.registerSoundCloudTrack === 'function') {
           tracks.forEach((t) => window.MoonPlayer.registerSoundCloudTrack(t));
         }
@@ -2307,7 +2519,7 @@
         if (!state.scFeedTotal) state.scFeedTotal = {};
         state.scFeedTotal[subtab] = total;
 
-        paint(tracks, null, warning, total);
+        paintTracks(tracks, null, warning, total);
 
         // Pre-fill next page if screen has extra room
         if (likeCursor && nextHref && el.mainContent && el.mainContent.scrollHeight <= el.mainContent.clientHeight + 250) {
@@ -2320,8 +2532,12 @@
       } catch (err) {
         console.error('[RiffUI] SoundCloud feed failed:', err);
         if (state.scSubtab === subtab) {
-          const stale = state.scFeedCache[subtab] || [];
-          paint(stale, `Could not load SoundCloud (${err.message || 'error'}) — showing cached`, err.message);
+          const stale = state.scFeedCache[subtab];
+          if (subtab === 'playlists' && stale && stale.playlists) {
+            paintPlaylists(stale, `Could not refresh playlists (${err.message || 'error'})`, err.message);
+          } else {
+            paintTracks(Array.isArray(stale) ? stale : [], `Could not load tracks (${err.message || 'error'})`, err.message);
+          }
         }
       } finally {
         state.scFeedLoading[subtab] = false;
@@ -2335,9 +2551,12 @@
   let scFeedPaging = false;
   async function loadMoreSoundCloudFeed() {
     const subtab = state.scSubtab;
+    if (subtab !== 'likes') return;
     if (scFeedPaging || state.scFeedLoading[subtab]) return;
     if (state.currentView !== 'soundcloud') return;
     const nextHref = state.scFeedNext[subtab];
+    if (!nextHref) return;
+    if (!window.MoonPlayer || typeof window.MoonPlayer.fetchMoreSoundCloudLikes !== 'function') return;
     if (!nextHref) return;
     if (!window.MoonPlayer || typeof window.MoonPlayer.fetchMoreSoundCloudLikes !== 'function') return;
 
@@ -4563,7 +4782,7 @@
     const scSubtabBtns = document.querySelectorAll('.sc-subtab');
     scSubtabBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
-        const sctab = btn.getAttribute('data-sctab') || 'trending';
+        const sctab = btn.getAttribute('data-sctab') || 'likes';
         renderSoundCloudView(sctab);
       });
     });
@@ -4572,8 +4791,8 @@
       btnScRefresh.addEventListener('click', () => {
         const classicRefresh = document.getElementById('soundcloud-refresh-btn');
         if (classicRefresh) classicRefresh.click();
-        showToast('Refreshing SoundCloud tracks...');
-        renderSoundCloudView(state.scSubtab || 'trending', true);
+        showToast('Refreshing SoundCloud...');
+        renderSoundCloudView(state.scSubtab || 'likes', true);
       });
     }
 

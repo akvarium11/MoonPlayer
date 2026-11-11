@@ -822,3 +822,66 @@ npm run server       # Запуск только фонового сервера
         - В настройках Riff UI (`renderSettingsView`) синхронизируется статус подключения SoundCloud (`Connected as ... (N likes)`).
       - **Кнопка Refresh**:
         - Исправлен вызов `renderSoundCloudView(state.scSubtab, true)` с принудительным сбросом кэша.
+
+43. **SoundCloud Subtabs Reorganization (2026-11-11)**:
+    - **Требование пользователя**:
+      - Удалить вкладку «All SoundCloud Tracks».
+      - Реорганизовать вкладки в строгом порядке с точными именами:
+        1. `Liked tracks` (активная по умолчанию)
+        2. `Liked playlists` (обязана содержать как лайкнутые плейлисты, так и созданные пользователем плейлисты)
+        3. `Trending`
+    - **Реализация**:
+      - **Разметка ([public/index.html](file:///G:/Repository/MoonPlayerApp/public/index.html#L926-L930))**:
+        - Удалена кнопка «All SoundCloud Tracks».
+        - Кнопки упорядочены: `Liked tracks` (`data-sctab="likes"`, `active`), `Liked playlists` (`data-sctab="playlists"`), `Trending` (`data-sctab="trending"`).
+      - **Бэкенд ([soundcloud_service.js](file:///G:/Repository/MoonPlayerApp/soundcloud_service.js#L858-L925), [server.js](file:///G:/Repository/MoonPlayerApp/server.js#L1234-L1240))**:
+        - Добавлен метод `getLikedAndUserPlaylists()`: параллельно запрашивает `/users/{id}/playlists` (созданные пользователем) и `/users/{id}/playlist_likes` (лайкнутые), форматирует через `formatPlaylist(p)` с флагами `isUserCreated` / `isLikedPlaylist`, дедуплицирует по id и возвращает объединённый список и секции.
+        - Добавлен защищённый эндпоинт `GET /api/soundcloud/liked-playlists` через `scSafe`.
+      - **Фронтенд-мост ([public/script.js](file:///G:/Repository/MoonPlayerApp/public/script.js#L10165-L10215))**:
+        - `fetchSoundCloudFeed(subtab)`: при `subtab === 'playlists'` запрашивает `/api/soundcloud/liked-playlists`, удалена ветка `all`. По умолчанию `subtab = 'likes'`.
+      - **Интерфейс Riff UI ([public/riff-ui.js](file:///G:/Repository/MoonPlayerApp/public/riff-ui.js#L2168-L2320))**:
+        - `state.scSubtab` по умолчанию `'likes'`.
+        - Добавлена функция `paintPlaylists(data)`: при выборе вкладки `Liked playlists` отображает две секции с карточками:
+          1. `Your Playlists (N)` — созданные пользователем плейлисты в сетке `.playlists-grid`.
+          2. `Liked Playlists (M)` — лайкнутые плейлисты в сетке `.playlists-grid`.
+        - Клик по карточке плейлиста загружает его треки через `/api/soundcloud/playlist/:id` и открывает альбомное вью с воспроизведением/шаффлом.
+        - Счётчик в подзаголовке отображает сводку: `${total} playlists (${userCount} created, ${likedCount} liked)`.
+      - **Верификация**:
+        - Написан E2E-тест `scripts/test-soundcloud-new-tabs.js` (Puppeteer + Chrome):
+          - Проверено наличие ровно 3 вкладок: `Liked tracks` (active), `Liked playlists`, `Trending` — PASS.
+          - Проверена отрисовка 49 лайкнутых треков — PASS.
+          - Проверено переключение на `Liked playlists`: 32 карточки плейлистов (5 созданных, 27 лайкнутых) с заголовками «Your Playlists (5)» и «Liked Playlists (27)» — PASS.
+          - Проверено переключение на `Trending`: 30 треков — PASS.
+          - Скриншот: `test_screenshots/sc_tabs_verified.png`. All assertions passed.
+
+---
+
+44. **Fix 0 Tracks Displayed in Playlists and Albums (2026-11-12)**:
+    - **Симптом**: В плейлистах и альбомах при открытии отображалось 0 песен («0 tracks», пустой список треков).
+    - **Коренные причины**:
+      1. **Несоответствие схемы ответа в `/api/soundcloud/playlist/:id`**:
+         - В `server.js` эндпоинт `app.get(['/api/soundcloud/playlist/:id', '/api/soundcloud/album/:id'])` возвращал `{ success: true, playlist, album: playlist }`. Поле `tracks` на корневом уровне ответа отсутствовало.
+         - В `public/riff-ui.js` обработчик клика по карточке альбома/плейлиста (`createAlbumCard`) извлекал треки выражением `const tracks = data.tracks || [];`, из-за чего `tracks` всегда становился пустым массивом `[]`.
+         - В результате вызывался `openAlbum({ ...album, tracks: [] })` с 0 треков.
+      2. **Отсутствие фоллбека дозагрузки в `openAlbum`**:
+         - Если `openAlbum` вызывался напрямую или из истории/поиска для SoundCloud альбома/плейлиста со стабами или неполными данными, фоновая подгрузка треков отсутствовала, и альбом оставался с 0 треков.
+      3. **Нечувствительность к регистру и нормализации путей Windows в локальных плейлистах**:
+         - В `renderPlaylistDetail` и `renderPlaylistsView` треки искались строгим равенством: `item.path === pathOrUri || (item.id && 'soundcloud:' + item.id === pathOrUri)`.
+         - На Windows пути в `moonplayer_playlists` (`playlists.json`) и `allSongs` часто различаются прямыми и обратными слешами (`/` против `\`) или регистром дисков, что приводило к сбою сопоставления и пустому списку `0 tracks`.
+    - **Решение**:
+      - **Бэкенд ([server.js](file:///G:/Repository/MoonPlayerApp/server.js#L1132-L1142))**:
+        - В ответе маршрута `/api/soundcloud/playlist/:id` и `/api/soundcloud/album/:id` добавлено явное поле `tracks: (playlist && playlist.tracks) || []`.
+      - **Интерфейс Riff UI ([public/riff-ui.js](file:///G:/Repository/MoonPlayerApp/public/riff-ui.js))**:
+        - В `createAlbumCard` добавлено безопасное извлечение треков:
+          `const pl = data.playlist || data.album || data;`
+          `const tracks = (pl && Array.isArray(pl.tracks)) ? pl.tracks : (Array.isArray(data.tracks) ? data.tracks : []);`
+          и передача полных метаданных: `openAlbum({ ...album, ...pl, tracks })`.
+        - В `openAlbum` добавлена автодогрузка треков SoundCloud: если `target.isSoundCloud || target.id` и `target.tracks` пуст или не содержит полных данных, отображается индикатор загрузки и выполняется динамический запрос `/api/soundcloud/playlist/:id` с последующим автообновлением `renderAlbumView`.
+        - Для локальных альбомов улучшен алгоритм сопоставления с `allSongs` по `albumKey`, нормализованному названию альбома и исполнителю.
+        - Добавлена функция `resolveSongByPathOrUri(pathOrUri, allSongs)` с нормализацией путей Windows (`/` vs `\`), проверкой SoundCloud ID, кэша и созданием валидных SoundCloud стабов. Использована в `renderPlaylistsView` и `renderPlaylistDetail`.
+      - **Фронтенд-мост ([public/script.js](file:///G:/Repository/MoonPlayerApp/public/script.js))**:
+        - В `window.MoonPlayer` добавлены методы `resolveTrack(pathOrUri)` и `getPlaylistTracks(playlistName)`.
+        - В `selectPlaylist` добавлена нормализация путей через `normalizeTrackPath(p)`.
+      - **Верификация**:
+        - Выполнен проверочный тест: запрос к `/api/soundcloud/liked-playlists` вернул 32 плейлиста. Первый плейлист `osu` (ID: 2308247829) успешно отдал 6 треков (`10 things i hate abt u` и др.) с метаданными.
+

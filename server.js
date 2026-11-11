@@ -1133,7 +1133,12 @@ app.get(['/api/soundcloud/playlist/:id', '/api/soundcloud/album/:id'], async (re
     try {
         const playlist = await soundcloudService.getPlaylist(req.params.id);
         if (!playlist) return res.status(404).json({ success: false, error: 'Playlist not found' });
-        res.json({ success: true, playlist, album: playlist });
+        res.json({
+            success: true,
+            playlist,
+            album: playlist,
+            tracks: (playlist && playlist.tracks) || []
+        });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -1229,6 +1234,13 @@ app.get(['/api/soundcloud/playlists', '/api/soundcloud/user/playlists'], async (
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
+});
+
+// Get liked and user-created playlists from SoundCloud
+app.get('/api/soundcloud/liked-playlists', async (req, res) => {
+    await scSafe(res, { playlists: [], userPlaylists: [], likedPlaylists: [], total: 0 }, async () => {
+        return await soundcloudService.getLikedAndUserPlaylists();
+    });
 });
 
 app.post('/api/soundcloud/playlists', async (req, res) => {
@@ -1355,3 +1367,5 @@ server.on('error', (err) => {
         console.error('[Server Error]', err);
     }
 });
+
+module.exports = { app, server };

@@ -416,6 +416,7 @@ class SoundCloudService {
             id: p.id,
             type: isAlbum ? 'album' : 'playlist',
             isAlbum: isAlbum,
+            isSoundCloud: true,
             title: playlistTitle,
             artist: artist,
             user: artist,
@@ -855,6 +856,70 @@ class SoundCloudService {
         const data = await resp.json();
         const playlists = Array.isArray(data) ? data : (data.collection || []);
         return playlists.map(p => this.formatPlaylist(p)).filter(Boolean);
+    }
+
+    async getLikedAndUserPlaylists() {
+        if (this.config.enabled === false) {
+            throw new Error('SoundCloud is disabled');
+        }
+        if (!this.currentUser) {
+            await this.ensureUser().catch(() => null);
+        }
+        if (!this.currentUser || !this.currentUser.id) {
+            throw new Error('SoundCloud is disabled or OAuth token is not configured');
+        }
+
+        const userId = this.currentUser.id;
+        const [userPlRes, likedPlRes] = await Promise.allSettled([
+            this.apiFetch(`https://api-v2.soundcloud.com/users/${userId}/playlists?limit=50`),
+            this.apiFetch(`https://api-v2.soundcloud.com/users/${userId}/playlist_likes?limit=50`)
+        ]);
+
+        const rawUser = userPlRes.status === 'fulfilled' && userPlRes.value && userPlRes.value.ok
+            ? await userPlRes.value.json().catch(() => [])
+            : [];
+        const rawLiked = likedPlRes.status === 'fulfilled' && likedPlRes.value && likedPlRes.value.ok
+            ? await likedPlRes.value.json().catch(() => ({}))
+            : {};
+
+        const userList = Array.isArray(rawUser) ? rawUser : (rawUser.collection || []);
+        const likedCollection = rawLiked.collection || [];
+        const likedList = likedCollection.map(it => it.playlist || it).filter(Boolean);
+
+        const formattedUser = userList.map(p => {
+            const formatted = this.formatPlaylist(p);
+            if (formatted) {
+                formatted.isUserCreated = true;
+                formatted.isSoundCloud = true;
+            }
+            return formatted;
+        }).filter(Boolean);
+
+        const formattedLiked = likedList.map(p => {
+            const formatted = this.formatPlaylist(p);
+            if (formatted) {
+                formatted.isLikedPlaylist = true;
+                formatted.isSoundCloud = true;
+            }
+            return formatted;
+        }).filter(Boolean);
+
+        const seenIds = new Set();
+        const merged = [];
+        for (const pl of [...formattedUser, ...formattedLiked]) {
+            const key = String(pl.id);
+            if (!seenIds.has(key)) {
+                seenIds.add(key);
+                merged.push(pl);
+            }
+        }
+
+        return {
+            playlists: merged,
+            userPlaylists: formattedUser,
+            likedPlaylists: formattedLiked,
+            total: merged.length
+        };
     }
 
     async createPlaylist(title, sharing = 'private', tracks = []) {
