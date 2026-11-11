@@ -2265,6 +2265,11 @@ body.is-android .result-play-overlay {
         padding-right: 2px !important;
         width: 100% !important;
         box-sizing: border-box !important;
+        flex: 1 1 0% !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
     }
 
     .song-item {

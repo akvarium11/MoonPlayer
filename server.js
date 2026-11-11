@@ -90,6 +90,43 @@ function getWritableDir() {
 }
 
 const DATA_DIR = getWritableDir();
+
+// Auto-migrate legacy user data from %APPDATA%\MoonPlayer to DATA_DIR (Tauri directory)
+function migrateLegacyData() {
+    if (!process.env.APPDATA) return;
+    const legacyDir = path.join(process.env.APPDATA, 'MoonPlayer');
+    if (path.resolve(legacyDir).toLowerCase() === path.resolve(DATA_DIR).toLowerCase() || !fs.existsSync(legacyDir)) return;
+
+    const filesToMigrate = [
+        'music_folders.json',
+        'equalizer.json',
+        'soundcloud_config.json',
+        'soundcloud_downloads.json',
+        'cover_cache.json',
+        'track_meta_cache.json',
+        'lastfm_info_cache.json'
+    ];
+
+    try {
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        for (const file of filesToMigrate) {
+            const src = path.join(legacyDir, file);
+            const dst = path.join(DATA_DIR, file);
+            if (fs.existsSync(src) && !fs.existsSync(dst)) {
+                try {
+                    fs.copyFileSync(src, dst);
+                    console.log(`[Server] Auto-migrated legacy data: ${file} -> ${dst}`);
+                } catch (e) {
+                    console.warn(`[Server] Failed to migrate ${file}:`, e.message);
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('[Server] Legacy migration error:', e.message);
+    }
+}
+migrateLegacyData();
+
 const CONFIG_FILE = path.join(DATA_DIR, 'music_folders.json');
 const EQ_CONFIG_FILE = path.join(DATA_DIR, 'equalizer.json');
 
@@ -462,6 +499,7 @@ function scanDirectory(dirPath, fileList = []) {
                         year: year || undefined,
                         duration: (typeof duration === 'number' && duration > 0) ? duration : undefined,
                         isSoundCloud: isSoundCloud || undefined,
+                        isDownloadedLocally: true,
                         source: isSoundCloud ? 'soundcloud' : undefined
                     });
                 }
@@ -1063,26 +1101,20 @@ app.get('/api/soundcloud/search', async (req, res) => {
     const lim = limit ? parseInt(limit) : 25;
     const searchType = (type || 'tracks').toLowerCase();
 
-    try {
+    const empty = { tracks: [], albums: [], playlists: [], artists: [] };
+    await scSafe(res, empty, async () => {
         if (searchType === 'all') {
-            const data = await soundcloudService.searchAll(q, lim);
-            res.json({ success: true, ...data });
+            return await soundcloudService.searchAll(q, lim);
         } else if (searchType === 'albums') {
-            const albums = await soundcloudService.searchAlbums(q, lim);
-            res.json({ success: true, albums });
+            return { albums: await soundcloudService.searchAlbums(q, lim) };
         } else if (searchType === 'playlists') {
-            const playlists = await soundcloudService.searchPlaylists(q, lim);
-            res.json({ success: true, playlists });
+            return { playlists: await soundcloudService.searchPlaylists(q, lim) };
         } else if (searchType === 'artists' || searchType === 'users') {
-            const artists = await soundcloudService.searchArtists(q, lim);
-            res.json({ success: true, artists });
+            return { artists: await soundcloudService.searchArtists(q, lim) };
         } else {
-            const tracks = await soundcloudService.searchTracks(q, lim);
-            res.json({ success: true, tracks });
+            return { tracks: await soundcloudService.searchTracks(q, lim) };
         }
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
+    });
 });
 
 // Get SoundCloud track metadata by ID
@@ -1136,19 +1168,37 @@ app.get('/api/soundcloud/artist/:id', async (req, res) => {
     }
 });
 
+// Wrap an async SoundCloud call so a slow/unavailable upstream never leaves
+// the client waiting forever. Returns a controlled empty result on failure.
+async function scSafe(res, fallback, fn) {
+    try {
+        const data = await Promise.race([
+            fn(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('SoundCloud request timed out')), 15000))
+        ]);
+        return res.json({ success: true, ...data });
+    } catch (e) {
+        console.error('[SoundCloud] request failed:', e.message);
+        return res.json({ success: true, ...fallback, warning: e.message });
+    }
+}
+
 // Get user liked tracks from SoundCloud
 app.get('/api/soundcloud/likes', async (req, res) => {
     const { limit, offset, next } = req.query;
-    try {
-        const data = await soundcloudService.getUserLikes(
+    await scSafe(res, { tracks: [], next_href: null, total: 0 }, () =>
+        soundcloudService.getUserLikes(
             limit ? parseInt(limit) : 50,
             offset ? parseInt(offset) : 0,
             typeof next === 'string' && next ? next : null
-        );
-        res.json({ success: true, ...data });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
+        )
+    );
+});
+
+// Public trending feed (works without a valid OAuth token)
+app.get('/api/soundcloud/trending', async (req, res) => {
+    const limit = req.query.limit ? parseInt(req.query.limit) : 30;
+    await scSafe(res, { tracks: [] }, async () => ({ tracks: await soundcloudService.getTrending(limit) }));
 });
 
 app.post('/api/soundcloud/like', async (req, res) => {

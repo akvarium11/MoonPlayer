@@ -529,6 +529,7 @@ class DiscordPresenceManager {
 
             const now = Date.now();
             const curSec = Math.max(0, Number(currentTime) || 0);
+            const durationSec = Math.max(0, Number(duration) || 0);
 
             const activity = {
                 type: 2, // 2 = LISTENING
@@ -543,8 +544,15 @@ class DiscordPresenceManager {
                 instance: false
             };
 
-            // Set elapsed time (counts upwards from the current elapsed second)
-            if (isPlaying) {
+            // Set elapsed time with proper end timestamp
+            if (isPlaying && durationSec > 0) {
+                const remainingSec = Math.max(0, durationSec - curSec);
+                activity.timestamps = {
+                    start: Math.floor(now - (curSec * 1000)),
+                    end: Math.floor(now + (remainingSec * 1000))
+                };
+            } else if (isPlaying) {
+                // Fallback: if no duration, just show elapsed
                 activity.timestamps = {
                     start: Math.floor(now - (curSec * 1000))
                 };

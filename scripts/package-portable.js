@@ -4,7 +4,7 @@ const { execSync } = require('child_process');
 
 const rootDir = path.resolve(__dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
-const version = pkg.version || '3.0.0';
+const version = pkg.version || '3.1';
 
 const releaseDir = path.join(rootDir, 'src-tauri', 'target', 'release');
 const distDir = path.join(rootDir, 'dist');
@@ -57,7 +57,7 @@ if (fs.existsSync(serverDst)) {
     fs.rmSync(serverDst, { recursive: true, force: true });
 }
 fs.mkdirSync(serverDst, { recursive: true });
-const serverFiles = ['server.js', 'soundcloud_service.js', 'discord_presence.js', 'discord_config.json', 'package.json'];
+const serverFiles = ['server.js', 'soundcloud_service.js', 'discord_presence.js', 'discord_config.json', 'soundcloud_config.json', 'package.json'];
 for (const f of serverFiles) {
     const srcF = path.join(rootDir, f);
     if (fs.existsSync(srcF)) {

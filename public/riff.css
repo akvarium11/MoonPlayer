@@ -2006,12 +2006,22 @@ body.perf .my-wave-ambient-light {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, var(--accent, #ff6b6b) 8%, transparent) 0%,
+    color-mix(in srgb, var(--accent, #ff6b6b) 4%, transparent) 25%,
+    transparent 100%);
+  border-radius: 20px;
+  padding: 16px;
+  backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--accent, #ff6b6b) 12%, transparent);
 }
 .lyrics-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent, #ff6b6b) 8%, transparent);
+  padding-bottom: 12px;
 }
 .lyrics-label {
   font-size: calc(13px * var(--font-scale, 1));
@@ -2061,7 +2071,7 @@ body.perf .my-wave-ambient-light {
   gap: 16px;
   overflow-y: auto;
   flex: 1;
-  padding: 16px 8px;
+  padding: 8px 4px;
   transition: opacity 250ms cubic-bezier(0.2, 0, 0, 1);
 }
 
@@ -2431,7 +2441,9 @@ body.perf .my-wave-ambient-light {
   left: 16px;
   right: 16px;
   height: 88px;
-  background: var(--md-sys-color-surface-container) !important;
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, var(--md-sys-color-surface-container) 100%, var(--accent, #ff6b6b) 2%),
+    var(--md-sys-color-surface-container) 100%);
   border-radius: 28px !important;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -2439,10 +2451,11 @@ body.perf .my-wave-ambient-light {
   padding: 0 16px !important;
   gap: 16px;
   z-index: 9999 !important;
-  border: none;
+  border: 1px solid color-mix(in srgb, var(--accent, #ff6b6b) 8%, transparent);
   transform: translateZ(0);
   will-change: transform;
-  transition: background-color var(--transition-emphasized), transform var(--transition-emphasized);
+  transition: background-color var(--transition-emphasized), transform var(--transition-emphasized), border-color 0.3s ease;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 .playbar-left {
   display: flex !important;
@@ -2517,14 +2530,19 @@ body.perf .my-wave-ambient-light {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
 }
 .control-btn:hover {
-  background: var(--md-sys-color-surface-container-highest);
-  color: var(--md-sys-color-on-surface);
+  background: color-mix(in srgb, var(--accent, #ff6b6b) 12%, var(--md-sys-color-surface-container-highest));
+  color: var(--accent, #ff6b6b);
+  transform: scale(1.08);
+}
+.control-btn:active {
+  transform: scale(0.96);
 }
 .control-btn.active {
-  color: var(--md-sys-color-primary);
-  background: var(--md-sys-color-surface-container-highest);
+  color: var(--accent, #ff6b6b);
+  background: color-mix(in srgb, var(--accent, #ff6b6b) 15%, var(--md-sys-color-surface-container-highest));
 }
 
 .play-pause-wrapper {
@@ -2840,6 +2858,8 @@ body.perf .my-wave-ambient-light {
   animation: m3Dash 1.4s ease-in-out infinite;
 }
 @keyframes m3Rotate { 100% { transform: rotate(360deg); } }
+/* Spinner used by the SoundCloud / search loading states in riff-ui.js */
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes m3Dash {
   0% { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
   50% { stroke-dasharray: 90, 200; stroke-dashoffset: -35px; }
@@ -5781,9 +5801,34 @@ body.intensity-zero .lyric-word.active-word { opacity: 1; color: var(--md-sys-co
   flex-direction: column;
   overflow: hidden;
   user-select: none;
+  animation: tvKaraokeEnter 0.3s cubic-bezier(0.2, 0, 0, 1);
 }
+
+@keyframes tvKaraokeEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .tv-karaoke.hidden {
   display: none !important;
+  animation: tvKaraokeExit 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes tvKaraokeExit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
 }
 .tv-bg {
   position: absolute;
@@ -5908,6 +5953,8 @@ body.intensity-zero .lyric-word.active-word { opacity: 1; color: var(--md-sys-co
   text-align: center;
   word-break: break-word;
   transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.2, 0, 0, 1);
+  letter-spacing: -0.3px;
+  overflow-wrap: break-word;
 }
 .tv-karaoke-artist {
   font-size: clamp(14px, 1.6vw, 18px);

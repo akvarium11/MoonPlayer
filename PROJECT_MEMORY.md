@@ -734,3 +734,91 @@ npm run server       # Запуск только фонового сервера
     - В `public/index.html` обновлена строка версии: `Version 3.0b + Riff M3 UI Engine`.
     - Включает исправление паузы пробелом в Riff UI (устранение двойного триггера) и приоритизацию списка треков в начале результатов поиска SoundCloud.
     - Сборка дистрибутивов формирует артефакты `MoonPlayer_3.0b_portable.zip` и `MoonPlayer_3.0b_x64-setup.exe` в директории `dist/`.
+
+39. **Релиз версии 3.1 — Надёжность вкладок SoundCloud, воспроизведения и поиска (2026-11-09)**:
+    - **Корневая причина**: `soundcloud_service.js` не имел сетевых таймаутов. Невалидный OAuth-токен (401 от `/me`) и скрапинг `client_id` без ограничений вызывали вечное зависание `/api/soundcloud/search`, `/likes`, `/user` (>60с) — поиск и вкладки «замораживались», лайки не отображались.
+    - **Таймауты**: добавлен `fetchWithTimeout()` (AbortController, 12с), применён в `apiFetch()`, `verifyToken()`, `getClientId()` (1 страница + не более 4 скриптов), `fetchHlsAudio()`, `getTrackMediaStreamUrl()`, `getPlaylist()`, `getArtist()`.
+    - **Устойчивый фолбэк токена**: `ensureUser()` при падении `verifyToken()` берёт сохранённого `config.user`, поэтому лайки/плейлисты работают и с просроченным OAuth через публичный `client_id`.
+    - **DRM-фикс (главная причина «песня не играет»)**: `fetchHlsAudio()` искал `#EXT-X-MAP` через `lines.find(l => l.includes('URI='))` и первым находил `#EXT-X-KEY:URI="skd://..."`. `fetch("skd://...")` бросал «fetch failed» → HTTP 500 → аудио не грузилось (`readyState:0`). Теперь ищется строго `#EXT-X-MAP:`, а DRM-плейлисты (`SAMPLE-AES`/`AES-128`) отклоняются явной ошибкой.
+    - **Фильтр неиграбельных треков**: `/tracks/:id` у части треков отдаёт только `cbc-encrypted-hls`/`ctr-encrypted-hls` (Widevine). `getTrending()` и `getUserLikes()` отсекают DRM-only, оставляя `progressive`/`hls`.
+    - **Trending endpoint**: charts API SoundCloud мёртв (404) → добавлены `getTrending(limit)` (broad-запросы + сортировка по `playback_count`) и `GET /api/soundcloud/trending`.
+    - **Отказоустойчивость сервера**: `scSafe(res, fallback, fn)` с `Promise.race` 15с для `/search`, `/likes`, `/trending` — при ошибке `success:true` с пустым результатом вместо 500/зависания.
+    - **Riff UI вкладки (Trending / My Likes / All SoundCloud Tracks)**: `renderSoundCloudView()` раньше фильтровал локальную библиотеку `getAllSongs()` (пусто для стриминга) → «My Likes» был пуст. Переписан на загрузку через новый мост `MoonPlayer.fetchSoundCloudFeed(subtab)`, с кэшем по вкладкам (`state.scFeedCache`), защитой от гонок и кнопкой Retry.
+    - **Регистрация треков**: `fetchSoundCloudFeed()` вызывает `registerSoundCloudTrack()` для каждого трека (`src`, `globalIndex`, `format`) → `createTrackRow()` + `setQueue()` + `playTrack()` запускают воспроизведение с первого клика.
+    - **Поиск**: `performSearch()` (Riff UI) получил клиентский guard 16с и маппинг результатов через `registerSoundCloudTrack()`; классический поиск работает через обновлённый `/search`.
+    - **Тесты** (`scripts/test-*.js`, puppeteer-core + Chrome, скриншоты в `test_screenshots/`): Trending 30 / My Likes 49 / All 79 строк (`visible>0`); клик по 2-му и 3-му треку → `paused:false`, `readyState:4`, `currentTime` растёт (0.33 → 3.94с); стримы `206 audio/mp4`; SC-поиск 25 треков; классический поиск 22/25; `pageerrors: none`.
+    - **Версия 3.1**: `package.json` = 3.1, `package-lock.json` = 3.1.0, `src-tauri/tauri.conf.json` = 3.1.0, `Cargo.toml`/`Cargo.lock` = 3.1.0, `index.html` = «Version 3.1 + Riff M3 UI Engine», Android `versionCode 6 / versionName 3.1.0`.
+
+40. **Riff UI Polish — Spinner, Background Swap, Likes Paging (2026-11-09)**:
+    - **Спиннер загрузки SoundCloud не крутился (Bug 1)**: В `riff-ui.js` ( loading state для `renderSoundCloudView` и `performSearch` ) использовался инлайн `animation:spin 0.8s linear infinite`, но `@keyframes spin` нигде не был объявлен (`@keyframes spinVinyl`, `m3Rotate`, `riff-track-spin` есть, а `spin` — нет). Добавлен `@keyframes spin { to { transform: rotate(360deg); } }` в `riff.css` рядом с `@keyframes m3Rotate`. Проверено: computed `animationName: spin`, `playState: running`, transform меняется между кадрами.
+    - **Обои «не менялись» (Bug 2)**: Расследование показало, что `#riff-custom-bg` (z-index 0) перекрывался непрозрачным `#main-content` (`body.mode-riff .main-content { background: ... !important }`, riff.css:8140). Правило `body.riff-custom-bg-on.mode-riff :is(.main-content, #main-content, …) { background: transparent !important }` (riff.css:9265) имеет бо́льшую специфичность и корректно делает контейнер прозрачным — реальная загрузка красного PNG даёт видимый красный фон, повторная загрузка синего PNG меняет blob URL и цвет на синий (скриншоты `swap_red.png` / `swap_blue.png`). Первый «чёрный» скриншот был артефактом теста: использовался тёмный 8×8 PNG.
+    - **Лайкнутые не грузились дальше 49 (Bug 3)**: Riff UI `fetchSoundCloudFeed('likes')` запрашивал только `/api/soundcloud/likes?limit=50` (49 после DRM-фильтра) и игнорировал `next_href`, хотя в классическом UI (`script.js::loadMoreSoundCloudLikes`) динамическая подгрузка уже была. Исправлено:
+      - Мост `MoonPlayer.fetchSoundCloudFeed()` теперь возвращает `{ tracks, nextHref, likeCursor }` (вместо голого массива) и прокидывает `data.next_href`.
+      - Добавлен `MoonPlayer.fetchMoreSoundCloudLikes(nextHref)` → `GET /api/soundcloud/likes?next=…` с 15с таймаутом и регистрацией треков.
+      - В `riff-ui.js` добавлены `state.scFeedNext` (курсор по вкладкам), `loadMoreSoundCloudFeed()` (дедуп по id, дозапись строк без перерисовки, обновление счётчика) и ветка `state.currentView === 'soundcloud'` в существующем infinite-scroll обработчике `el.mainContent`.
+      - Вкладка «All» тоже хранит курсор лайков и догружает их.
+      - Проверено: 49 → 143 → 192 треков при скролле; клик по подгруженному треку с 3-й страницы → `readyState:4`, `currentTime` растёт, `error:null`, стрим `206 audio/mp4`.
+    - **Тесты** (`scripts/test-three-fixes.js`, `test-bg-swap.js`, `test-paged-play.js`, `test-regression-31.js`, puppeteer-core + Chrome): spinner `animating:true`; red→blue смена blob URL; likes 49→192; 3 вкладки 30/49/79; воспроизведение подгруженного трека; `pageerrors: none`. Скриншоты в `test_screenshots/`.
+
+41. **Fix Offline Tracks Infinite Loading & SoundCloud Likes Display (2026-11-11)**:
+    - **Бесконечная загрузка офлайн треков (Bug 1)**:
+      - **Причины**:
+        1. `initServerLibrary()` в [public/script.js](file:///G:/Repository/MoonPlayerApp/public/script.js) запускалась ДО объявления `window.MoonPlayer`. Событие `window.MoonPlayer.emit('libraryLoaded')` молча игнорировалось (`MoonPlayer` был `undefined`). В [public/riff-ui.js](file:///G:/Repository/MoonPlayerApp/public/riff-ui.js) `renderLocalView()` при старте попадал в условие `!window.isLibraryLoaded`, рисовал скелетон-шиммер `.skeleton-list` и ждал `libraryLoaded`, которое больше никогда не приходило.
+        2. Фильтр `isSoundCloudSong(s)` в Riff UI отсекал локальные файлы, если они лежали в подпапке `SoundCloud` или имели флаг `isSoundCloud: true` от бэкенда [server.js](file:///G:/Repository/MoonPlayerApp/server.js).
+        3. В `pollServerDurations` вызывалась необъявленная функция `renderSongList()` (`ReferenceError`). В `appendMoreSongs` при скрытом контейнере со списком песен (`clientHeight === 0`) возникал бесконечный рекурсивный вызов `setTimeout`.
+      - **Решение**:
+        - В `script.js` запуск `initServerLibrary()` перенесён в конец `DOMContentLoaded` после создания `window.MoonPlayer`.
+        - В блоке `finally` `reloadLibraryFromServer()` гарантированно обновляется `window.allSongs = allSongs` и вызывается `window.MoonPlayer.emit('libraryLoaded', ...)`.
+        - В `riff-ui.js` при навешивании слушателя `libraryLoaded` добавлена проверка: если библиотека уже загружена на момент регистрации слушателя, `renderLocalView()` вызывается сразу. Добавлен защитный таймер (watchdog 3.5с) для выхода из скелетона.
+        - Локальные треки с файловым путём (`s.path && !s.path.startsWith('soundcloud:')` или `s.isDownloadedLocally`) больше никогда не исключаются из локальной библиотеки.
+        - В `appendMoreSongs` добавлена проверка `songListContainer.clientHeight > 0`, а вызов `renderSongList()` заменён на безопасную проверку.
+    - **Отображение лайков SoundCloud и сердечек (Bug 2)**:
+      - **Причины**:
+        1. `window.isCurrentTrackLiked(track)` в `script.js` проверял CSS-класс `#like-btn` играющего в плеере трека в DOM. При старте плеер ничего не играет → метод возвращал `false` для абсолютно всех треков медиатеки и ленты лайков. Если играл лайкнутый трек — возвращал `true` даже для чужих треков.
+        2. `fetchSoundCloudFeed()` и `fetchMoreSoundCloudLikes()` в `script.js` запрашивали лайки, но не сохраняли их `id` в Set `scLikedIds`.
+        3. `toggleLikeTrack` в `window.MoonPlayer` вызывал необъявленную функцию `toggleLikeSongObject(song)`.
+        4. В `riff-ui.js` отсутствовал слушатель события `likedChange`, из-за чего сердечки в списке треков и счётчики не обновлялись при лайках.
+      - **Решение**:
+        - Создана центральная функция `isTrackLiked(song)` в `script.js`, проверяющая наличие ID в `scLikedIds` (для SoundCloud) и путь/id в `playlists['Liked']` (для локальных и сетевых треков). `window.MoonPlayer.isLiked(song)` и `window.isCurrentTrackLiked(song)` переведены на неё.
+        - `fetchSoundCloudFeed()` и `fetchMoreSoundCloudLikes()` теперь наполняют `scLikedIds` полученными id лайков, сохраняют в `localStorage` и обновляют состояние.
+        - Добавлена фоновая синхронизация `syncSoundCloudLikesInBackground()` на старте плеера.
+        - `MoonPlayer.toggleLike` и `toggleLikeTrack` переведены на полноценную `toggleTrackLike(song)`, которая отправляет POST/DELETE на SoundCloud API или модифицирует `playlists['Liked']` и рассылает `likedChange`.
+        - В `riff-ui.js` добавлен слушатель `window.MoonPlayer.on('likedChange')`, мгновенно обновляющий заливку SVG сердечек (`fill="currentColor"` ↔ `fill="none"`), подсказки и счётчик избранного.
+    - **Тесты и верификация**:
+      - `scripts/test-offline-and-likes-fix.js`:
+        - Тест 1 (Офлайн треки): 60/2346 треков отрисовано, `skeleton: false`, заголовок «2346 tracks in library» — PASS.
+        - Тест 2 (Лайки SoundCloud): 49 треков в «My Likes», 49 из 49 с активными сердечками (`fill="currentColor"`), фиктивный трек строго `dummyLiked: false` — PASS.
+        - Тест 3 (Интерактивный лайк): клик по сердечку переключает `initial: true` → `toggled: false` (`none`) → `restored: true` (`currentColor`) — PASS.
+        - Тест 4 (Воспроизведение): оффлайн трек стартует чисто (`currentTime > 0.2s`, `paused: false`) — PASS.
+      - `scripts/test-regression-31.js`: 3 вкладки Trending (30), Likes (49), All (79); dynamic paging до 144 строк; клик по подгруженному треку запускает поток — PASS (`VERDICT: PASS`).
+
+42. **Fix SoundCloud Likes Dynamic Loading & Tauri Data Isolation (2026-11-11)**:
+    - **Причина надписи «No liked SoundCloud tracks found.» в Tauri-билде**:
+      1. **Изоляция директории AppData в Tauri**:
+         - При переходе на Tauri backend запускается с `MOONPLAYER_DATA_DIR = %APPDATA%\com.moonplayer.desktop`.
+         - Пользовательские конфигурации (`soundcloud_config.json`, `soundcloud_downloads.json`, `equalizer.json`, `cover_cache.json`, `track_meta_cache.json`) исторически хранились в `%APPDATA%\MoonPlayer` или в корне проекта.
+         - В `soundcloud_service.js::loadConfig()` поиск происходил только по `CONFIG_FILE` и `__dirname` (`resources/server`), где конфига не было. В результате сервис инициализировался с `enabled: false, oauthToken: '', user: null`.
+         - Запрос `GET /api/soundcloud/likes` возвращал пустой массив с `warning: "SoundCloud is disabled or OAuth token is not configured"`.
+         - В `riff-ui.js` этот `warning` игнорировался и при пустом массиве рисовался стандартный заглушечный текст «No liked SoundCloud tracks found.» без объяснения причин и без возможности подключиться.
+      2. **Жёсткая блокировка в `getUserLikes()`**:
+         - Метод `getUserLikes()` требовал наличие и `enabled`, и `oauthToken`. Даже если в кэше был профиль пользователя с `user.id`, но токен истёк (401) или отсутствовал, запрос блокировался до вызова SoundCloud API, хотя публичные лайки пользователя доступны через публичный `client_id`.
+      3. **Ошибки динамической бесконечной подгрузки в Riff UI**:
+         - Заглушка загрузки `.sc-load-more-row` не удалялась в случае нулевого прироста уникальных треков из-за выхода по `return`.
+         - Счётчик в подзаголовке (`sc-subtitle`) не отображал общее количество лайков из SoundCloud (`total`).
+         - При tall/4K экранах первая страница из 49 треков могла не вызывать скролл контейнера `el.mainContent`.
+    - **Решение**:
+      - **Автомиграция в `server.js` и `soundcloud_service.js`**:
+        - В `server.js` добавлена функция `migrateLegacyData()`, автоматически копирующая все `.json` файлы из `%APPDATA%\MoonPlayer` в `DATA_DIR` (`com.moonplayer.desktop`), если они там отсутствуют.
+        - В `soundcloud_service.js` методы `loadConfig()` и `loadDownloads()` проверяют цепочку кандидатов (`CONFIG_FILE`, `com.moonplayer.desktop`, `MoonPlayer`, `process.cwd()`, `__dirname`, `PORTABLE_EXECUTABLE_DIR`, `process.execPath`), загружают первый найденный конфиг и автоматически переносят его в активный `CONFIG_FILE`.
+        - В `scripts/package-portable.js` добавлен `soundcloud_config.json` в список файлов сборки портативного сервера.
+      - **Ослабление требований и публичный фоллбек в `soundcloud_service.js`**:
+        - `getUserLikes()` и `getUserPlaylists()` проверяют `this.config.enabled !== false` и наличие пользователя (`this.currentUser || await this.ensureUser()`). Если `user.id` известен, запрос выполняется успешно через публичный `client_id` даже при 401 на токене.
+      - **Информативный UI и надёжный infinite scroll в `riff-ui.js`**:
+        - В `fetchSoundCloudFeed()` и `fetchMoreSoundCloudLikes()` проброшены `warning` и `total`.
+        - Если вкладка «My Likes» пуста из-за отсутствия авторизации или отключённого SoundCloud, вместо безликой надписи «No liked SoundCloud tracks found.» отображается карточка «SoundCloud Account Not Connected» с кнопкой перехода в настройки и кнопкой «Retry».
+        - Добавлен анимированный индикатор подгрузки `.sc-load-more-row` с гарантированной очисткой в блоке `finally`.
+        - Добавлена автоподгрузка второй страницы при tall-экранах (когда высота контента меньше высоты вьюпорта + 250px).
+        - Подзаголовок динамически обновляется в формате `${count} liked tracks (${total} total)`.
+        - В настройках Riff UI (`renderSettingsView`) синхронизируется статус подключения SoundCloud (`Connected as ... (N likes)`).
+      - **Кнопка Refresh**:
+        - Исправлен вызов `renderSoundCloudView(state.scSubtab, true)` с принудительным сбросом кэша.

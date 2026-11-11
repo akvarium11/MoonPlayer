@@ -2,6 +2,19 @@ const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
 
+// Network guard: SoundCloud / CDN requests must never hang forever. A missing
+// timeout here used to freeze search, likes and the whole UI indefinitely.
+const API_TIMEOUT_MS = 12000;
+async function fetchWithTimeout(url, options = {}, timeoutMs = API_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 function getWritableDir() {
     if (process.env.PORTABLE_EXECUTABLE_DIR) {
         return process.env.PORTABLE_EXECUTABLE_DIR;
@@ -38,13 +51,17 @@ class SoundCloudService {
         this.inFlightStreamUrls = new Map(); // id -> Promise<string>
         this.trackAudioCache = new Map(); // id -> { buffer, mimeType, expiresAt }
         this.inFlightTrackAudio = new Map(); // id -> Promise<{ buffer, mimeType }>
-        this.currentUser = null;
+        this.currentUser = (this.config.user && this.config.user.id) ? this.config.user : null;
         this.clientId = 'OGA0P5R5U4CpyooNe9OUcnjIMxao2hB2';
         this.inFlightClientId = null;
 
-        if (this.config.enabled && this.config.oauthToken) {
+        if (this.config.enabled !== false && this.config.oauthToken) {
             this.verifyToken(this.config.oauthToken).catch(err => {
                 console.error('[SoundCloud] Initial token verification failed:', err.message);
+                if (this.config.user && this.config.user.id) {
+                    console.warn('[SoundCloud] Token verify failed, falling back to cached user:', this.config.user.username);
+                    this.currentUser = this.config.user;
+                }
             });
         }
     }
@@ -57,24 +74,30 @@ class SoundCloudService {
         if (this.inFlightClientId) {
             return await this.inFlightClientId;
         }
+        // Scrape a fresh client_id from the public page, but keep it strictly
+        // bounded: one page + at most a few script files, each with a timeout.
+        // If anything fails or is slow, keep the well-known fallback id instead
+        // of leaving the request hanging (which used to freeze the whole UI).
         this.inFlightClientId = (async () => {
+            const fallback = this.clientId || 'OGA0P5R5U4CpyooNe9OUcnjIMxao2hB2';
             try {
-                const pageResp = await fetch('https://soundcloud.com', {
+                const pageResp = await fetchWithTimeout('https://soundcloud.com', {
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
                     }
-                });
+                }, 6000);
                 if (pageResp.ok) {
                     const html = await pageResp.text();
                     const scriptUrls = [...html.matchAll(/<script[^>]+src="([^">]+.js)"/g)].map(m => m[1]);
-                    for (let i = scriptUrls.length - 1; i >= 0; i--) {
+                    // Only inspect the last 4 scripts where the client_id lives.
+                    for (let i = scriptUrls.length - 1; i >= Math.max(0, scriptUrls.length - 4); i--) {
                         const sUrl = scriptUrls[i];
                         try {
-                            const jsResp = await fetch(sUrl, {
+                            const jsResp = await fetchWithTimeout(sUrl, {
                                 headers: {
                                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                                 }
-                            });
+                            }, 6000);
                             if (jsResp.ok) {
                                 const js = await jsResp.text();
                                 const match = js.match(/client_id[:=]["']([a-zA-Z0-9]{32})["']/);
@@ -91,9 +114,7 @@ class SoundCloudService {
             } finally {
                 this.inFlightClientId = null;
             }
-            if (!this.clientId) {
-                this.clientId = 'OGA0P5R5U4CpyooNe9OUcnjIMxao2hB2';
-            }
+            this.clientId = fallback;
             return this.clientId;
         })();
         return await this.inFlightClientId;
@@ -116,45 +137,66 @@ class SoundCloudService {
         if (hasToken) {
             headers['Authorization'] = `OAuth ${this.config.oauthToken.trim()}`;
             try {
-                const resp = await fetch(url, { ...options, headers });
+                const resp = await fetchWithTimeout(url, { ...options, headers });
                 if (resp.status !== 401 && resp.status !== 403) {
                     return resp;
                 }
                 console.warn(`[SoundCloud] Request with OAuth token failed (${resp.status}), falling back to public client_id`);
             } catch (err) {
-                console.warn('[SoundCloud] OAuth request network error, trying client_id:', err.message);
+                console.warn('[SoundCloud] OAuth request failed, trying client_id:', err.message);
             }
         }
 
-        // Try with client_id
+        // Try with client_id (public fallback). Bounded so the UI never hangs.
         let cId = await this.getClientId();
         const fallbackHeaders = { ...headers };
         delete fallbackHeaders['Authorization'];
+        delete fallbackHeaders._retried;
         let clientUrl = this.appendClientId(url, cId);
-        let resp = await fetch(clientUrl, { ...options, headers: fallbackHeaders });
+        let resp = await fetchWithTimeout(clientUrl, { ...options, headers: fallbackHeaders });
 
         if ((resp.status === 401 || resp.status === 403) && !options._retried) {
             console.warn(`[SoundCloud] client_id ${cId} failed (${resp.status}), refreshing client_id...`);
             cId = await this.getClientId(true);
             clientUrl = this.appendClientId(url, cId);
-            resp = await fetch(clientUrl, { ...options, headers: fallbackHeaders, _retried: true });
+            resp = await fetchWithTimeout(clientUrl, { ...options, headers: fallbackHeaders });
         }
 
         return resp;
     }
 
     loadConfig() {
-        try {
-            if (fs.existsSync(CONFIG_FILE)) {
-                return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-            } else {
-                const fallback = path.join(__dirname, 'soundcloud_config.json');
-                if (CONFIG_FILE !== fallback && fs.existsSync(fallback)) {
-                    return JSON.parse(fs.readFileSync(fallback, 'utf8'));
+        const candidates = [
+            CONFIG_FILE,
+            process.env.APPDATA ? path.join(process.env.APPDATA, 'com.moonplayer.desktop', 'soundcloud_config.json') : null,
+            process.env.APPDATA ? path.join(process.env.APPDATA, 'MoonPlayer', 'soundcloud_config.json') : null,
+            path.join(process.cwd(), 'soundcloud_config.json'),
+            path.join(__dirname, 'soundcloud_config.json'),
+            path.join(__dirname, '..', 'soundcloud_config.json'),
+            path.join(__dirname, '..', '..', 'soundcloud_config.json'),
+            process.env.PORTABLE_EXECUTABLE_DIR ? path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'soundcloud_config.json') : null,
+            process.execPath ? path.join(path.dirname(process.execPath), 'soundcloud_config.json') : null
+        ].filter(Boolean);
+
+        for (const candidate of candidates) {
+            try {
+                if (fs.existsSync(candidate)) {
+                    const content = fs.readFileSync(candidate, 'utf8');
+                    const parsed = JSON.parse(content);
+                    if (parsed && typeof parsed === 'object') {
+                        if (candidate !== CONFIG_FILE) {
+                            try {
+                                if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+                                fs.writeFileSync(CONFIG_FILE, content, 'utf8');
+                                console.log(`[SoundCloud] Auto-migrated config from ${candidate} -> ${CONFIG_FILE}`);
+                            } catch (e) {}
+                        }
+                        return parsed;
+                    }
                 }
+            } catch (e) {
+                console.error(`[SoundCloud] Error reading candidate config ${candidate}:`, e.message);
             }
-        } catch (e) {
-            console.error('[SoundCloud] Error reading config:', e);
         }
         return {
             enabled: false,
@@ -177,12 +219,31 @@ class SoundCloudService {
     }
 
     loadDownloads() {
-        try {
-            if (fs.existsSync(DOWNLOADS_FILE)) {
-                return JSON.parse(fs.readFileSync(DOWNLOADS_FILE, 'utf8'));
-            }
-        } catch (e) {
-            console.error('[SoundCloud] Error reading downloads:', e);
+        const candidates = [
+            DOWNLOADS_FILE,
+            process.env.APPDATA ? path.join(process.env.APPDATA, 'com.moonplayer.desktop', 'soundcloud_downloads.json') : null,
+            process.env.APPDATA ? path.join(process.env.APPDATA, 'MoonPlayer', 'soundcloud_downloads.json') : null,
+            path.join(process.cwd(), 'soundcloud_downloads.json'),
+            path.join(__dirname, 'soundcloud_downloads.json'),
+            path.join(__dirname, '..', 'soundcloud_downloads.json')
+        ].filter(Boolean);
+
+        for (const candidate of candidates) {
+            try {
+                if (fs.existsSync(candidate)) {
+                    const content = fs.readFileSync(candidate, 'utf8');
+                    const parsed = JSON.parse(content);
+                    if (Array.isArray(parsed)) {
+                        if (candidate !== DOWNLOADS_FILE) {
+                            try {
+                                if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+                                fs.writeFileSync(DOWNLOADS_FILE, content, 'utf8');
+                            } catch (e) {}
+                        }
+                        return parsed;
+                    }
+                }
+            } catch (e) {}
         }
         return [];
     }
@@ -217,6 +278,26 @@ class SoundCloudService {
         return { 'Authorization': `OAuth ${token}` };
     }
 
+    // Resolve the current user without ever letting a dead OAuth token block
+    // the request. Falls back to the user cached in config, so likes and
+    // playlists still work through the public client_id.
+    async ensureUser() {
+        if (this.currentUser && this.currentUser.id) return this.currentUser;
+        const token = (this.config.oauthToken || '').trim();
+        if (token) {
+            try {
+                return await this.verifyToken(token);
+            } catch (err) {
+                console.warn('[SoundCloud] Token verify failed, using cached user:', err.message);
+            }
+        }
+        if (this.config.user && this.config.user.id) {
+            this.currentUser = this.config.user;
+            return this.currentUser;
+        }
+        throw new Error('SoundCloud user is not available');
+    }
+
     getMutateHeaders() {
         const headers = {
             ...this.getAuthHeader(),
@@ -237,9 +318,9 @@ class SoundCloudService {
             throw new Error('OAuth token is required');
         }
         const cleanToken = token.trim();
-        const resp = await fetch('https://api-v2.soundcloud.com/me', {
+        const resp = await fetchWithTimeout('https://api-v2.soundcloud.com/me', {
             headers: { 'Authorization': `OAuth ${cleanToken}` }
-        });
+        }, 8000);
 
         if (!resp.ok) {
             const errText = await resp.text().catch(() => '');
@@ -509,7 +590,7 @@ class SoundCloudService {
 
     async getPlaylist(playlistId) {
         const pUrl = `https://api-v2.soundcloud.com/playlists/${playlistId}`;
-        const resp = await fetch(pUrl, { headers: this.getAuthHeader() });
+        const resp = await this.apiFetch(pUrl);
         if (!resp.ok) {
             throw new Error(`Playlist ${playlistId} not found (${resp.status})`);
         }
@@ -531,12 +612,50 @@ class SoundCloudService {
         if (track) return track;
 
         const trackUrl = `https://api-v2.soundcloud.com/tracks/${idStr}`;
-                const resp = await this.apiFetch(trackUrl);
+        const resp = await this.apiFetch(trackUrl);
         if (!resp.ok) {
             throw new Error(`Track ${idStr} not found (${resp.status})`);
         }
         const data = await resp.json();
         return this.formatTrack(data);
+    }
+
+    // Public "Trending" feed. The charts endpoint is no longer available, so
+    // we query a few broad terms and keep the most-played unique tracks.
+    async getTrending(limit = 30) {
+        const queries = ['popular', 'trending', 'hits 2026', 'electronic', 'hip hop'];
+        const seen = new Set();
+        const collected = [];
+        for (const q of queries) {
+            if (collected.length >= limit * 2) break;
+            try {
+                const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(q)}&limit=20&sort=popular`;
+                const resp = await this.apiFetch(url);
+                if (!resp.ok) continue;
+                const data = await resp.json();
+                for (const item of (data.collection || [])) {
+                    const t = item.track || item;
+                    if (!t || !t.id || seen.has(String(t.id))) continue;
+                    seen.add(String(t.id));
+                    collected.push(t);
+                }
+            } catch (err) {
+                console.warn('[SoundCloud] trending query failed:', err.message);
+            }
+        }
+        collected.sort((a, b) => (b.playback_count || 0) - (a.playback_count || 0));
+        // Skip DRM-only tracks: their HLS segments are encrypted (Widevine /
+        // SAMPLE-AES) and cannot be turned into a playable stream. Without this
+        // filter a click on such a row silently does nothing.
+        const playable = collected.filter(t => {
+            const tc = (t.media && t.media.transcodings) || [];
+            if (!tc.length) return false;
+            return tc.some(x => {
+                const p = (x.format && x.format.protocol) || '';
+                return p === 'progressive' || p === 'hls';
+            });
+        });
+        return playable.slice(0, limit).map(t => this.formatTrack(t)).filter(Boolean);
     }
 
     async getTrackStation(trackId) {
@@ -577,7 +696,7 @@ class SoundCloudService {
 
     async getArtist(artistId) {
         const userUrl = `https://api-v2.soundcloud.com/users/${artistId}`;
-        const resp = await fetch(userUrl, { headers: this.getAuthHeader() });
+        const resp = await this.apiFetch(userUrl);
         if (!resp.ok) {
             throw new Error(`Artist ${artistId} not found (${resp.status})`);
         }
@@ -655,11 +774,14 @@ class SoundCloudService {
     }
 
     async getUserLikes(limit = 50, offset = 0, nextHref = null) {
-        if (!this.config.enabled || !this.config.oauthToken) {
-            throw new Error('SoundCloud is disabled or OAuth token is not configured');
+        if (this.config.enabled === false) {
+            throw new Error('SoundCloud is disabled');
         }
         if (!this.currentUser) {
-            await this.verifyToken(this.config.oauthToken);
+            await this.ensureUser().catch(() => null);
+        }
+        if (!this.currentUser || !this.currentUser.id) {
+            throw new Error('SoundCloud is disabled or OAuth token is not configured');
         }
 
         const userId = this.currentUser.id;
@@ -685,14 +807,24 @@ class SoundCloudService {
         const collection = data.collection || [];
         const tracks = [];
 
+        const isPlayable = (t) => {
+            const tc = (t && t.media && t.media.transcodings) || [];
+            if (!tc.length) return false;
+            return tc.some(x => {
+                const p = (x.format && x.format.protocol) || '';
+                return p === 'progressive' || p === 'hls';
+            });
+        };
+
         for (const item of collection) {
-            if (item.track) {
-                const formatted = this.formatTrack(item.track);
-                if (formatted) tracks.push(formatted);
-            } else if (item.kind === 'track') {
-                const formatted = this.formatTrack(item);
-                if (formatted) tracks.push(formatted);
-            }
+            let raw = null;
+            if (item.track) raw = item.track;
+            else if (item.kind === 'track') raw = item;
+            if (!raw) continue;
+            // Only drop when we positively know the track is DRM-only.
+            if (raw.media && raw.media.transcodings && raw.media.transcodings.length && !isPlayable(raw)) continue;
+            const formatted = this.formatTrack(raw);
+            if (formatted) tracks.push(formatted);
         }
 
         return {
@@ -703,11 +835,14 @@ class SoundCloudService {
     }
 
     async getUserPlaylists() {
-        if (!this.config.enabled || !this.config.oauthToken) {
-            throw new Error('SoundCloud is disabled or OAuth token is not configured');
+        if (this.config.enabled === false) {
+            throw new Error('SoundCloud is disabled');
         }
         if (!this.currentUser) {
-            await this.verifyToken(this.config.oauthToken);
+            await this.ensureUser().catch(() => null);
+        }
+        if (!this.currentUser || !this.currentUser.id) {
+            throw new Error('SoundCloud is disabled or OAuth token is not configured');
         }
 
         const userId = this.currentUser.id;
@@ -817,7 +952,7 @@ class SoundCloudService {
             throw new Error('SoundCloud is disabled or OAuth token is not configured');
         }
         if (!this.currentUser) {
-            await this.verifyToken(this.config.oauthToken);
+            await this.ensureUser();
         }
         const userId = this.currentUser.id;
         const cleanId = String(trackId).replace(/^soundcloud:/i, '').trim();
@@ -841,7 +976,7 @@ class SoundCloudService {
             throw new Error('SoundCloud is disabled or OAuth token is not configured');
         }
         if (!this.currentUser) {
-            await this.verifyToken(this.config.oauthToken);
+            await this.ensureUser();
         }
         const userId = this.currentUser.id;
         const cleanId = String(trackId).replace(/^soundcloud:/i, '').trim();
@@ -881,7 +1016,7 @@ class SoundCloudService {
             if (forceFresh || !transcodings || transcodings.length === 0) {
                 // Fetch track metadata only if transcodings are not already cached or forceFresh is requested
                 const trackUrl = `https://api-v2.soundcloud.com/tracks/${idStr}`;
-                const resp = await fetch(trackUrl, { headers: this.getAuthHeader() });
+                const resp = await this.apiFetch(trackUrl);
                 if (!resp.ok) {
                     throw new Error(`Track ${trackId} not found (${resp.status})`);
                 }
@@ -988,11 +1123,21 @@ class SoundCloudService {
         }
 
         const task = (async () => {
-            const resp = await fetch(streamUrl);
+            const resp = await fetchWithTimeout(streamUrl, {}, 12000);
             if (!resp.ok) throw new Error(`Failed to fetch HLS playlist (${resp.status})`);
             const m3u8Text = await resp.text();
+
+            // DRM-protected playlists (SAMPLE-AES / Widevine) cannot be
+            // reassembled into a plain buffer. Fail fast with a clear message
+            // instead of trying to fetch an "skd://" key (which throws).
+            if (/#EXT-X-KEY:METHOD=(SAMPLE-AES|AES-128)/i.test(m3u8Text)) {
+                throw new Error('This track is DRM-protected and cannot be streamed');
+            }
+
             const lines = m3u8Text.split('\n').map(l => l.trim()).filter(Boolean);
-            const initLine = lines.find(l => l.includes('URI='));
+            // Only #EXT-X-MAP holds the init segment. Never pick #EXT-X-KEY,
+            // whose URI is a skd:// license URI and not a fetchable file.
+            const initLine = lines.find(l => l.startsWith('#EXT-X-MAP:'));
             
             let initBuf = null;
             let mimeType = 'audio/mp4';
@@ -1002,7 +1147,7 @@ class SoundCloudService {
                 const initUrl = (initUrlRaw.startsWith('http://') || initUrlRaw.startsWith('https://'))
                     ? initUrlRaw
                     : new URL(initUrlRaw, streamUrl).href;
-                const initResp = await fetch(initUrl);
+                const initResp = await fetchWithTimeout(initUrl, {}, 12000);
                 if (initResp.ok) {
                     initBuf = Buffer.from(await initResp.arrayBuffer());
                 }
@@ -1027,7 +1172,7 @@ class SoundCloudService {
                 while (nextIdx < segUrls.length) {
                     const idx = nextIdx++;
                     const url = segUrls[idx];
-                    const r = await fetch(url);
+                    const r = await fetchWithTimeout(url, {}, 12000);
                     if (!r.ok) throw new Error(`Segment fetch error ${r.status}`);
                     segBufs[idx] = Buffer.from(await r.arrayBuffer());
                 }

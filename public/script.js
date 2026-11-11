@@ -1820,12 +1820,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function getSongAlbumKey(song) {
         const rawAlbum = (song.album || '').trim();
         if (rawAlbum && rawAlbum.toLowerCase() !== 'unknown album') {
-            const rawArtist = (song.albumArtist || song.artist || '').trim();
-            return rawArtist ? `${rawAlbum.toLowerCase()}:::${rawArtist.toLowerCase()}` : rawAlbum.toLowerCase();
+            // Use only album name for key, not artist - allows multi-artist albums to group together
+            return rawAlbum.toLowerCase();
         }
         // If song has no real album metadata, isolate it so songs without tags are never bundled into one fake massive album
         if (song.path) {
-            return `single:::${song.path.toLowerCase()}`;
+            const folderPath = song.path.substring(0, song.path.lastIndexOf('\\') || song.path.lastIndexOf('/'));
+            return `single:::${folderPath.toLowerCase()}`;
         }
         return `single:::${song.id || Math.random()}`;
     }
@@ -2259,11 +2260,33 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function isTrackLiked(song) {
+        if (!song) return false;
+        const isSc = isSoundCloudTrack(song);
+        const scId = isSc ? String(song.id || extractSoundCloudId(song.path) || '') : (song.id ? String(song.id) : null);
+        if (scId && scLikedIds && scLikedIds.has(scId)) return true;
+
+        const songPath = song.path || (scId ? `soundcloud:${scId}` : null);
+        const likedList = playlists && playlists['Liked'];
+        if (Array.isArray(likedList) && likedList.length > 0) {
+            if (songPath && likedList.includes(songPath)) return true;
+            if (scId && likedList.includes(`soundcloud:${scId}`)) return true;
+            if (song.id && likedList.includes(String(song.id))) return true;
+            if (song.path) {
+                const normP = normalizeTrackPath(song.path);
+                if (normP && likedList.some(p => normalizeTrackPath(p) === normP)) return true;
+            }
+        }
+        return false;
+    }
+
     function updateLikeButtonState() {
         const likeBtn = document.getElementById('like-btn');
         if (!likeBtn) return;
         
-        const currentSong = allSongs[currentlyPlayingIndex] || (playQueue && playQueue[playQueueIndex]);
+        const currentSong = (currentlyPlayingIndex >= 0 && allSongs && allSongs[currentlyPlayingIndex])
+            ? allSongs[currentlyPlayingIndex]
+            : (window._currentPlayingSong || (playQueue && playQueue[playQueueIndex]) || null);
         if (!currentSong) {
             likeBtn.style.opacity = '0.3';
             likeBtn.style.pointerEvents = 'none';
@@ -2274,12 +2297,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         likeBtn.style.opacity = '';
         likeBtn.style.pointerEvents = '';
-        const isSc = isSoundCloudTrack(currentSong);
-        const scId = isSc ? (currentSong.id || extractSoundCloudId(currentSong.path)) : null;
-        const songPath = currentSong.path || (currentSong.id ? `soundcloud:${currentSong.id}` : null);
-        const isLiked = isSc
-            ? !!(scId && scLikedIds.has(String(scId)))
-            : !!(playlists['Liked'] && songPath && (playlists['Liked'].includes(songPath) || (currentSong.id && playlists['Liked'].includes(`soundcloud:${currentSong.id}`))));
+        const isLiked = isTrackLiked(currentSong);
         if (isLiked) {
             likeBtn.innerHTML = '<i class="fa-solid fa-heart"></i>';
             likeBtn.classList.add('liked');
@@ -4891,6 +4909,33 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         renderedSongsCount += nextBatch.length;
+        
+        // Check if more songs can fit - trigger pagination if container is not yet full and visible
+        if (songListContainer && songListContainer.clientHeight > 0 && renderedSongsCount < currentPlaylist.length) {
+            setTimeout(() => {
+                if (songListContainer && songListContainer.clientHeight > 0 && songListContainer.scrollHeight <= songListContainer.clientHeight + 100) {
+                    appendMoreSongs();
+                }
+            }, 0);
+        }
+    }
+
+    // =========== PLAYLIST SORTING HANDLER ===========
+    if (typeof sortTracks !== 'undefined' && typeof window.riffUI !== 'undefined' && window.riffUI.playlistSort) {
+        window.riffUI.playlistSort.addEventListener('change', (e) => {
+            const sortMode = e.target.value;
+            if (!currentPlaylist || currentPlaylist.length === 0) return;
+            
+            // Apply sort
+            const sortedPlaylist = sortTracks(currentPlaylist, sortMode);
+            if (sortedPlaylist && sortedPlaylist.length > 0) {
+                currentPlaylist = sortedPlaylist;
+                // Re-render playlist with new order
+                renderedSongsCount = 0;
+                songListContainer.innerHTML = '';
+                appendMoreSongs();
+            }
+        });
     }
 
     // Scroll and touch listeners for right songs playlist
@@ -5822,6 +5867,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (willBeLiked) scLikedIds.add(scId); else scLikedIds.delete(scId);
             saveScLikedIds();
             updateLikeButtonState();
+            if (window.MoonPlayer) window.MoonPlayer.emit('likedChange', song);
             try {
                 const res = willBeLiked
                     ? await fetch('/api/soundcloud/like', {
@@ -5838,6 +5884,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (willBeLiked) scLikedIds.delete(scId); else scLikedIds.add(scId);
                 saveScLikedIds();
                 updateLikeButtonState();
+                if (window.MoonPlayer) window.MoonPlayer.emit('likedChange', song);
                 if (typeof showToast === 'function') showToast(err.message || 'SoundCloud like failed');
             }
             return;
@@ -5855,6 +5902,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         savePlaylists();
         updateLikeButtonState();
+        if (window.MoonPlayer) {
+            window.MoonPlayer.emit('likedChange', song);
+            window.MoonPlayer.emit('playlistsChange', playlists);
+        }
 
         if (currentSelectedPlaylistName === 'Liked') selectPlaylist('Liked');
         renderLibraryPanel();
@@ -5862,6 +5913,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast(isCurrentlyLiked ? 'Removed from Liked Songs' : 'Added to Liked Songs');
         }
     }
+    window.toggleLikeSongObject = (s) => toggleTrackLike(s);
 
     if (likeBtn) {
         likeBtn.addEventListener('click', (e) => {
@@ -6397,6 +6449,43 @@ document.addEventListener('DOMContentLoaded', () => {
         queueListEl.appendChild(fragment);
     }
 
+    // Fetch lyrics from internet (lrclib.com API)
+    async function fetchLyricsFromInternet(song) {
+        try {
+            if (!song.title || !song.artist) return null;
+            
+            // Query lrclib.com for synced lyrics
+            const query = `${song.artist} ${song.title}`;
+            const encQuery = encodeURIComponent(query);
+            const res = await fetch(`https://lrclib.net/api/search?q=${encQuery}`, {
+                method: 'GET',
+                headers: { 'User-Agent': 'MoonPlayer/3.0' }
+            });
+            
+            if (!res.ok) return null;
+            const data = await res.json();
+            
+            // Find best match with synced lyrics
+            const matches = Array.isArray(data) ? data : (data.matches || []);
+            if (!matches.length) return null;
+            
+            let bestMatch = null;
+            for (const match of matches) {
+                if (match.syncedLyrics) {
+                    bestMatch = match;
+                    break;
+                }
+            }
+            
+            if (!bestMatch || !bestMatch.syncedLyrics) return null;
+            
+            return bestMatch.syncedLyrics;
+        } catch (err) {
+            console.log('[Lyrics] Internet fetch failed:', err.message);
+            return null;
+        }
+    }
+
     function loadLyrics(song) {
         currentLyrics = [];
         currentLyricsTrackPath = song.path;
@@ -6428,6 +6517,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!song || !song.path || typeof song.path !== 'string') return;
         const lastDot = song.path.lastIndexOf('.');
         const lrcPath = (lastDot !== -1 ? song.path.substring(0, lastDot) : song.path) + '.lrc';
+        
+        // Priority 1: Try local .lrc file first
         fetch(`/api/stream?path=${encodeURIComponent(lrcPath)}`)
             .then(res => {
                 if (!res.ok) throw new Error('Lyrics not found');
@@ -6452,18 +6543,56 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateLyricsDisplay(bgAudio.currentTime);
                 }
             })
-            .catch(err => {
+            .catch(async err => {
+                // Priority 2: If local file not found, try internet
                 if (currentLyricsTrackPath !== song.path) return;
-                currentLyrics = [];
-                if (window.MoonPlayer) {
-                    window.MoonPlayer.emit('lyricsLoaded', currentLyrics);
-                    window.MoonPlayer.emit('lyricsUpdate', { currentLyrics, activeLyricIndex: -1 });
-                }
+                
                 if (currentLineEl) {
-                    currentLineEl.textContent = 'No lyrics available';
-                    currentLineEl.classList.add('lyrics-status-message');
+                    currentLineEl.textContent = 'Searching lyrics online...';
                 }
-                if (nextLineEl) nextLineEl.textContent = '';
+                
+                try {
+                    const internetLyrics = await fetchLyricsFromInternet(song);
+                    
+                    if (currentLyricsTrackPath !== song.path) return;
+                    
+                    if (internetLyrics) {
+                        currentLyrics = parseLRC(internetLyrics);
+                        if (window.MoonPlayer) {
+                            window.MoonPlayer.emit('lyricsLoaded', currentLyrics);
+                            window.MoonPlayer.emit('lyricsUpdate', { currentLyrics, activeLyricIndex: -1 });
+                        }
+                        if (currentLyrics.length > 0) {
+                            if (currentLineEl) {
+                                currentLineEl.classList.remove('lyrics-status-message');
+                            }
+                            updateLyricsDisplay(bgAudio.currentTime);
+                            if (currentLineEl) {
+                                currentLineEl.title = 'Lyrics from lrclib.net';
+                            }
+                            return;
+                        }
+                    }
+                    
+                    // No lyrics found
+                    currentLyrics = [];
+                    if (window.MoonPlayer) {
+                        window.MoonPlayer.emit('lyricsLoaded', currentLyrics);
+                        window.MoonPlayer.emit('lyricsUpdate', { currentLyrics, activeLyricIndex: -1 });
+                    }
+                    if (currentLineEl) {
+                        currentLineEl.textContent = 'No lyrics available';
+                        currentLineEl.classList.add('lyrics-status-message');
+                    }
+                    if (nextLineEl) nextLineEl.textContent = '';
+                } catch (internetErr) {
+                    console.log('[Lyrics] Internet search error:', internetErr);
+                    if (currentLineEl) {
+                        currentLineEl.textContent = 'No lyrics available';
+                        currentLineEl.classList.add('lyrics-status-message');
+                    }
+                    if (nextLineEl) nextLineEl.textContent = '';
+                }
             });
     }
 
@@ -8185,9 +8314,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const playAllBtn = headerDiv.querySelector('#sc-load-all-likes-btn');
                 if (playAllBtn) {
                     playAllBtn.addEventListener('click', () => {
+                        // Register all tracks before setting currentPlaylist
+                        activeResults.forEach(track => {
+                            if (!track.globalIndex) {
+                                const reg = registerSoundCloudTrack(track);
+                                if (reg) track.globalIndex = reg.globalIndex;
+                            }
+                        });
                         currentPlaylist = [...activeResults];
                         renderPlaylistView("SoundCloud Likes", "SoundCloud Favorites", `${activeResults.length} tracks`, activeResults[0]?.cover || DEFAULT_COVER);
-                        if (activeResults.length > 0) {
+                        if (activeResults.length > 0 && activeResults[0].globalIndex !== undefined) {
                             playTrack(activeResults[0].globalIndex);
                         }
                     });
@@ -9058,6 +9194,7 @@ document.addEventListener('DOMContentLoaded', () => {
             allSongs = deduplicateSongs(processedSongs);
             restoreSoundCloudTracksToAllSongs();
             allSongs = deduplicateSongs(allSongs);
+            window.allSongs = allSongs;
             detectAndFixInvertedSongs(allSongs);
             buildLibraries();
             setupFuseSearch();
@@ -9109,8 +9246,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         } finally {
+            window.allSongs = allSongs;
             window.isLibraryLoaded = true;
             window.isLibraryScanning = false;
+            if (window.MoonPlayer) {
+                window.MoonPlayer.emit('libraryLoaded', { allSongs, albums, artists });
+            }
             window.dispatchEvent(new CustomEvent('moonplayer-library-loading', { detail: { scanning: false } }));
 
             // Background polling to catch newly parsed durations for non-FLAC files
@@ -9134,7 +9275,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         if (anyUpdated) {
                             buildLibraries();
-                            renderSongList();
+                            if (typeof renderSongList === 'function') renderSongList();
+                            if (typeof renderLibraryPanel === 'function') renderLibraryPanel();
                         }
                     }
                 } catch (e) {}
@@ -9565,12 +9707,44 @@ document.addEventListener('DOMContentLoaded', () => {
         // Initialize history stack with current/initial home state
         pushToHistory({ type: 'home' });
 
-        const folders = await fetchServerFolders();
-        if (folders && folders.length > 0) {
-            await reloadLibraryFromServer();
+        async function syncSoundCloudLikesInBackground() {
+            try {
+                const res = await fetch('/api/soundcloud/likes?limit=50');
+                const data = await res.json();
+                if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
+                    data.tracks.forEach(t => {
+                        if (t && t.id != null) scLikedIds.add(String(t.id));
+                    });
+                    saveScLikedIds();
+                    updateLikeButtonState();
+                    if (window.MoonPlayer) {
+                        window.MoonPlayer.emit('likedChange', null);
+                    }
+                }
+            } catch (e) {}
+        }
+
+        try {
+            window.isLibraryScanning = true;
+            window.dispatchEvent(new CustomEvent('moonplayer-library-loading', { detail: { scanning: true } }));
+            syncSoundCloudLikesInBackground();
+            const folders = await fetchServerFolders();
+            if (folders && folders.length > 0) {
+                await reloadLibraryFromServer();
+            } else {
+                window.isLibraryLoaded = true;
+                window.isLibraryScanning = false;
+                window.dispatchEvent(new CustomEvent('moonplayer-library-loading', { detail: { scanning: false } }));
+                if (window.MoonPlayer) window.MoonPlayer.emit('libraryLoaded', { allSongs: allSongs || [], albums: albums || [], artists: artists || [] });
+            }
+        } catch (e) {
+            console.error('Failed to init server library:', e);
+            window.isLibraryLoaded = true;
+            window.isLibraryScanning = false;
+            window.dispatchEvent(new CustomEvent('moonplayer-library-loading', { detail: { scanning: false } }));
+            if (window.MoonPlayer) window.MoonPlayer.emit('libraryLoaded', { allSongs: allSongs || [], albums: albums || [], artists: artists || [] });
         }
     }
-    initServerLibrary();
 
     // Global track getters for AndroidBridge and MediaSession synchronization
     window.getCurrentTrack = function() {
@@ -9580,18 +9754,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return window._currentPlayingSong || null;
     };
 
+    window.isTrackLiked = isTrackLiked;
     window.isCurrentTrackLiked = function(track = null) {
-        const current = track || (window.getCurrentTrack ? window.getCurrentTrack() : null);
-        if (!current) return false;
-        const likeBtn = document.getElementById('like-btn');
-        if (likeBtn && (likeBtn.classList.contains('active') || likeBtn.querySelector('.fa-solid.fa-heart:not(.fa-regular)'))) {
-            return true;
-        }
-        if (typeof isLiked === 'function') return isLiked(current);
-        if (typeof likedSongs !== 'undefined' && Array.isArray(likedSongs)) {
-            return likedSongs.some(s => (s.id && s.id === current.id) || (s.path && s.path === current.path));
-        }
-        return false;
+        if (track) return isTrackLiked(track);
+        const current = window.getCurrentTrack ? window.getCurrentTrack() : null;
+        return current ? isTrackLiked(current) : false;
     };
     // ==========================================
     // 16. MOONPLAYER <-> RIFF UI REACTIVE BRIDGE
@@ -9706,9 +9873,9 @@ document.addEventListener('DOMContentLoaded', () => {
             window.MoonPlayer.emit('queueChange', { queue: playQueue, index: playQueueIndex });
         },
         getHistory: () => (Array.isArray(window._playbackHistory) ? window._playbackHistory : []),
-        getFavorites: () => (allSongs || []).filter(s => window.isCurrentTrackLiked(s)),
-        getLikedSongs: () => (allSongs || []).filter(s => window.isCurrentTrackLiked(s)),
-        isLiked: (song) => window.isCurrentTrackLiked(song),
+        getFavorites: () => (allSongs || []).filter(s => isTrackLiked(s)),
+        getLikedSongs: () => (allSongs || []).filter(s => isTrackLiked(s)),
+        isLiked: (song) => isTrackLiked(song),
 
         getAudio: () => bgAudio,
         getAudioElement: () => bgAudio,
@@ -9953,29 +10120,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (sleepTimerCountdownContainer) sleepTimerCountdownContainer.classList.add('hidden');
             window.MoonPlayer.emit('sleepTimerChange', 0);
         },
+        toggleLike: (song) => {
+            return toggleTrackLike(song);
+        },
         toggleLikeTrack: (song) => {
-            if (!song) song = (currentlyPlayingIndex >= 0 && allSongs[currentlyPlayingIndex]) ? allSongs[currentlyPlayingIndex] : null;
-            if (!song) return;
-            const currentSong = (currentlyPlayingIndex >= 0 && allSongs[currentlyPlayingIndex]) ? allSongs[currentlyPlayingIndex] : null;
-            if (currentSong && ((song.id && song.id === currentSong.id) || (song.path && song.path === currentSong.path))) {
-                if (likeBtn) likeBtn.click();
-            } else {
-                if (song.id || (song.path && song.path.startsWith('soundcloud:'))) {
-                    const scId = song.id || song.path.replace('soundcloud:', '');
-                    const isCurrentlyLiked = window.isCurrentTrackLiked(song);
-                    const method = isCurrentlyLiked ? 'DELETE' : 'POST';
-                    const url = isCurrentlyLiked ? ('/api/soundcloud/like/' + encodeURIComponent(scId)) : '/api/soundcloud/like';
-                    fetch(url, {
-                        method: method,
-                        headers: { 'Content-Type': 'application/json' },
-                        body: isCurrentlyLiked ? undefined : JSON.stringify({ trackId: scId })
-                    }).catch(() => {});
-                }
-                if (typeof toggleLikeSongObject === 'function') {
-                    toggleLikeSongObject(song);
-                }
-            }
-            window.MoonPlayer.emit('likedChange', song);
+            return toggleTrackLike(song);
         },
         createPlaylist: (name) => {
             if (!name || playlists[name]) return false;
@@ -10012,6 +10161,102 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!cleanQuery) return { collection: [] };
             const res = await fetch('/api/soundcloud/search?q=' + encodeURIComponent(cleanQuery) + '&type=' + encodeURIComponent(subTab) + '&limit=25');
             return await res.json();
+        },
+        // Load the Riff UI SoundCloud tabs (trending / likes / all). Registers
+        // every streamed track into the global registry so playback works on
+        // the first click. Returns { tracks, nextHref } so the view can page
+        // through the user's likes dynamically on scroll.
+        fetchSoundCloudFeed: async (subtab = 'trending') => {
+            const register = (raw) => {
+                raw.forEach(registerSoundCloudTrack);
+                return raw.map(t => allSongs.find(s => isSoundCloudTrack(s) && String(s.id) === String(t.id)) || t).filter(Boolean);
+            };
+            let endpoint;
+            if (subtab === 'likes') {
+                endpoint = '/api/soundcloud/likes?limit=50';
+            } else if (subtab === 'trending') {
+                endpoint = '/api/soundcloud/trending?limit=30';
+            } else {
+                // "All" = union of trending + likes. Likes keep their cursor
+                // so "All" can also load more liked tracks on scroll.
+                const [trRes, lkRes] = await Promise.all([
+                    fetch('/api/soundcloud/trending?limit=30').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/soundcloud/likes?limit=50').then(r => r.json()).catch(() => ({}))
+                ]);
+                const lkTracks = lkRes.tracks || [];
+                lkTracks.forEach(t => {
+                    if (t && t.id != null) scLikedIds.add(String(t.id));
+                });
+                if (lkTracks.length > 0) {
+                    saveScLikedIds();
+                    updateLikeButtonState();
+                }
+                const merged = [...(trRes.tracks || []), ...lkTracks];
+                const seen = new Set();
+                const unique = merged.filter(t => {
+                    if (!t || !t.id || seen.has(String(t.id))) return false;
+                    seen.add(String(t.id));
+                    return true;
+                });
+                return {
+                    tracks: register(unique),
+                    nextHref: lkRes.next_href || null,
+                    likeCursor: true,
+                    total: lkRes.total || null,
+                    warning: lkRes.warning || null
+                };
+            }
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 15000);
+            try {
+                const res = await fetch(endpoint, { signal: controller.signal });
+                const data = await res.json();
+                const tracks = (data && data.tracks) || [];
+                if (subtab === 'likes' && tracks.length > 0) {
+                    tracks.forEach(t => {
+                        if (t && t.id != null) scLikedIds.add(String(t.id));
+                    });
+                    saveScLikedIds();
+                    updateLikeButtonState();
+                }
+                return {
+                    tracks: register(tracks),
+                    nextHref: data.next_href || null,
+                    likeCursor: subtab === 'likes',
+                    total: data.total || null,
+                    warning: data.warning || null
+                };
+            } finally {
+                clearTimeout(timer);
+            }
+        },
+        // Load the next page of liked tracks using SoundCloud's cursor.
+        fetchMoreSoundCloudLikes: async (nextHref) => {
+            if (!nextHref) return { tracks: [], nextHref: null };
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 15000);
+            try {
+                const res = await fetch('/api/soundcloud/likes?next=' + encodeURIComponent(nextHref), { signal: controller.signal });
+                const data = await res.json();
+                const raw = (data && data.tracks) || [];
+                raw.forEach(t => {
+                    if (t && t.id != null) scLikedIds.add(String(t.id));
+                });
+                if (raw.length > 0) {
+                    saveScLikedIds();
+                    updateLikeButtonState();
+                }
+                raw.forEach(registerSoundCloudTrack);
+                const tracks = raw.map(t => allSongs.find(s => isSoundCloudTrack(s) && String(s.id) === String(t.id)) || t).filter(Boolean);
+                return {
+                    tracks,
+                    nextHref: data.next_href || null,
+                    total: data.total || null,
+                    warning: data.warning || null
+                };
+            } finally {
+                clearTimeout(timer);
+            }
         },
         registerSoundCloudTrack: (song) => registerSoundCloudTrack(song),
         openSoundCloudAlbum: (alb) => openSoundCloudAlbum(alb),
@@ -10195,6 +10440,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize UI Mode on startup
     const initialMode = localStorage.getItem('moonplayer_ui_mode') || 'moon';
     setPlayerUIMode(initialMode);
+
+    // Initialize Server Library now that window.MoonPlayer API is ready
+    initServerLibrary();
 
 });
 
