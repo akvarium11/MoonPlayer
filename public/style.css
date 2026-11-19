@@ -2600,11 +2600,15 @@ body.is-android .result-play-overlay {
     top: 0;
     left: 0;
     width: 100vw;
+    width: 100dvw;
     height: 100vh;
-    background-color: rgba(3, 3, 5, 0.7);
+    height: 100dvh;
+    background-color: rgba(3, 3, 5, 0.78);
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
-    z-index: 500;
+    z-index: 2147483000;
+    contain: none !important;
+    isolation: isolate;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -4769,3 +4773,8 @@ html.mode-riff #riff-root, body.mode-riff #riff-root {
 body.mode-moon #riff-root {
     display: none !important;
 }
+
+/* MoonPlayer 3.2: runtime adaptive button contrast (computed luminance, no hardcoded colors). */
+button[data-contrast-applied="1"], [role="button"][data-contrast-applied="1"], .settings-btn[data-contrast-applied="1"] { color: var(--btn-adaptive-fg) !important; }
+button[data-contrast-applied="1"]:hover, [role="button"][data-contrast-applied="1"]:hover, .settings-btn[data-contrast-applied="1"]:hover { color: var(--btn-adaptive-fg) !important; }
+

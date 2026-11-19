@@ -4,8 +4,65 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
+
+mod audio_engine;
+use audio_engine::{AudioEngine, EngineSettings, EngineStatus, AudioDeviceInfo};
+
+// ---------------------------------------------------------------------------
+// MoonPlayer 3.2 native audio engine commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn audio_start(engine: State<'_, AudioEngine>, settings: EngineSettings, sample_rate: u32, channels: u16) -> Result<EngineStatus, String> {
+    engine.start(settings, sample_rate, channels)
+}
+
+#[tauri::command]
+fn audio_stop(engine: State<'_, AudioEngine>) {
+    engine.stop();
+}
+
+#[tauri::command]
+fn audio_flush(engine: State<'_, AudioEngine>) {
+    engine.flush();
+}
+
+#[tauri::command]
+fn audio_push(engine: State<'_, AudioEngine>, pcm: Vec<f32>, sample_rate: u32, channels: u16) -> Result<(), String> {
+    engine.push(pcm, sample_rate, channels)
+}
+
+#[tauri::command]
+fn audio_push_raw(engine: State<'_, AudioEngine>, data: Vec<u8>, sample_rate: u32, channels: u16) -> Result<(), String> {
+    engine.push_raw(&data, sample_rate, channels)
+}
+
+#[tauri::command]
+fn audio_reconfigure(engine: State<'_, AudioEngine>, sample_rate: u32, channels: u16) -> Result<EngineStatus, String> {
+    engine.reconfigure(sample_rate, channels)
+}
+
+#[tauri::command]
+fn audio_settings(engine: State<'_, AudioEngine>, settings: EngineSettings) -> Result<EngineStatus, String> {
+    engine.update_settings(settings)
+}
+
+#[tauri::command]
+fn audio_volume(engine: State<'_, AudioEngine>, volume: f64) {
+    engine.set_volume(volume);
+}
+
+#[tauri::command]
+fn audio_status(engine: State<'_, AudioEngine>) -> EngineStatus {
+    engine.snapshot()
+}
+
+#[tauri::command]
+fn audio_devices(engine: State<'_, AudioEngine>) -> Vec<AudioDeviceInfo> {
+    engine.list_devices()
+}
 
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
@@ -666,7 +723,12 @@ fn pick_session_cookies(cookies: Vec<(String, String)>) -> Option<SoundCloudLogi
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![soundcloud_login])
+        .manage(AudioEngine::new())
+        .invoke_handler(tauri::generate_handler![
+            soundcloud_login,
+            audio_start, audio_stop, audio_flush, audio_push,
+            audio_settings, audio_volume, audio_status, audio_devices, audio_reconfigure, audio_push_raw
+        ])
         .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {

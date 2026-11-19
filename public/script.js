@@ -5097,16 +5097,47 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function sendDiscordRpcActivity(song, isPlayingState) {
+    let lastDiscordRpcSendTime = 0;
+    let lastDiscordRpcSentPos = 0;
+    let lastDiscordRpcTrackKey = '';
+    let discordRpcThrottleTimer = null;
+    let pendingDiscordRpcSong = null;
+    let pendingDiscordRpcPlaying = null;
+
+    async function sendDiscordRpcActivity(song, isPlayingState, force = false) {
         if (isAndroidApp || window.AndroidBridge) return;
         if (!song) return;
+
+        const now = Date.now();
+        const playing = isPlayingState !== undefined ? isPlayingState : isPlaying;
+        const trackKey = (song.id || song.path || song.title || '') + ':' + (playing ? '1' : '0');
+
+        // Throttle to avoid flooding Discord if called too frequently, unless forced or state changed
+        if (!force && lastDiscordRpcTrackKey === trackKey && now - lastDiscordRpcSendTime < 1500) {
+            pendingDiscordRpcSong = song;
+            pendingDiscordRpcPlaying = playing;
+            if (!discordRpcThrottleTimer) {
+                discordRpcThrottleTimer = setTimeout(() => {
+                    discordRpcThrottleTimer = null;
+                    if (pendingDiscordRpcSong) {
+                        sendDiscordRpcActivity(pendingDiscordRpcSong, pendingDiscordRpcPlaying, true);
+                    }
+                }, 1500 - (now - lastDiscordRpcSendTime));
+            }
+            return;
+        }
+
+        if (discordRpcThrottleTimer) {
+            clearTimeout(discordRpcThrottleTimer);
+            discordRpcThrottleTimer = null;
+        }
+
         try {
             const title = song.title || song.name || 'Unknown Track';
             const artist = song.artist || 'Unknown Artist';
             const album = song.album || '';
             const duration = (!isNaN(bgAudio.duration) && bgAudio.duration > 0) ? bgAudio.duration : 0;
             const currentTime = (!isNaN(bgAudio.currentTime) && bgAudio.currentTime >= 0) ? bgAudio.currentTime : 0;
-            const playing = isPlayingState !== undefined ? isPlayingState : isPlaying;
 
             let coverUrl = (typeof song.cover === 'string' && song.cover.startsWith('http')) ? song.cover : '';
             if (!coverUrl && isSoundCloudTrack(song)) {
@@ -5119,6 +5150,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 coverUrl = coverUrl.replace(/-large\./, '-t500x500.').replace(/-t[0-9]+x[0-9]+\./, '-t500x500.');
             }
             const permalink = song.permalinkUrl || song.permalink || '';
+
+            lastDiscordRpcSendTime = Date.now();
+            lastDiscordRpcSentPos = currentTime;
+            lastDiscordRpcTrackKey = trackKey;
 
             await fetch('/api/discord-rpc/activity', {
                 method: 'POST',
@@ -5384,7 +5419,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e) {}
             bgAudio.src = targetSrc;
         }
-        bgAudio.loop = (isLoop === 'one');
+        bgAudio.loop = false;
 
         // If crossfade, start new audio at 0 volume and let the 'playing'
         // handler ramp it up once playback really starts.
@@ -5855,9 +5890,12 @@ document.addEventListener('DOMContentLoaded', () => {
             loopBtn.classList.remove('active');
             loopBtn.innerHTML = '<i class="fa-solid fa-repeat"></i>';
         }
-        if (bgAudio) bgAudio.loop = (isLoop === 'one');
+        if (bgAudio) bgAudio.loop = false;
         updateIslandQueue();
         if (window.MoonPlayer) window.MoonPlayer.emit('repeatChange', isLoop);
+        if (allSongs[currentlyPlayingIndex]) {
+            sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], isPlaying);
+        }
     });
 
     async function toggleTrackLike(song) {
@@ -6133,9 +6171,36 @@ document.addEventListener('DOMContentLoaded', () => {
         updateHighlighting();
     });
 
+    let isSliderSeeking = false;
+    let lastTimeupdateCurrentTime = 0;
+
     bgAudio.addEventListener('timeupdate', () => {
         const current = bgAudio.currentTime;
         const duration = bgAudio.duration;
+
+        // Loop detection fallback: if currentTime wrapped from near the end to beginning
+        if (duration > 0 && lastTimeupdateCurrentTime > 0) {
+            if (lastTimeupdateCurrentTime >= duration - 2.0 && current < 1.5 && !isSliderSeeking) {
+                if (allSongs[currentlyPlayingIndex]) {
+                    sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], isPlaying, true);
+                }
+            }
+        }
+        lastTimeupdateCurrentTime = current;
+
+        // Periodic Discord RPC drift check & sync
+        if (duration > 0 && isPlaying && !isSliderSeeking && lastDiscordRpcSendTime > 0) {
+            const now = Date.now();
+            const elapsed = (now - lastDiscordRpcSendTime) / 1000;
+            const expectedPos = lastDiscordRpcSentPos + elapsed;
+            const drift = Math.abs(current - expectedPos);
+            // If playback drifted by 2+ seconds (buffering, lag, sample rate drift) or every 25 seconds
+            if (drift >= 2.0 || elapsed >= 25) {
+                if (allSongs[currentlyPlayingIndex]) {
+                    sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], isPlaying, true);
+                }
+            }
+        }
         if (isTrackLoading && !bgAudio.paused && current > 0) {
             setIsTrackLoading(false);
             isPlaying = true;
@@ -6176,6 +6241,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     progressSlider.addEventListener('input', (e) => {
+        isSliderSeeking = true;
         if (!bgAudio.duration) return;
         const pct = parseFloat(e.target.value);
         bgAudio.currentTime = (pct / 100) * bgAudio.duration;
@@ -6183,6 +6249,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     progressSlider.addEventListener('change', () => {
+        isSliderSeeking = false;
         if (allSongs[currentlyPlayingIndex]) {
             sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], isPlaying);
         }
@@ -10085,8 +10152,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (isLoop === 'none') isLoop = 'all';
                 else if (isLoop === 'all') isLoop = 'one';
                 else isLoop = 'none';
-                if (bgAudio) bgAudio.loop = (isLoop === 'one');
+                if (bgAudio) bgAudio.loop = false;
                 window.MoonPlayer.emit('repeatChange', isLoop);
+                if (allSongs[currentlyPlayingIndex]) {
+                    sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], isPlaying);
+                }
             }
         },
 
@@ -10134,8 +10204,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (isLoop === 'none') isLoop = 'all';
                 else if (isLoop === 'all') isLoop = 'one';
                 else isLoop = 'none';
-                if (bgAudio) bgAudio.loop = (isLoop === 'one');
+                if (bgAudio) bgAudio.loop = false;
                 window.MoonPlayer.emit('repeatChange', isLoop);
+                if (allSongs[currentlyPlayingIndex]) {
+                    sendDiscordRpcActivity(allSongs[currentlyPlayingIndex], isPlaying);
+                }
             }
         },
         clearSleepTimer: () => {

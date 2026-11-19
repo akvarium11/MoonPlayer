@@ -242,10 +242,16 @@ async function fillMissingTrackDurations(songs) {
                     if (meta && meta.format && meta.format.duration > 0) {
                         const dur = Math.round(meta.format.duration);
                         song.duration = dur;
+                        if (meta.format.sampleRate) song.sampleRate = meta.format.sampleRate;
+                        if (meta.format.numberOfChannels) song.channels = meta.format.numberOfChannels;
+                        if (meta.format.bitsPerSample) song.bitDepth = meta.format.bitsPerSample;
                         trackMetaCache[song.path] = Object.assign(trackMetaCache[song.path] || {}, {
                             mtimeMs: stat.mtimeMs,
                             size: stat.size,
                             duration: dur,
+                            sampleRate: song.sampleRate || undefined,
+                            channels: song.channels || undefined,
+                            bitDepth: song.bitDepth || undefined,
                             title: (meta.common && meta.common.title) || song.title,
                             artist: (meta.common && meta.common.artist) || song.artist,
                             album: (meta.common && meta.common.album) || song.album,
@@ -295,12 +301,17 @@ function parseFlacMetadata(filePath, readPicture = false) {
                 fs.readSync(fd, streamInfo, 0, streamInfo.length, offset);
                 if (streamInfo.length >= 18) {
                     const sampleRate = (streamInfo[10] << 12) | (streamInfo[11] << 4) | (streamInfo[12] >> 4);
+                    const channels = ((streamInfo[12] >> 1) & 0x07) + 1;
+                    const bitsPerSample = (((streamInfo[12] & 0x01) << 4) | (streamInfo[13] >> 4)) + 1;
                     const totalSamplesHigh = streamInfo[13] & 0x0F;
                     const totalSamplesLow = streamInfo.readUInt32BE(14);
                     const totalSamples = (totalSamplesHigh * 0x100000000) + totalSamplesLow;
                     if (sampleRate > 0 && totalSamples > 0) {
                         meta.duration = totalSamples / sampleRate;
                     }
+                    meta.sampleRate = sampleRate;
+                    meta.channels = channels;
+                    meta.bitDepth = bitsPerSample;
                 }
             } else if (blockType === 4) { // VORBIS_COMMENT
                 const commentBuf = Buffer.alloc(blockLen);
@@ -426,6 +437,9 @@ function scanDirectory(dirPath, fileList = []) {
                     let album;
                     let year;
                     let duration;
+                    let sampleRate;
+                    let bitDepth;
+                    let channels;
                     let itemCoverUrl = folderCoverUrl;
 
                     const cached = trackMetaCache[filePath];
@@ -437,8 +451,24 @@ function scanDirectory(dirPath, fileList = []) {
                         if (cached.album) album = cached.album;
                         if (cached.year) year = cached.year;
                         if (cached.duration && cached.duration > 0) duration = cached.duration;
+                        if (cached.sampleRate) sampleRate = cached.sampleRate;
+                        if (cached.bitDepth) bitDepth = cached.bitDepth;
+                        if (cached.channels) channels = cached.channels;
                         if (cached.hasPicture) {
                             itemCoverUrl = `/api/flac-cover?path=${encodeURIComponent(filePath)}`;
+                        }
+                        // If it's a FLAC file and cached audio specs are missing, backfill them quickly
+                        if (ext === '.flac' && (!sampleRate || !bitDepth || !channels)) {
+                            const flacMeta = parseFlacMetadata(filePath, false);
+                            if (flacMeta) {
+                                sampleRate = flacMeta.sampleRate;
+                                bitDepth = flacMeta.bitDepth;
+                                channels = flacMeta.channels;
+                                cached.sampleRate = sampleRate;
+                                cached.bitDepth = bitDepth;
+                                cached.channels = channels;
+                                saveTrackMetaCacheDebounced();
+                            }
                         }
                     } else if (ext === '.flac') {
                         const flacMeta = parseFlacMetadata(filePath, false);
@@ -450,6 +480,9 @@ function scanDirectory(dirPath, fileList = []) {
                             if (flacMeta.duration && flacMeta.duration > 0) {
                                 duration = Math.round(flacMeta.duration);
                             }
+                            sampleRate = flacMeta.sampleRate;
+                            bitDepth = flacMeta.bitDepth;
+                            channels = flacMeta.channels;
                             if (flacMeta.hasPicture) {
                                 itemCoverUrl = `/api/flac-cover?path=${encodeURIComponent(filePath)}`;
                             }
@@ -457,6 +490,9 @@ function scanDirectory(dirPath, fileList = []) {
                                 mtimeMs: fileStat.mtimeMs,
                                 size: fileStat.size,
                                 duration: duration || 0,
+                                sampleRate: sampleRate || undefined,
+                                bitDepth: bitDepth || undefined,
+                                channels: channels || undefined,
                                 title: title || undefined,
                                 artist: artist || undefined,
                                 album: album || undefined,
@@ -473,6 +509,9 @@ function scanDirectory(dirPath, fileList = []) {
                         if (cached.artist && !artist) artist = cached.artist;
                         if (cached.album && !album) album = cached.album;
                         if (cached.year && !year) year = cached.year;
+                        if (cached.sampleRate) sampleRate = cached.sampleRate;
+                        if (cached.bitDepth) bitDepth = cached.bitDepth;
+                        if (cached.channels) channels = cached.channels;
                     }
 
                     const downloadRecord = soundcloudService.getDownloadByPath(filePath);
@@ -498,6 +537,9 @@ function scanDirectory(dirPath, fileList = []) {
                         album: album || undefined,
                         year: year || undefined,
                         duration: (typeof duration === 'number' && duration > 0) ? duration : undefined,
+                        sampleRate: sampleRate || undefined,
+                        bitDepth: bitDepth || undefined,
+                        channels: channels || undefined,
                         isSoundCloud: isSoundCloud || undefined,
                         isDownloadedLocally: true,
                         source: isSoundCloud ? 'soundcloud' : undefined
@@ -719,23 +761,58 @@ app.get('/api/track-duration', async (req, res) => {
     if (!filePath || !fs.existsSync(filePath)) {
         return res.status(404).json({ error: 'File not found' });
     }
-    if (trackMetaCache[filePath] && trackMetaCache[filePath].duration) {
-        return res.json({ duration: trackMetaCache[filePath].duration });
+    const cached = trackMetaCache[filePath];
+    if (cached && cached.duration && cached.sampleRate) {
+        return res.json({
+            duration: cached.duration,
+            sampleRate: cached.sampleRate,
+            bitDepth: cached.bitDepth,
+            channels: cached.channels
+        });
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.flac') {
+        const flacMeta = parseFlacMetadata(filePath, false);
+        if (flacMeta) {
+            const dur = (flacMeta.duration && flacMeta.duration > 0) ? Math.round(flacMeta.duration) : (cached ? cached.duration : 0);
+            const stat = fs.statSync(filePath);
+            trackMetaCache[filePath] = Object.assign(trackMetaCache[filePath] || {}, {
+                mtimeMs: stat.mtimeMs,
+                size: stat.size,
+                duration: dur,
+                sampleRate: flacMeta.sampleRate,
+                bitDepth: flacMeta.bitDepth,
+                channels: flacMeta.channels
+            });
+            saveTrackMetaCacheDebounced();
+            return res.json({
+                duration: dur,
+                sampleRate: flacMeta.sampleRate,
+                bitDepth: flacMeta.bitDepth,
+                channels: flacMeta.channels
+            });
+        }
     }
     try {
         const mm = await import('music-metadata');
         const meta = await mm.parseFile(filePath, { duration: true, skipCovers: true });
-        const dur = (meta && meta.format && meta.format.duration > 0) ? Math.round(meta.format.duration) : 0;
+        const dur = (meta && meta.format && meta.format.duration > 0) ? Math.round(meta.format.duration) : (cached ? cached.duration : 0);
         const stat = fs.statSync(filePath);
+        const sampleRate = meta && meta.format ? meta.format.sampleRate : undefined;
+        const bitDepth = meta && meta.format ? meta.format.bitsPerSample : undefined;
+        const channels = meta && meta.format ? meta.format.numberOfChannels : undefined;
         trackMetaCache[filePath] = Object.assign(trackMetaCache[filePath] || {}, {
             mtimeMs: stat.mtimeMs,
             size: stat.size,
-            duration: dur
+            duration: dur,
+            sampleRate,
+            bitDepth,
+            channels
         });
         saveTrackMetaCacheDebounced();
-        res.json({ duration: dur });
+        res.json({ duration: dur, sampleRate, bitDepth, channels });
     } catch (e) {
-        res.json({ duration: 0 });
+        res.json({ duration: (cached && cached.duration) || 0 });
     }
 });
 

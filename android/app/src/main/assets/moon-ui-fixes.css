@@ -1,0 +1,31 @@
+/* MoonPlayer 3.2 — adaptive UI fixes (Android assets mirror).
+   The native Rust audio bridge is desktop-only and no-ops here. */
+
+/* Runtime luminance-based button inversion. No hardcoded colors. */
+[data-contrast-applied="1"] { color: var(--btn-adaptive-fg) !important; }
+[data-contrast-applied="1"]:hover,
+[data-contrast-applied="1"]:active,
+[data-contrast-applied="1"]:focus-visible { color: var(--btn-adaptive-fg) !important; }
+
+/* Vertical EQ fader: fill only from 0 dB (center) to the thumb. */
+.eq-slider { --eq-fill-start: 50%; --eq-fill-end: 50%; }
+.eq-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(to right,
+    rgba(255,255,255,0.08) 0%,
+    rgba(255,255,255,0.08) var(--eq-fill-start),
+    var(--accent, #ffffff) var(--eq-fill-start),
+    var(--accent, #ffffff) var(--eq-fill-end),
+    rgba(255,255,255,0.08) var(--eq-fill-end),
+    rgba(255,255,255,0.08) 100%) !important;
+}
+
+/* Modal dim layer must cover the whole viewport with no gap. */
+.modal-overlay {
+  width: 100vw !important;
+  width: 100dvw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  z-index: 2147483000 !important;
+  contain: none !important;
+  isolation: isolate !important;
+}

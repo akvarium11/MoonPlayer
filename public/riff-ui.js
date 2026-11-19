@@ -5411,7 +5411,7 @@
         updateRepeatUI(mode);
         const audio = window.MoonPlayer && typeof window.MoonPlayer.getAudio === 'function' ? window.MoonPlayer.getAudio() : null;
         if (audio) {
-          audio.loop = (mode === 'one');
+          audio.loop = false;
         }
       });
 

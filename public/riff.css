@@ -2869,15 +2869,24 @@ body.perf .my-wave-ambient-light {
 .modal-backdrop {
   position: fixed;
   inset: 0;
+  /* Cover the real viewport, not a transformed/contained ancestor.
+     `100dvw/100dvh` + the JS portal to <body> removes the strip of un-dimmed
+     background that appeared when #riff-root had a UI scale transform. */
   width: 100vw;
+  width: 100dvw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.45);
+  height: 100dvh;
+  background: rgba(0, 0, 0, 0.62);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 99999;
+  z-index: 2147483000;
+  /* Overlays are portalled to <body>; make them escape any ancestor
+     transform / contain / stacking context that would clip the dim layer. */
+  contain: none !important;
+  isolation: isolate;
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
@@ -4707,7 +4716,7 @@ button:active svg, button:active img, button:active i, .btn-icon-pill:active svg
   transform: scale(0.92);
 }
 
-@media (max-width: 768px), (max-aspect-ratio: 1/1) {
+@media (max-width: 650px) {
   .playlist-detail-header {
     flex-direction: column !important;
     align-items: flex-start !important;
@@ -6709,9 +6718,27 @@ body:not(.highlight-buttons) .btn-pill-primary:hover { background: var(--md-sys-
   cursor: pointer;
   transform: translate(-50%, -50%) rotate(-90deg);
 }
+/* Fader fill: from the thumb toward 0 dB (center), never from an end.
+   --eq-fill-start / --eq-fill-end are percentages set at runtime from the
+   slider value. Looking like a thermometer came from a solid track: the
+   unfilled part was light and the filled part dark, which inverted the
+   perceived direction. Now the whole rail is one quiet surface and only the
+   small segment between 0 dB and the thumb is accented. */
+.eq-band-range {
+  --eq-fill-start: 50%;
+  --eq-fill-end: 50%;
+  --eq-rail: var(--md-sys-color-surface-container-highest, #333438);
+  --eq-fill: var(--md-sys-color-primary, #D0BCFF);
+}
 .eq-band-range::-webkit-slider-runnable-track {
   height: 6px;
-  background: var(--md-sys-color-surface-container-highest, #333438);
+  background: linear-gradient(to right,
+    var(--eq-rail) 0%,
+    var(--eq-rail) var(--eq-fill-start),
+    var(--eq-fill) var(--eq-fill-start),
+    var(--eq-fill) var(--eq-fill-end),
+    var(--eq-rail) var(--eq-fill-end),
+    var(--eq-rail) 100%) !important;
   border-radius: 9999px;
   transition: background 0.15s ease;
 }
@@ -6737,7 +6764,13 @@ body:not(.highlight-buttons) .btn-pill-primary:hover { background: var(--md-sys-
 }
 .eq-band-range::-moz-range-track {
   height: 6px;
-  background: var(--md-sys-color-surface-container-highest, #333438);
+  background: linear-gradient(to right,
+    var(--eq-rail, var(--md-sys-color-surface-container-highest, #333438)) 0%,
+    var(--eq-rail, var(--md-sys-color-surface-container-highest, #333438)) var(--eq-fill-start, 50%),
+    var(--eq-fill, var(--md-sys-color-primary, #D0BCFF)) var(--eq-fill-start, 50%),
+    var(--eq-fill, var(--md-sys-color-primary, #D0BCFF)) var(--eq-fill-end, 50%),
+    var(--eq-rail, var(--md-sys-color-surface-container-highest, #333438)) var(--eq-fill-end, 50%),
+    var(--eq-rail, var(--md-sys-color-surface-container-highest, #333438)) 100%) !important;
   border-radius: 9999px;
 }
 .eq-band-range::-moz-range-thumb {
@@ -7408,10 +7441,10 @@ body.perf #view-playlist-detail.active {
 }
 .album-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) 1fr;
-  gap: 48px;
+  grid-template-columns: minmax(200px, clamp(240px, 30vw, 360px)) 1fr;
+  gap: clamp(20px, 3vw, 48px);
   align-items: start;
-  padding: 0 32px 16px;
+  padding: 0 clamp(16px, 2.5vw, 32px) 16px;
   flex: 1 1 auto;
   min-height: 0;
   box-sizing: border-box;
@@ -7421,6 +7454,7 @@ body.perf #view-playlist-detail.active {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 .album-cover-wrapper,
 #album-detail-cover {
@@ -7544,15 +7578,55 @@ body.perf #view-playlist-detail.active {
 #album-tracks-list .track-row .track-row-thumb {
   display: none !important;
 }
+#playlist-tracks-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+}
+#playlist-tracks-list::-webkit-scrollbar {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .album-layout {
-    grid-template-columns: 1fr;
-    gap: 24px;
-    padding: 0 16px 24px;
+    grid-template-columns: minmax(180px, clamp(200px, 28vw, 300px)) 1fr;
+    gap: 20px;
+    padding: 0 16px 16px;
   }
   .album-side {
     position: static;
-    max-width: 360px;
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+  .album-cover-wrapper,
+  #album-detail-cover {
+    width: min(100%, 30vh);
+    max-width: 260px;
+  }
+  #album-detail-title {
+    font-size: clamp(20px, 2.4vw, 28px);
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 520px) {
+  .album-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 0 12px 24px;
+    overflow-y: auto;
+  }
+  .album-side {
+    position: static;
+    max-width: 100%;
+  }
+  .album-cover-wrapper,
+  #album-detail-cover {
+    width: min(160px, 40vw);
   }
 }
 
@@ -9540,3 +9614,13 @@ body.riff-custom-bg-on.mode-riff .btn-pill-primary {
   text-decoration: underline;
   text-decoration-color: currentColor;
 }
+
+/* MoonPlayer 3.2: adaptive inversion for all buttons in every menu. */
+[data-contrast-applied="1"] { color: var(--btn-adaptive-fg) !important; }
+[data-contrast-applied="1"]:hover, [data-contrast-applied="1"]:active, [data-contrast-applied="1"]:focus-visible { color: var(--btn-adaptive-fg) !important; }
+
+
+/* Portalled overlays keep Font Awesome glyph rules after leaving #riff-root. */
+.modal-backdrop [class*="fa-"]::before, .modal-backdrop .fa-solid::before, .modal-backdrop .fa-regular::before, .modal-backdrop .fa::before { font-family: "Font Awesome 6 Free" !important; font-style: normal; font-weight: 900; }
+.modal-backdrop .fa-brands::before { font-family: "Font Awesome 6 Brands" !important; font-style: normal; }
+

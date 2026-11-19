@@ -12,6 +12,7 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "allow-soundcloud-login"
+    "allow-soundcloud-login",
+    "allow-audio-engine"
   ]
 }

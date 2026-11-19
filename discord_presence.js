@@ -97,6 +97,7 @@ class DiscordPresenceManager {
         this.reconnectTimer = null;
         this.currentActivity = null;
         this.user = null;
+        this.activitySeq = 0;
 
         // Auto-initialize if enabled
         if (this.config.enabled) {
@@ -185,6 +186,26 @@ class DiscordPresenceManager {
         } catch (e) {
             console.error('[Discord RPC] Error saving cover cache:', e.message);
         }
+    }
+
+    getCachedCover(title, artist, album) {
+        if (!title && !artist) return null;
+        const cleanTitle = (title || '').replace(/\.[a-zA-Z0-9]+$/, '').replace(/\(.*?offici.*?\)/gi, '').trim();
+        const cleanArtist = (artist || '').replace(/\(.*?offici.*?\)/gi, '').trim();
+        const cleanAlbum = (album || '').replace(/\[.*?\]/g, '').trim();
+        const isAlbumMeaningful = cleanAlbum && 
+            cleanAlbum.toLowerCase() !== 'unknown album' && 
+            cleanAlbum.toLowerCase() !== 'unknown' && 
+            cleanAlbum.toLowerCase() !== 'various' &&
+            cleanAlbum.toLowerCase() !== cleanTitle.toLowerCase();
+
+        const cacheKey1 = `${cleanArtist} - ${isAlbumMeaningful ? cleanAlbum + ' - ' : ''}${cleanTitle}`.toLowerCase().trim();
+        if (this.coverCache[cacheKey1]) return this.coverCache[cacheKey1];
+
+        const cacheKey2 = `${cleanArtist} - ${cleanTitle}`.toLowerCase().trim();
+        if (this.coverCache[cacheKey2]) return this.coverCache[cacheKey2];
+
+        return null;
     }
 
     async resolveCover(title, artist, album) {
@@ -496,6 +517,8 @@ class DiscordPresenceManager {
             return;
         }
 
+        const seq = ++this.activitySeq;
+        const now = Date.now();
         const { title, artist, album, duration, currentTime, isPlaying } = activityData;
 
         // If paused and showPaused is disabled, clear presence
@@ -504,10 +527,20 @@ class DiscordPresenceManager {
         }
 
         try {
+            const details = cleanRpcString(title, 'MoonPlayer', 50);
+            const state = cleanRpcString(artist, 'Unknown Artist', 50);
+            const largeImageText = cleanRpcString(album || title, 'MoonPlayer', 50);
+            const smallImageText = cleanRpcString(isPlaying ? 'Listening' : 'Paused', 'MoonPlayer', 25);
+
+            const curSec = Math.max(0, Number(currentTime) || 0);
+            const durationSec = Math.max(0, Number(duration) || 0);
+
+            // Synchronously determine if we already have a cover
             let coverUrl = null;
+            let needAsyncResolve = false;
+
             if (isValidCoverUrl(activityData.coverUrl)) {
                 let directCover = activityData.coverUrl.trim();
-                // Upgrade SoundCloud artwork to highest resolution t500x500
                 if (directCover.includes('sndcdn.com')) {
                     directCover = directCover.replace(/-large\./, '-t500x500.').replace(/-t[0-9]+x[0-9]+\./, '-t500x500.');
                 }
@@ -519,60 +552,73 @@ class DiscordPresenceManager {
                     this.coverCache[cacheKey] = directCover;
                 }
             } else {
-                coverUrl = await this.resolveCover(title, artist, album);
-            }
-
-            const details = cleanRpcString(title, 'MoonPlayer', 50);
-            const state = cleanRpcString(artist, 'Unknown Artist', 50);
-            const largeImageText = cleanRpcString(album || title, 'MoonPlayer', 50);
-            const smallImageText = cleanRpcString(isPlaying ? 'Listening' : 'Paused', 'MoonPlayer', 25);
-
-            const now = Date.now();
-            const curSec = Math.max(0, Number(currentTime) || 0);
-            const durationSec = Math.max(0, Number(duration) || 0);
-
-            const activity = {
-                type: 2, // 2 = LISTENING
-                details: details,
-                state: state,
-                assets: {
-                    large_image: (typeof coverUrl === 'string' && coverUrl.startsWith('http')) ? coverUrl : DEFAULT_ICON_URL,
-                    large_text: largeImageText,
-                    small_image: DEFAULT_ICON_URL,
-                    small_text: smallImageText
-                },
-                instance: false
-            };
-
-            // Set elapsed time with proper end timestamp
-            if (isPlaying && durationSec > 0) {
-                const remainingSec = Math.max(0, durationSec - curSec);
-                activity.timestamps = {
-                    start: Math.floor(now - (curSec * 1000)),
-                    end: Math.floor(now + (remainingSec * 1000))
-                };
-            } else if (isPlaying) {
-                // Fallback: if no duration, just show elapsed
-                activity.timestamps = {
-                    start: Math.floor(now - (curSec * 1000))
-                };
-            }
-
-            if (this.config.showButtons) {
-                activity.buttons = [
-                    { label: 'MoonPlayer App', url: 'https://github.com/akvarium11/MoonPlayer' }
-                ];
-                if (activityData.permalink && typeof activityData.permalink === 'string' && activityData.permalink.startsWith('https://soundcloud.com/')) {
-                    activity.buttons.push({ label: 'SoundCloud Track', url: activityData.permalink });
+                const cached = this.getCachedCover(title, artist, album);
+                if (cached) {
+                    coverUrl = cached;
+                } else {
+                    coverUrl = DEFAULT_ICON_URL;
+                    needAsyncResolve = true;
                 }
             }
 
-            if (this.client && this.isConnected) {
-                await this.client.request('SET_ACTIVITY', {
-                    pid: process.pid,
-                    activity: activity
-                });
-                console.log(`[Discord RPC] Activity set (Listening): "${details}" by ${state}`);
+            const sendActivityPayload = async (largeImg, timestampNow, curSecPos) => {
+                if (this.activitySeq !== seq) return;
+                const activity = {
+                    type: 2, // 2 = LISTENING
+                    details: details,
+                    state: state,
+                    assets: {
+                        large_image: (typeof largeImg === 'string' && largeImg.startsWith('http')) ? largeImg : DEFAULT_ICON_URL,
+                        large_text: largeImageText,
+                        small_image: DEFAULT_ICON_URL,
+                        small_text: smallImageText
+                    },
+                    instance: false
+                };
+
+                if (isPlaying && durationSec > 0) {
+                    const remainingSec = Math.max(0, durationSec - curSecPos);
+                    activity.timestamps = {
+                        start: Math.floor(timestampNow - (curSecPos * 1000)),
+                        end: Math.floor(timestampNow + (remainingSec * 1000))
+                    };
+                } else if (isPlaying) {
+                    activity.timestamps = {
+                        start: Math.floor(timestampNow - (curSecPos * 1000))
+                    };
+                }
+
+                if (this.config.showButtons) {
+                    activity.buttons = [
+                        { label: 'MoonPlayer App', url: 'https://github.com/akvarium11/MoonPlayer' }
+                    ];
+                    if (activityData.permalink && typeof activityData.permalink === 'string' && activityData.permalink.startsWith('https://soundcloud.com/')) {
+                        activity.buttons.push({ label: 'SoundCloud Track', url: activityData.permalink });
+                    }
+                }
+
+                if (this.client && this.isConnected) {
+                    await this.client.request('SET_ACTIVITY', {
+                        pid: process.pid,
+                        activity: activity
+                    });
+                    console.log(`[Discord RPC] Activity set (Listening): "${details}" by ${state}`);
+                }
+            };
+
+            // 1. Immediately send activity with 0 delay so Discord timestamps are 100% exact
+            await sendActivityPayload(coverUrl, now, curSec);
+
+            // 2. If cover wasn't cached, resolve in background and update cover without changing timestamps
+            if (needAsyncResolve) {
+                this.resolveCover(title, artist, album).then(async (resolvedCover) => {
+                    if (this.activitySeq !== seq) return;
+                    if (resolvedCover && resolvedCover !== DEFAULT_ICON_URL) {
+                        const elapsedSec = (Date.now() - now) / 1000;
+                        const latestCurSec = isPlaying ? (curSec + elapsedSec) : curSec;
+                        await sendActivityPayload(resolvedCover, Date.now(), latestCurSec);
+                    }
+                }).catch(() => {});
             }
         } catch (err) {
             console.error('[Discord RPC] Error setting activity:', err.message);

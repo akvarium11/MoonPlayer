@@ -1,0 +1,17 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-audio-engine"
+description = "Enables the native Rust audio engine commands."
+commands.allow = [
+  "audio_start",
+  "audio_stop",
+  "audio_flush",
+  "audio_push",
+  "audio_settings",
+  "audio_volume",
+  "audio_status",
+  "audio_devices",
+  "audio_reconfigure",
+  "audio_push_raw",
+]
